@@ -62,7 +62,7 @@ st.markdown("""
 # 좌측 제어
 # ------------------------------
 st.sidebar.header("설정")
-period = st.sidebar.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=1)
+period = st.sidebar.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
 rank_by = st.sidebar.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)  # 기본 FMS
 TOP_N = st.sidebar.slider("Top N", 5, 60, 20, step=5)
 use_log_scale = st.sidebar.checkbox("비교차트 로그 스케일", True)
@@ -356,23 +356,8 @@ def only_name(sym):
     return nm if nm else sym
 
 # ------------------------------
-# 상단 KPI
+# 상단 KPI (제거됨)
 # ------------------------------
-c1,c2,c3,c4=st.columns(4)
-with c1:
-    st.markdown(f"<div class='kpi'>📊 <b>종목수</b><br><span class='small'>KRW 환산 후 유효</span><br><h3>{prices_krw.shape[1]}</h3></div>", unsafe_allow_html=True)
-with c2:
-    st.markdown(f"<div class='kpi'>🕒 <b>업데이트</b><br><span class='small'>한국시간</span><br><h3>{datetime.now(KST).strftime('%Y-%m-%d %H:%M')}</h3></div>", unsafe_allow_html=True)
-with c3:
-    counts={"USA":0,"KOR":0,"JPN":0}
-    for c in prices_krw.columns: counts[classify(c)]=counts.get(classify(c),0)+1
-    st.markdown(f"<div class='kpi'>🌍 <b>국가 분포</b><br><span class='small'>USA/KOR/JPN</span><br><h3>{counts['USA']}/{counts['KOR']}/{counts['JPN']}</h3></div>", unsafe_allow_html=True)
-with c4:
-    miss_txt=[]
-    if miss.get("fx_missing"): miss_txt.append("FX: "+" ,".join(miss["fx_missing"]))
-    if miss.get("price_missing"): miss_txt.append("PX: "+" ,".join(miss["price_missing"]))
-    st.markdown(f"<div class='kpi'>🧰 <b>데이터 상태</b><br><span class='small'>결측 요약</span><br><h3>{'정상' if not miss_txt else '확인 필요'}</h3></div>", unsafe_allow_html=True)
-    if miss_txt: st.caption("결측: "+" | ".join(miss_txt[:2])+(" …" if len(miss_txt)>2 else ""))
 
 st.title("⚡ KRW Momentum Radar (가속 중심)")
 
@@ -433,7 +418,11 @@ with cc1:
 with cc2:
     plot_n = st.selectbox("표시 종목 수", [10, 15, 20, 25, 30], index=2, help="상위 랭킹 기준으로 제한해 과밀도 완화")
 with cc3:
-    tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=2, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
+    # 애니메이션 모드가 선택되면 꼬리 길이를 5로 자동 설정
+    if motion_mode != "끄기":
+        tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=2, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
+    else:
+        tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=0, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
 with cc4:
     motion_mode = st.selectbox("모션(애니메이션)", ["끄기", "최근 10일", "최근 20일"], index=0,
                                help="프레임마다 현재 위치와 꼬리를 동시에 갱신")
@@ -599,6 +588,9 @@ def make_motion_scatter(days):
         frames.append(go.Frame(data=frame_data, name=str(prices_krw.index[loc].date())))
 
     fig = go.Figure(data=traces, frames=frames)
+    # 애니메이션 모드에 따른 자동 재생 설정
+    auto_play = motion_mode != "끄기"
+    
     fig.update_layout(
         height=520, margin=dict(l=10,r=10,t=10,b=10),
         xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %)",
@@ -615,6 +607,19 @@ def make_motion_scatter(days):
             "currentvalue":{"prefix":"Date: "}
         }]
     )
+    
+    # 애니메이션 모드가 선택되면 자동 재생
+    if auto_play:
+        fig.update_layout(
+            updatemenus=[{
+                "type": "buttons", "showactive": False,
+                "buttons": [
+                    {"label":"▶ Play","method":"animate",
+                     "args":[None, {"frame":{"duration":300, "redraw":True}, "fromcurrent":True, "transition":{"duration":0}}]},
+                    {"label":"⏸ Pause","method":"animate","args":[[None], {"frame":{"duration":0}, "mode":"immediate"}]}
+                ]
+            }]
+        )
     return fig
 
 # 렌더
@@ -626,6 +631,31 @@ if motion_mode == "끄기":
 else:
     days = 10 if "10" in motion_mode else 20
     fig_mv = make_motion_scatter(days)
+    
+    # 애니메이션 모드일 때 자동 재생을 위한 JavaScript 추가
+    if motion_mode != "끄기":
+        st.markdown("""
+        <script>
+        setTimeout(function() {
+            var plotlyDiv = document.querySelector('[data-testid="stPlotlyChart"] iframe');
+            if (plotlyDiv) {
+                plotlyDiv.onload = function() {
+                    var plotlyFrame = plotlyDiv.contentWindow;
+                    if (plotlyFrame && plotlyFrame.Plotly) {
+                        setTimeout(function() {
+                            plotlyFrame.Plotly.animate(plotlyFrame.document.querySelector('.plotly-graph-div'), null, {
+                                frame: {duration: 300, redraw: true},
+                                fromcurrent: true,
+                                transition: {duration: 0}
+                            });
+                        }, 1000);
+                    }
+                };
+            }
+        }, 500);
+        </script>
+        """, unsafe_allow_html=True)
+
 st.plotly_chart(fig_mv, use_container_width=True)
 st.caption("설명: 각 점은 선택한 창(기본 21거래일)의 연율화 수익률(CAGR)·연율화 변동성입니다. "
            "‘꼬리 길이’는 오늘 기준 과거 n거래일 동안 좌표의 이동 경로를 점선으로 표시합니다. "
@@ -647,7 +677,18 @@ fig_det.add_trace(go.Scatter(x=s.index, y=s.values, mode="lines", name="KRW"))
 fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
 fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
 fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
-fig_det.update_layout(height=420, margin=dict(l=10,r=10,t=10,b=10), yaxis_title="KRW")
+fig_det.update_layout(
+    height=420, 
+    margin=dict(l=10,r=10,t=10,b=10), 
+    yaxis_title="KRW",
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=-0.15,
+        xanchor="center",
+        x=0.5
+    )
+)
 st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
 
 roll_max = s.cummax()
