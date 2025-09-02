@@ -1,0 +1,62 @@
+# KRW Momentum Radar - Cursor Rules
+
+## 프로젝트 개요
+KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+
+## 기술 스택
+- **Frontend**: Streamlit
+- **Data**: yfinance (Yahoo Finance API)
+- **Visualization**: Plotly
+- **Data Processing**: Pandas, NumPy
+- **Timezone**: pytz (KST 기준)
+
+## 코딩 스타일
+- **Python**: PEP 8 준수
+- **함수/변수명**: snake_case
+- **클래스명**: PascalCase
+- **상수**: UPPER_CASE
+- **문서화**: 모든 함수와 클래스에 docstring 추가
+
+## 주요 기능
+1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수
+2. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
+3. **비교 차트**: 다국가 종목들의 KRW 환산 가격 비교
+4. **수익률-변동성 이동맵**: 정적/애니메이션 모드 지원
+5. **상세 분석**: 개별 종목의 EMA 분석 및 Drawdown 추적
+
+## 파일 구조
+```
+Momentum/
+├── app.py                    # 메인 Streamlit 애플리케이션
+├── requirements.txt          # Python 의존성
+├── README.md                # 프로젝트 설명
+├── LICENSE                  # MIT 라이선스
+├── .gitignore              # Git 무시 파일
+├── CHANGELOG.md            # 버전 변경 이력
+├── CONTRIBUTING.md         # 기여 가이드
+├── DEPLOYMENT.md           # 배포 가이드
+└── .streamlit/
+    └── config.toml         # Streamlit 설정
+```
+
+## 개발 가이드라인
+- **캐싱**: `@st.cache_data` 적절히 사용하여 성능 최적화
+- **에러 처리**: 사용자 친화적인 에러 메시지 제공
+- **UI/UX**: 일관된 레이아웃과 스타일 유지
+- **데이터 처리**: 효율적인 데이터 다운로드 및 전처리
+
+## 배포
+- **Streamlit Cloud**: 주요 배포 플랫폼
+- **Docker**: 컨테이너화 지원
+- **클라우드**: AWS, GCP, Azure 지원
+
+## 주의사항
+- Yahoo Finance API 제한 고려
+- 메모리 사용량 최적화
+- 실시간 데이터 업데이트 처리
+- 다국가 시장의 시간대 차이 고려
+
+## 버전 관리
+- **Semantic Versioning** 준수
+- **Keep a Changelog** 형식 사용
+- 주요 변경사항은 CHANGELOG.md에 기록

@@ -1,10 +1,17 @@
 # app.py
 # -*- coding: utf-8 -*-
 # KRW Momentum Radar - v2.7
-# - "수익률–변동성 이동맵" 꼬리(tail) 개선
-#   · 정적: 최근 n거래일 경로를 세그먼트별로 점선 + 연한→진한 그라데이션
-#   · 애니메이션: 매 프레임에 꼬리 동시 갱신
-# - 나머지 기능(v2.6) 유지
+# 
+# 주요 기능:
+# - FMS(Fast Momentum Score) 기반 모멘텀 분석
+# - 다국가 시장 통합 분석 (미국, 한국, 일본)
+# - 수익률-변동성 이동맵 (정적/애니메이션 모드)
+# - 실시간 데이터 업데이트 및 시각화
+#
+# v2.7 개선사항:
+# - 꼬리 효과 개선 (연한→진한 그라데이션)
+# - 애니메이션 자동 재생 기능
+# - 시각적 개선 (과거 시점과 꼬리 중복 제거)
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -504,22 +511,24 @@ def make_static_scatter():
     for c in plot_syms:
         add_tail_segments(fig, c, tail_days)
 
-    # 1M ago
-    fig.add_trace(go.Scatter(
-        x=pts_mago["Vol"]*100, y=pts_mago["CAGR"]*100, mode="markers",
-        marker=dict(size=7, color="lightgray"),
-        text=[display_name(s) for s in pts_mago.index],
-        hovertemplate="%{text}<br>1M ago<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
-        name="1M ago", showlegend=True
-    ))
-    # Yesterday
-    fig.add_trace(go.Scatter(
-        x=pts_yest["Vol"]*100, y=pts_yest["CAGR"]*100, mode="markers",
-        marker=dict(size=8, color="silver"),
-        text=[display_name(s) for s in pts_yest.index],
-        hovertemplate="%{text}<br>Yesterday<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
-        name="Yesterday", showlegend=True
-    ))
+    # 꼬리 길이가 0일 때만 과거 시점들 표시
+    if tail_days == 0:
+        # 1M ago
+        fig.add_trace(go.Scatter(
+            x=pts_mago["Vol"]*100, y=pts_mago["CAGR"]*100, mode="markers",
+            marker=dict(size=7, color="lightgray"),
+            text=[display_name(s) for s in pts_mago.index],
+            hovertemplate="%{text}<br>1M ago<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
+            name="1M ago", showlegend=True
+        ))
+        # Yesterday
+        fig.add_trace(go.Scatter(
+            x=pts_yest["Vol"]*100, y=pts_yest["CAGR"]*100, mode="markers",
+            marker=dict(size=8, color="silver"),
+            text=[display_name(s) for s in pts_yest.index],
+            hovertemplate="%{text}<br>Yesterday<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
+            name="Yesterday", showlegend=True
+        ))
     # Today
     fig.add_trace(go.Scatter(
         x=pts_today["Vol"]*100, y=pts_today["CAGR"]*100, mode="markers+text",
@@ -529,17 +538,18 @@ def make_static_scatter():
         hovertemplate="%{text}<br>Today<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
         name="Today", showlegend=True
     ))
-    # 1M→Yest→Today 연결선
-    for c in plot_syms:
-        xs=[]; ys=[]
-        for dfp in (pts_mago, pts_yest, pts_today):
-            if c in dfp.index and not dfp.loc[c].isna().any():
-                xs.append(float(dfp.loc[c,"Vol"])*100)
-                ys.append(float(dfp.loc[c,"CAGR"])*100)
-        if len(xs)>=2:
-            fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines",
-                                     line=dict(width=1), opacity=0.35,
-                                     name=f"path-{c}", showlegend=False, hoverinfo="skip"))
+    # 꼬리 길이가 0일 때만 1M→Yest→Today 연결선 표시
+    if tail_days == 0:
+        for c in plot_syms:
+            xs=[]; ys=[]
+            for dfp in (pts_mago, pts_yest, pts_today):
+                if c in dfp.index and not dfp.loc[c].isna().any():
+                    xs.append(float(dfp.loc[c,"Vol"])*100)
+                    ys.append(float(dfp.loc[c,"CAGR"])*100)
+            if len(xs)>=2:
+                fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines",
+                                         line=dict(width=1), opacity=0.35,
+                                         name=f"path-{c}", showlegend=False, hoverinfo="skip"))
     fig.update_layout(
         height=520, margin=dict(l=10,r=10,t=10,b=10),
         xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %)",
@@ -639,8 +649,6 @@ def make_motion_scatter(days):
     return fig
 
 # 렌더
-if st.session_state.get("mv_debug", False):
-    st.write({"tail_days": tail_days})
 
 if motion_mode == "끄기":
     fig_mv = make_static_scatter()
@@ -752,5 +760,5 @@ with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)")
         "last_notna_JPN": int(last_row[jpn_cols].notna().sum()),
         "env_CURL_CFFI_DISABLE_CACHE": os.environ.get("CURL_CFFI_DISABLE_CACHE")
     }
-    st.write(diag)
+    st.json(diag)
     st.text_area("LOG", value="\n".join(st.session_state["LOG"][-400:]), height=200)
