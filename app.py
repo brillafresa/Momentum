@@ -433,15 +433,15 @@ with cc1:
     rv_window = st.selectbox("수익률/변동성 창(거래일)", [21, 42, 63], index=0, help="연율화: 252 기준")
 with cc2:
     plot_n = st.selectbox("표시 종목 수", [10, 15, 20, 25, 30], index=2, help="상위 랭킹 기준으로 제한해 과밀도 완화")
+with cc4:
+    motion_mode = st.selectbox("모션(애니메이션)", ["끄기", "최근 10일", "최근 20일"], index=0,
+                               help="프레임마다 현재 위치와 꼬리를 동시에 갱신")
 with cc3:
     # 애니메이션 모드가 선택되면 꼬리 길이를 5로 자동 설정
     if motion_mode != "끄기":
         tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=2, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
     else:
         tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=0, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
-with cc4:
-    motion_mode = st.selectbox("모션(애니메이션)", ["끄기", "최근 10일", "최근 20일"], index=0,
-                               help="프레임마다 현재 위치와 꼬리를 동시에 갱신")
 
 def ann_vol(series, win):
     r = series.pct_change().dropna()
