@@ -359,7 +359,23 @@ def only_name(sym):
 # 상단 KPI (제거됨)
 # ------------------------------
 
-st.title("⚡ KRW Momentum Radar (가속 중심)")
+st.title("⚡ KRW Momentum Radar")
+
+# FMS 설명
+st.markdown("""
+<div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;">
+<h4>📊 FMS (Fast Momentum Score)란?</h4>
+<p><strong>FMS</strong>는 다차원 모멘텀 지표를 종합한 점수로, 다음과 같이 계산됩니다:</p>
+<div style="background-color: white; padding: 10px; border-radius: 5px; font-family: monospace; margin: 10px 0;">
+FMS = 0.5×Z(1M수익률) + 0.3×Z(30일기울기) + 0.2×Z(EMA50상대위치) + 0.1×Z(120일돌파) - 0.1×Z(20일변동성)
+</div>
+<p style="margin: 5px 0; font-size: 0.9em; color: #666;">
+• <strong>Z()</strong>: Z-score 정규화 (평균 0, 표준편차 1)<br>
+• <strong>가중치</strong>: 수익률(50%) > 기울기(30%) > EMA50위치(20%) > 돌파(10%) > 변동성(-10%)<br>
+• <strong>높은 FMS</strong>: 강한 상승 모멘텀과 낮은 변동성을 의미
+</p>
+</div>
+""", unsafe_allow_html=True)
 
 # ------------------------------
 # 모멘텀/가속 계산
