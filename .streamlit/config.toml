@@ -1,0 +1,40 @@
+[global]
+# 개발 모드 설정
+developmentMode = false
+
+[server]
+# 서버 설정
+headless = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+# 브라우저 설정
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[theme]
+# 테마 설정
+primaryColor = "#FF6B6B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
+
+[client]
+# 클라이언트 설정
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[runner]
+# 러너 설정
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
+
+[logger]
+# 로깅 설정
+level = "info"
+messageFormat = "%(asctime)s.%(msecs)03d %(levelname)s: %(message)s"
