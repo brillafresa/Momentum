@@ -84,79 +84,7 @@ KRW_SYMBOLS = [s for s in st.session_state.watchlist if classify(s) == "KOR"]
 JPY_SYMBOLS = [s for s in st.session_state.watchlist if classify(s) == "JPN"]
 
 # ------------------------------
-# 좌측 제어
-# ------------------------------
-st.sidebar.header("⚡ KRW Momentum Radar v2.8")
-
-# 관심종목 관리 섹션
-st.sidebar.subheader("📋 관심종목 관리")
-st.sidebar.info(f"현재 관심종목: **{len(st.session_state.watchlist)}개**")
-
-# 티커 추가
-new_ticker = st.sidebar.text_input("티커 추가 (예: AAPL)", "").upper().strip()
-if st.sidebar.button("➕ 추가"):
-    if new_ticker and new_ticker not in st.session_state.watchlist:
-        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
-        st.sidebar.success(f"'{new_ticker}' 추가 완료!")
-        st.rerun()
-    elif new_ticker in st.session_state.watchlist:
-        st.sidebar.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
-    else:
-        st.sidebar.error("유효한 티커를 입력해주세요.")
-
-# 티커 삭제
-if st.session_state.watchlist:
-    tickers_to_remove = st.sidebar.multiselect(
-        "삭제할 티커 선택",
-        options=st.session_state.watchlist,
-        key="remove_tickers"
-    )
-    if st.sidebar.button("🗑️ 선택 삭제"):
-        if tickers_to_remove:
-            st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, tickers_to_remove)
-            st.sidebar.warning(f"{len(tickers_to_remove)}개 종목 삭제 완료!")
-            st.rerun()
-        else:
-            st.sidebar.error("삭제할 종목을 선택해주세요.")
-
-# 기본 설정 섹션
-st.sidebar.subheader("⚙️ 분석 설정")
-period = st.sidebar.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
-rank_by = st.sidebar.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)  # 기본 FMS
-TOP_N = st.sidebar.slider("Top N", 5, 60, 20, step=5)
-use_log_scale = st.sidebar.checkbox("비교차트 로그 스케일", True)
-
-with st.sidebar.expander("🔧 도구", expanded=False):
-    if st.button("🗂️ 데이터 캐시 초기화"):
-        st.cache_data.clear()
-        st.success("캐시 초기화 완료 → 상단 Rerun 클릭")
-    
-    if st.button("🔄 관심종목 초기화"):
-        default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
-        st.session_state.watchlist = default_symbols
-        save_watchlist(default_symbols)
-        st.success("관심종목이 기본값으로 초기화되었습니다!")
-        st.rerun()
-
-# ------------------------------
-# 로깅
-# ------------------------------
-if "LOG" not in st.session_state:
-    st.session_state["LOG"] = []
-def log(msg):
-    ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
-    st.session_state["LOG"].append(f"[{ts}] {msg}")
-def warn_to_log(fn, *args, **kwargs):
-    with warnings.catch_warnings(record=True) as wlist:
-        result = fn(*args, **kwargs)
-        for w in wlist:
-            st.session_state["LOG"].append(f"WARNING: {w.category.__name__}: {str(w.message)}")
-        return result
-
-
-
-# ------------------------------
-# 다운로드/전처리
+# 데이터 다운로드 및 처리 함수들
 # ------------------------------
 def _extract_adj_close(df_chunk, tickers):
     if df_chunk is None or len(df_chunk)==0:
@@ -231,11 +159,6 @@ def download_prices(tickers, period_="2y", interval="1d", chunk=25):
     out = out.drop(columns=all_nan)
     return out, sorted(list(dict.fromkeys(list(missing)+list(all_nan))))
 
-def align_bday_ffill(df):
-    if df is None or len(df)==0: return df
-    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
-    return df.reindex(idx).ffill()
-
 @st.cache_data(ttl=60*60*6, show_spinner=False)
 def download_fx(period_="2y", interval="1d"):
     fx_krw, miss1 = download_prices(["KRW=X"], period_, interval)
@@ -257,79 +180,37 @@ def harmonize_calendar(df, coverage=0.9):
     if df.empty: return df
     idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
     df = df.reindex(idx).ffill()
-    counts = df.notna().sum(axis=1)
-    threshold = int(np.ceil(coverage * df.shape[1]))
-    valid = counts[counts >= threshold]
-    if valid.empty:
-        log("WARN harmonize_calendar: no date meets coverage; using full ffilled DF")
-        return df
-    last_common_date = valid.index[-1]
-    df = df.loc[:last_common_date].ffill()
-    log(f"Calendar harmonized to {last_common_date.date()} (>= {threshold}/{df.shape[1]} cols present)")
-    return df
+    # coverage 체크
+    valid_ratio = df.count().div(len(df))
+    keep_cols = valid_ratio[valid_ratio >= coverage].index
+    return df[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
 
-@st.cache_data(ttl=60*60*6, show_spinner=True)
-def build_prices_krw(period_key="6M"):
-    period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
-    yf_period = period_map.get(period_key, "1y")
-    interval = "1d"
-
-    usdkrw, usdjpy, jpykrw, fx_missing = download_fx(yf_period, interval)
-    usd_df, miss_us = download_prices(USD_SYMBOLS, yf_period, interval)
-    krw_df, miss_kr = download_prices(KRW_SYMBOLS, yf_period, interval)
-    jpy_df, miss_jp = download_prices(JPY_SYMBOLS, yf_period, interval)
-
-    usd_df = align_bday_ffill(usd_df)
-    krw_df = align_bday_ffill(krw_df)
-    jpy_df = align_bday_ffill(jpy_df)
-    usdkrw = align_bday_ffill(usdkrw.to_frame()).iloc[:,0] if not usdkrw.empty else usdkrw
-    jpykrw = align_bday_ffill(jpykrw.to_frame()).iloc[:,0] if not jpykrw.empty else jpykrw
-
-    frames=[]
-    if not usd_df.empty and not usdkrw.empty:
-        usdkrw_matched = usdkrw.reindex(usd_df.index).ffill()
-        frames.append(usd_df.mul(usdkrw_matched, axis=0))
-    if not krw_df.empty:
-        frames.append(krw_df)
-    if not jpy_df.empty and not jpykrw.empty:
-        jpykrw_matched = jpykrw.reindex(jpy_df.index).ffill()
-        frames.append(jpy_df.mul(jpykrw_matched, axis=0))
-
-    if not frames:
-        return pd.DataFrame(), {"fx_missing": fx_missing, "price_missing": miss_us+miss_kr+miss_jp}
-
-    prices_krw = pd.concat(frames, axis=1).sort_index()
-    prices_krw = prices_krw.loc[:, ~prices_krw.columns.duplicated()]
-    prices_krw = harmonize_calendar(prices_krw, coverage=0.9)
-
-    miss_dict = {
-        "fx_missing": fx_missing,
-        "price_missing": sorted(list(set(miss_us+miss_kr+miss_jp)))
-    }
-    last_row = prices_krw.iloc[-1]
-    usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
-    na_usa = last_row[usa_cols].isna().sum()
-    log(f"Final DF shape: {prices_krw.shape}; last row USA NaNs: {na_usa}/{len(usa_cols)}")
-    return prices_krw, miss_dict
+def align_bday_ffill(df):
+    if df is None or len(df)==0: return df
+    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
+    return df.reindex(idx).ffill()
 
 # ------------------------------
-# 이름 캐시
+# 로깅 함수
 # ------------------------------
-@st.cache_data(ttl=60*60*24, show_spinner=False)
-def fetch_long_names(symbols):
-    out = {}
-    for s in symbols:
-        name = None
-        try:
-            info = yf.Ticker(s).get_info()
-            name = info.get("longName") or info.get("shortName")
-        except Exception as e:
-            log(f"INFO name fetch fail: {s} -> {e}")
-        out[s] = name if name else s
-    return out
+if "LOG" not in st.session_state:
+    st.session_state["LOG"] = []
+def log(msg):
+    ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    st.session_state["LOG"].append(f"[{ts}] {msg}")
 
 # ------------------------------
-# 지표/점수
+# 유틸리티 함수들
+# ------------------------------
+def warn_to_log(fn, *args, **kwargs):
+    with warnings.catch_warnings(record=True) as wlist:
+        result = fn(*args, **kwargs)
+        for w in wlist:
+            st.session_state["LOG"].append(f"WARNING: {w.category.__name__}: {str(w.message)}")
+        return result
+
+# ------------------------------
+# 지표/점수 계산 함수들
 # ------------------------------
 def ema(s, span): return s.ewm(span=span, adjust=False).mean()
 
@@ -406,7 +287,7 @@ def momentum_now_and_delta(prices_krw):
     return df.sort_values("FMS", ascending=False)
 
 # ------------------------------
-# 신규 종목 탐색 엔진
+# 신규 종목 탐색 엔진 함수들
 # ------------------------------
 @st.cache_data(ttl=60*60*2, show_spinner=False)  # 2시간 캐시
 def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
@@ -426,96 +307,350 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
     
     try:
         # 가격 데이터 다운로드
-        prices_df, missing = download_prices(symbols_batch, period_, interval)
-        if prices_df.empty:
+        prices, missing = download_prices(symbols_batch, period_, interval)
+        if prices.empty:
             return pd.DataFrame()
         
-        # FX 데이터 다운로드 (USD 심볼만)
+        # KRW 환산을 위한 FX 데이터 다운로드
         usd_symbols = [s for s in symbols_batch if classify(s) == "USA"]
         if usd_symbols:
             usdkrw, _, _, _ = download_fx(period_, interval)
             if not usdkrw.empty:
-                usdkrw_matched = usdkrw.reindex(prices_df.index).ffill()
-                usd_prices = prices_df[[s for s in usd_symbols if s in prices_df.columns]]
+                usdkrw_matched = usdkrw.reindex(prices.index).ffill()
+                usd_prices = prices[[s for s in usd_symbols if s in prices.columns]]
                 if not usd_prices.empty:
-                    prices_df[usd_prices.columns] = usd_prices.mul(usdkrw_matched, axis=0)
+                    prices[usd_prices.columns] = usd_prices.mul(usdkrw_matched, axis=0)
         
         # JPY 심볼 처리
         jpy_symbols = [s for s in symbols_batch if classify(s) == "JPN"]
         if jpy_symbols:
             _, _, jpykrw, _ = download_fx(period_, interval)
             if not jpykrw.empty:
-                jpykrw_matched = jpykrw.reindex(prices_df.index).ffill()
-                jpy_prices = prices_df[[s for s in jpy_symbols if s in prices_df.columns]]
+                jpykrw_matched = jpykrw.reindex(prices.index).ffill()
+                jpy_prices = prices[[s for s in jpy_symbols if s in prices.columns]]
                 if not jpy_prices.empty:
-                    prices_df[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
+                    prices[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
         
-        # FMS 계산
-        prices_krw = harmonize_calendar(prices_df, coverage=0.8)
+        # 캘린더 정규화
+        prices_krw = harmonize_calendar(prices, coverage=0.8)
         if prices_krw.empty:
             return pd.DataFrame()
         
-        mom_df = momentum_now_and_delta(prices_krw)
-        return mom_df
+        # FMS 계산
+        df = momentum_now_and_delta(prices_krw)
+        return df.sort_values("FMS", ascending=False)
         
     except Exception as e:
-        log(f"ERROR calculate_fms_for_batch: {e}")
+        st.error(f"FMS 계산 중 오류: {str(e)}")
         return pd.DataFrame()
+
+def get_comprehensive_ticker_list():
+    """
+    실시간으로 포괄적인 종목 목록을 가져옵니다.
+    
+    Returns:
+        list: 종목 심볼 목록
+    """
+    try:
+        # 포괄적인 종목 목록 (중복 제거됨)
+        major_indices = [
+            # S&P 500 주요 종목들 (상위 100개)
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'UNH', 'XOM',
+            'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'PFE', 'ABBV', 'BAC',
+            'KO', 'AVGO', 'PEP', 'TMO', 'COST', 'WMT', 'MRK', 'ABT', 'ACN', 'DHR',
+            'VZ', 'ADBE', 'NFLX', 'CRM', 'TXN', 'NKE', 'QCOM', 'AMD', 'INTC', 'HON',
+            'UNP', 'IBM', 'SPGI', 'LOW', 'AMGN', 'CAT', 'GE', 'AXP', 'BKNG', 'GS',
+            'DE', 'SYK', 'BLK', 'ELV', 'LMT', 'TJX', 'GILD', 'MDT', 'ISRG', 'VRTX',
+            'ZTS', 'T', 'ADP', 'MMM', 'RTX', 'PLD', 'SO', 'DUK', 'NEE', 'AON',
+            'ICE', 'ITW', 'ECL', 'SHW', 'CL', 'EMR', 'APD', 'NSC', 'FDX', 'UPS',
+            'CME', 'CCI', 'EQIX', 'REGN', 'BSX', 'BDX', 'EW', 'SYY', 'AEP', 'EXC',
+            'XEL', 'WEC', 'ES', 'ETR', 'PEG', 'ED', 'D',
+            
+            # 주요 ETF들 (대표적인 것만 선택)
+            'SPY', 'QQQ', 'IWM', 'VTI', 'VEA', 'VWO', 'BND', 'GLD', 'SLV',
+            
+            # 섹터 ETF들
+            'XLK', 'XLF', 'XLV', 'XLE', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE', 'XLC',
+            
+            # 테마 ETF들
+            'ARKK', 'ARKQ', 'ARKG', 'ARKW', 'ARKF',  # ARK 시리즈
+            'ICLN', 'QCLN', 'PBW', 'TAN', 'FAN',     # Clean Energy
+            'SOXX', 'SMH', 'BOTZ', 'ROBO', 'AIQ',    # Technology Themes
+            'IBB', 'XBI', 'BIS', 'LABU', 'LABD',     # Biotech
+            'TQQQ', 'SQQQ', 'UPRO', 'SPXU',          # Leveraged
+            'JEPI', 'JEPQ', 'QYLD', 'XYLD', 'RYLD',  # Covered Call
+            'SCHD', 'VYM', 'HDV', 'DVY', 'NOBL',     # Dividend
+            'MTUM', 'QUAL', 'VLUE', 'SIZE',          # Factor ETFs
+            'USMV', 'EFAV', 'EEMV', 'ACWV', 'SPLV',  # Low Volatility
+            
+            # 개별 주식들 (주요 기업들)
+            'COIN', 'PYPL', 'SQ', 'V', 'MA', 'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C',
+            'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'KMI', 'PXD', 'MPC', 'VLO', 'PSX',
+        ]
+        
+        # 중복 제거 및 정렬
+        unique_symbols = list(set(major_indices))
+        unique_symbols.sort()
+        
+        log(f"포괄적 종목 목록 생성: {len(unique_symbols)}개 종목")
+        return unique_symbols
+        
+    except Exception as e:
+        log(f"종목 목록 생성 중 오류: {str(e)}")
+        # 오류 시 기본 목록 반환
+        return ['SPY', 'QQQ', 'VOO', 'VTI', 'IWM', 'GLD', 'TLT', 'XLK', 'XLF', 'XLV']
 
 def scan_market_for_new_opportunities():
     """
-    전체 미국 ETF 시장을 스캔하여 새로운 기회를 찾습니다.
+    전체 미국 시장을 스캔하여 새로운 투자 기회를 발굴합니다.
+    
+    Returns:
+        tuple: (top_performers_df, message)
     """
     try:
-        # ETF 목록 로드
-        etf_df = pd.read_csv('us_etf_list.csv')
-        master_list = etf_df['Symbol'].tolist()
+        # 실시간으로 포괄적인 종목 목록 가져오기
+        all_symbols = get_comprehensive_ticker_list()
         
         # 현재 관심종목에서 제외
-        scan_targets = [s for s in master_list if s not in st.session_state.watchlist]
+        current_watchlist = st.session_state.watchlist
+        new_symbols = [s for s in all_symbols if s not in current_watchlist]
         
-        if not scan_targets:
+        if not new_symbols:
             return pd.DataFrame(), "스캔할 새로운 종목이 없습니다."
         
-        log(f"시장 스캔 시작: {len(scan_targets)}개 종목")
+        log(f"총 {len(new_symbols)}개 신규 종목을 스캔합니다...")
         
-        # 배치 처리
+        # 배치 단위로 처리 (API 제한 고려)
+        batch_size = 20
         all_results = []
-        batch_size = 25  # API 제한 고려
-        total_batches = (len(scan_targets) + batch_size - 1) // batch_size
         
-        progress_bar = st.progress(0, "스캔 준비 중...")
-        
-        for i in range(0, len(scan_targets), batch_size):
-            batch = scan_targets[i:i+batch_size]
-            batch_num = i // batch_size + 1
+        for i in range(0, len(new_symbols), batch_size):
+            batch = new_symbols[i:i+batch_size]
+            log(f"배치 {i//batch_size + 1}/{(len(new_symbols)-1)//batch_size + 1} 처리 중... ({len(batch)}개 종목)")
             
-            progress = batch_num / total_batches
-            progress_bar.progress(progress, f"배치 {batch_num}/{total_batches} 처리 중... ({len(batch)}개)")
-            
-            # FMS 계산
             batch_results = calculate_fms_for_batch(batch)
             if not batch_results.empty:
                 all_results.append(batch_results)
-            
-            # API 제한 고려한 지연
-            if batch_num < total_batches:
-                import time
-                time.sleep(0.5)
         
-        progress_bar.progress(1.0, "스캔 완료!")
-        
-        if all_results:
-            combined_results = pd.concat(all_results, ignore_index=False)
-            # FMS 기준으로 정렬하고 상위 30개만 반환
-            top_performers = combined_results.sort_values('FMS', ascending=False).head(30)
-            return top_performers, f"스캔 완료: {len(combined_results)}개 종목 중 상위 30개 발견"
-        else:
+        if not all_results:
             return pd.DataFrame(), "스캔 결과가 없습니다."
-            
+        
+        # 모든 결과 합치기
+        combined_results = pd.concat(all_results, ignore_index=True)
+        
+        # 상위 30개 선택
+        top_performers = combined_results.head(30)
+        
+        scan_message = f"✅ {len(new_symbols)}개 종목 스캔 완료! 상위 {len(top_performers)}개 종목 발견"
+        log(scan_message)
+        
+        return top_performers, scan_message
+        
     except Exception as e:
-        log(f"ERROR scan_market_for_new_opportunities: {e}")
-        return pd.DataFrame(), f"스캔 중 오류 발생: {str(e)}"
+        error_msg = f"스캔 중 오류 발생: {str(e)}"
+        log(error_msg)
+        return pd.DataFrame(), error_msg
+
+# ------------------------------
+# 좌측 제어
+# ------------------------------
+st.sidebar.header("⚡ KRW Momentum Radar v2.8")
+
+# 자주 사용하는 설정 (상단)
+st.sidebar.subheader("⚙️ 분석 설정")
+period = st.sidebar.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
+rank_by = st.sidebar.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)  # 기본 FMS
+TOP_N = st.sidebar.slider("Top N", 5, 60, 20, step=5)
+use_log_scale = st.sidebar.checkbox("비교차트 로그 스케일", True)
+
+# 관심종목 관리 섹션 (하단)
+st.sidebar.subheader("📋 관심종목 관리")
+st.sidebar.info(f"현재 관심종목: **{len(st.session_state.watchlist)}개**")
+
+# 신규 종목 탐색
+with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
+    if st.button('🔍 전체 미국 ETF 시장 스캔', type="primary"):
+        with st.spinner("전체 시장을 스캔 중입니다..."):
+            scan_results, scan_message = scan_market_for_new_opportunities()
+            
+            if not scan_results.empty:
+                st.success(scan_message)
+                
+                # 상위 10개만 표시
+                top_results = scan_results.head(10)
+                
+                # 간단한 표시
+                for idx, (symbol, row) in enumerate(top_results.iterrows()):
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.write(f"**{symbol}** (FMS: {row['FMS']:.1f})")
+                    with col2:
+                        if st.button("➕", key=f"add_{symbol}"):
+                            if symbol not in st.session_state.watchlist:
+                                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                                st.success(f"'{symbol}' 추가 완료!")
+                                st.rerun()
+                            else:
+                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+            else:
+                st.error("스캔 결과가 없습니다.")
+
+# 관심종목 재평가
+with st.sidebar.expander("🔄 관심종목 재평가", expanded=False):
+    if st.button("📊 FMS 기반 재평가 실행"):
+        with st.spinner("관심종목을 재평가 중입니다..."):
+            # 관심종목 FMS 계산
+            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
+            
+            if not watchlist_fms.empty:
+                # FMS 하위 25% 식별
+                fms_25th = watchlist_fms['FMS'].quantile(0.25)
+                stale_candidates = watchlist_fms[watchlist_fms['FMS'] < fms_25th].sort_values('FMS')
+                
+                if not stale_candidates.empty:
+                    st.warning(f"FMS 하위 25% 종목 ({len(stale_candidates)}개) 발견")
+                    
+                    for symbol in stale_candidates.index[:5]:  # 상위 5개만 표시
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.write(f"**{symbol}** (FMS: {stale_candidates.loc[symbol, 'FMS']:.1f})")
+                        with col2:
+                            if st.button("🗑️", key=f"remove_{symbol}"):
+                                st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
+                                st.success(f"'{symbol}' 삭제 완료!")
+                                st.rerun()
+                else:
+                    st.success("모든 관심종목이 양호한 상태입니다!")
+            else:
+                st.error("재평가 데이터를 가져올 수 없습니다.")
+
+# 수동 티커 추가/삭제
+st.sidebar.markdown("**수동 관리**")
+
+# 티커 추가
+new_ticker = st.sidebar.text_input("티커 추가 (예: AAPL)", "").upper().strip()
+if st.sidebar.button("➕ 추가"):
+    if new_ticker and new_ticker not in st.session_state.watchlist:
+        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
+        st.sidebar.success(f"'{new_ticker}' 추가 완료!")
+        st.rerun()
+    elif new_ticker in st.session_state.watchlist:
+        st.sidebar.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
+    else:
+        st.sidebar.error("유효한 티커를 입력해주세요.")
+
+# 티커 삭제
+if st.session_state.watchlist:
+    tickers_to_remove = st.sidebar.multiselect(
+        "삭제할 티커 선택",
+        options=st.session_state.watchlist,
+        key="remove_tickers"
+    )
+    if st.sidebar.button("🗑️ 선택 삭제"):
+        if tickers_to_remove:
+            st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, tickers_to_remove)
+            st.sidebar.warning(f"{len(tickers_to_remove)}개 종목 삭제 완료!")
+            st.rerun()
+        else:
+            st.sidebar.error("삭제할 종목을 선택해주세요.")
+
+with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
+    # FMS 설명
+    st.markdown("**📊 FMS (Fast Momentum Score)**")
+    st.markdown("""
+    다차원 모멘텀 지표 종합 점수:
+    
+    **FMS = 0.5×Z(1M수익률) + 0.3×Z(30일기울기) + 0.2×Z(EMA50상대위치) + 0.1×Z(120일돌파) - 0.1×Z(20일변동성)**
+    
+    • **Z()**: Z-score 정규화 (평균 0, 표준편차 1)  
+    • **가중치**: 수익률(50%) > 기울기(30%) > EMA50위치(20%) > 돌파(10%) > 변동성(-10%)  
+    • **높은 FMS**: 강한 상승 모멘텀과 낮은 변동성
+    """)
+    
+    st.markdown("---")
+    
+    # 도구 버튼들
+    if st.button("🗂️ 데이터 캐시 초기화"):
+        st.cache_data.clear()
+        st.success("캐시 초기화 완료 → 상단 Rerun 클릭")
+    
+    if st.button("🔄 관심종목 초기화"):
+        default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
+        st.session_state.watchlist = default_symbols
+        save_watchlist(default_symbols)
+        st.success("관심종목이 기본값으로 초기화되었습니다!")
+        st.rerun()
+
+
+
+@st.cache_data(ttl=60*60*6, show_spinner=True)
+def build_prices_krw(period_key="6M"):
+    period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
+    yf_period = period_map.get(period_key, "1y")
+    interval = "1d"
+
+    # 현재 관심종목에서 국가별로 분류
+    usd_symbols = [s for s in st.session_state.watchlist if classify(s) == "USA"]
+    krw_symbols = [s for s in st.session_state.watchlist if classify(s) == "KOR"]
+    jpy_symbols = [s for s in st.session_state.watchlist if classify(s) == "JPN"]
+
+    usdkrw, usdjpy, jpykrw, fx_missing = download_fx(yf_period, interval)
+    usd_df, miss_us = download_prices(usd_symbols, yf_period, interval)
+    krw_df, miss_kr = download_prices(krw_symbols, yf_period, interval)
+    jpy_df, miss_jp = download_prices(jpy_symbols, yf_period, interval)
+
+    usd_df = align_bday_ffill(usd_df)
+    krw_df = align_bday_ffill(krw_df)
+    jpy_df = align_bday_ffill(jpy_df)
+    usdkrw = align_bday_ffill(usdkrw.to_frame()).iloc[:,0] if not usdkrw.empty else usdkrw
+    jpykrw = align_bday_ffill(jpykrw.to_frame()).iloc[:,0] if not jpykrw.empty else jpykrw
+
+    frames=[]
+    if not usd_df.empty and not usdkrw.empty:
+        usdkrw_matched = usdkrw.reindex(usd_df.index).ffill()
+        frames.append(usd_df.mul(usdkrw_matched, axis=0))
+    if not krw_df.empty:
+        frames.append(krw_df)
+    if not jpy_df.empty and not jpykrw.empty:
+        jpykrw_matched = jpykrw.reindex(jpy_df.index).ffill()
+        frames.append(jpy_df.mul(jpykrw_matched, axis=0))
+
+    if not frames:
+        return pd.DataFrame(), {"fx_missing": fx_missing, "price_missing": miss_us+miss_kr+miss_jp}
+
+    prices_krw = pd.concat(frames, axis=1).sort_index()
+    prices_krw = prices_krw.loc[:, ~prices_krw.columns.duplicated()]
+    prices_krw = harmonize_calendar(prices_krw, coverage=0.9)
+
+    miss_dict = {
+        "fx_missing": fx_missing,
+        "price_missing": sorted(list(set(miss_us+miss_kr+miss_jp)))
+    }
+    last_row = prices_krw.iloc[-1]
+    usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
+    na_usa = last_row[usa_cols].isna().sum()
+    log(f"Final DF shape: {prices_krw.shape}; last row USA NaNs: {na_usa}/{len(usa_cols)}")
+    return prices_krw, miss_dict
+
+# ------------------------------
+# 이름 캐시
+# ------------------------------
+@st.cache_data(ttl=60*60*24, show_spinner=False)
+def fetch_long_names(symbols):
+    out = {}
+    for s in symbols:
+        name = None
+        try:
+            info = yf.Ticker(s).get_info()
+            name = info.get("longName") or info.get("shortName")
+        except Exception as e:
+            log(f"INFO name fetch fail: {s} -> {e}")
+        out[s] = name if name else s
+    return out
+
+
+
+
 
 # ------------------------------
 # 데이터 로드 및 이름
@@ -538,127 +673,7 @@ def only_name(sym):
 
 st.title("⚡ KRW Momentum Radar v2.8")
 
-# FMS 설명
-st.markdown("""
-<div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin: 10px 0;">
-<h4>📊 FMS (Fast Momentum Score)란?</h4>
-<p><strong>FMS</strong>는 다차원 모멘텀 지표를 종합한 점수로, 다음과 같이 계산됩니다:</p>
-<div style="background-color: white; padding: 10px; border-radius: 5px; font-family: monospace; margin: 10px 0;">
-FMS = 0.5×Z(1M수익률) + 0.3×Z(30일기울기) + 0.2×Z(EMA50상대위치) + 0.1×Z(120일돌파) - 0.1×Z(20일변동성)
-</div>
-<p style="margin: 5px 0; font-size: 0.9em; color: #666;">
-• <strong>Z()</strong>: Z-score 정규화 (평균 0, 표준편차 1)<br>
-• <strong>가중치</strong>: 수익률(50%) > 기울기(30%) > EMA50위치(20%) > 돌파(10%) > 변동성(-10%)<br>
-• <strong>높은 FMS</strong>: 강한 상승 모멘텀과 낮은 변동성을 의미
-</p>
-</div>
-""", unsafe_allow_html=True)
 
-# ------------------------------
-# 신규 종목 탐색 엔진
-# ------------------------------
-st.subheader("🚀 신규 모멘텀 종목 탐색")
-st.markdown("전체 미국 ETF 시장을 스캔하여 새로운 투자 기회를 발굴합니다.")
-
-col1, col2, col3 = st.columns([2, 1, 1])
-with col1:
-    if st.button('🔍 전체 미국 ETF 시장 스캔 실행', type="primary"):
-        with st.spinner("전체 시장을 스캔 중입니다. 수 분 이상 소요될 수 있습니다..."):
-            scan_results, scan_message = scan_market_for_new_opportunities()
-            
-            if not scan_results.empty:
-                st.success(scan_message)
-                
-                # 결과 표시
-                st.markdown("##### 📈 FMS 상위 신규 종목")
-                
-                # 표시용 데이터 준비
-                display_results = scan_results.copy()
-                display_results['추가'] = False
-                
-                # 숫자 포맷팅
-                for col in ['R_1M', 'R_1W', 'R_3M', 'R_6M', 'R_YTD', 'AboveEMA50', 'Breakout120']:
-                    if col in display_results.columns:
-                        display_results[col] = (display_results[col] * 100).round(2)
-                
-                for col in ['FMS', 'ΔFMS_1D', 'ΔFMS_5D']:
-                    if col in display_results.columns:
-                        display_results[col] = display_results[col].round(2)
-                
-                if 'Slope30(ann)' in display_results.columns:
-                    display_results['Slope30(ann)'] = display_results['Slope30(ann)'].round(3)
-                
-                # 데이터 에디터로 표시
-                edited_df = st.data_editor(
-                    display_results[['FMS', 'R_1M', 'R_1W', 'R_3M', 'AboveEMA50', 'Breakout120', '추가']],
-                    key='discovery_editor',
-                    use_container_width=True,
-                    num_rows="dynamic"
-                )
-                
-                # 선택된 항목을 관심종목에 추가
-                selected_to_add = edited_df[edited_df['추가'] == True].index.tolist()
-                if selected_to_add:
-                    if st.button("✅ 선택 항목을 관심종목에 추가"):
-                        new_symbols = [symbol for symbol in selected_to_add if symbol not in st.session_state.watchlist]
-                        if new_symbols:
-                            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, new_symbols)
-                            st.success(f"{len(new_symbols)}개 종목이 관심종목에 추가되었습니다!")
-                            st.rerun()
-                        else:
-                            st.warning("선택한 종목들이 이미 관심종목에 있습니다.")
-            else:
-                st.warning(scan_message)
-
-with col2:
-    st.metric("현재 관심종목", len(st.session_state.watchlist))
-    
-with col3:
-    # 관심종목 재평가 버튼
-    if st.button('🔄 관심종목 재평가'):
-        with st.spinner("관심종목 재평가 중..."):
-            # 현재 관심종목의 FMS 계산
-            watchlist_results = calculate_fms_for_batch(st.session_state.watchlist)
-            
-            if not watchlist_results.empty:
-                # 제외 기준 설정 (FMS 하위 25%)
-                fms_quantile_25 = watchlist_results['FMS'].quantile(0.25)
-                stale_candidates = watchlist_results[watchlist_results['FMS'] < fms_quantile_25].copy()
-                
-                if not stale_candidates.empty:
-                    st.markdown("##### 📉 관심종목 재평가 (제외 추천)")
-                    
-                    # 표시용 데이터 준비
-                    display_stale = stale_candidates.copy()
-                    display_stale['제거'] = False
-                    
-                    # 숫자 포맷팅
-                    for col in ['R_1M', 'R_1W', 'R_3M', 'R_6M', 'R_YTD', 'AboveEMA50', 'Breakout120']:
-                        if col in display_stale.columns:
-                            display_stale[col] = (display_stale[col] * 100).round(2)
-                    
-                    for col in ['FMS', 'ΔFMS_1D', 'ΔFMS_5D']:
-                        if col in display_stale.columns:
-                            display_stale[col] = display_stale[col].round(2)
-                    
-                    # 데이터 에디터로 표시
-                    edited_stale_df = st.data_editor(
-                        display_stale[['FMS', 'R_1M', 'R_1W', 'R_3M', 'AboveEMA50', 'Breakout120', '제거']],
-                        key='pruning_editor',
-                        use_container_width=True
-                    )
-                    
-                    # 선택된 항목을 관심종목에서 제거
-                    selected_to_remove = edited_stale_df[edited_stale_df['제거'] == True].index.tolist()
-                    if selected_to_remove:
-                        if st.button("🗑️ 선택 항목을 관심종목에서 제거"):
-                            st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, selected_to_remove)
-                            st.success(f"{len(selected_to_remove)}개 종목이 관심종목에서 제거되었습니다!")
-                            st.rerun()
-                else:
-                    st.info("제외할 만한 저성과 종목이 없습니다.")
-            else:
-                st.error("관심종목 재평가 중 오류가 발생했습니다.")
 
 # ------------------------------
 # 모멘텀/가속 계산
