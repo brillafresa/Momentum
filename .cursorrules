@@ -23,11 +23,17 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 3. **비교 차트**: 다국가 종목들의 KRW 환산 가격 비교
 4. **수익률-변동성 이동맵**: 정적/애니메이션 모드 지원
 5. **상세 분석**: 개별 종목의 EMA 분석 및 Drawdown 추적
+6. **동적 관심종목 관리**: 영구 저장 및 실시간 추가/삭제
+7. **신규 종목 탐색 엔진**: 전체 미국 ETF 시장 스캔
+8. **진부한 종목 자동 편출**: FMS 기반 저성과 종목 제거 제안
 
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션
+├── app.py                    # 메인 Streamlit 애플리케이션 (v2.8)
+├── watchlist_utils.py        # 관심종목 관리 유틸리티
+├── us_etf_list.csv          # 미국 ETF 목록 (100+ 종목)
+├── watchlist.csv            # 사용자 관심종목 저장 파일
 ├── requirements.txt          # Python 의존성
 ├── README.md                # 프로젝트 설명
 ├── LICENSE                  # MIT 라이선스
@@ -35,8 +41,7 @@ Momentum/
 ├── CHANGELOG.md            # 버전 변경 이력
 ├── CONTRIBUTING.md         # 기여 가이드
 ├── DEPLOYMENT.md           # 배포 가이드
-└── .streamlit/
-    └── config.toml         # Streamlit 설정
+└── .cursorrules            # Cursor AI 규칙
 ```
 
 ## 개발 가이드라인
@@ -55,6 +60,14 @@ Momentum/
 - 메모리 사용량 최적화
 - 실시간 데이터 업데이트 처리
 - 다국가 시장의 시간대 차이 고려
+
+## Streamlit 실행 규칙
+- **기존 프로세스 중지**: Streamlit 실행 전에 기존 Python 프로세스를 중지
+- **포트 충돌 방지**: 새로운 포트를 계속 열지 말고 기존 포트(8501) 사용
+- **실행 순서**: 
+  1. `taskkill /f /im python.exe` (기존 프로세스 중지)
+  2. `streamlit run app.py --server.port 8501` (애플리케이션 실행)
+- **의존성 확인**: 실행 전 필수 패키지 설치 상태 확인
 
 ## 버전 관리
 - **Semantic Versioning** 준수

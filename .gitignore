@@ -152,3 +152,4 @@ Thumbs.db
 *.log
 temp/
 cache/
+watchlist.csv  # 사용자별 관심종목 파일
