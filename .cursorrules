@@ -32,7 +32,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 Momentum/
 ├── app.py                    # 메인 Streamlit 애플리케이션 (v2.8)
 ├── watchlist_utils.py        # 관심종목 관리 유틸리티
-├── watchlist.csv            # 사용자 관심종목 저장 파일
+├── watchlist.csv            # 사용자 관심종목 저장 파일 (버전 관리 포함)
 ├── requirements.txt          # Python 의존성
 ├── README.md                # 프로젝트 설명
 ├── LICENSE                  # MIT 라이선스
@@ -42,6 +42,14 @@ Momentum/
 ├── DEPLOYMENT.md           # 배포 가이드
 └── .cursorrules            # Cursor AI 규칙
 ```
+
+## 중요 파일 관리 규칙
+
+### watchlist.csv 파일
+- **버전 관리 포함**: 사용자별 관심종목 파일은 깃 푸시에 포함
+- **삭제 금지**: 이후 개발 과정에서 이 파일을 삭제하지 않음
+- **백업 역할**: 사용자의 관심종목 설정을 보존하는 역할
+- **기본값 제공**: 새로운 사용자에게 기본 관심종목 목록 제공
 
 ## 개발 가이드라인
 - **캐싱**: `@st.cache_data` 적절히 사용하여 성능 최적화
@@ -71,6 +79,7 @@ Momentum/
 - 메모리 사용량 최적화
 - 실시간 데이터 업데이트 처리
 - 다국가 시장의 시간대 차이 고려
+- **watchlist.csv 파일 보존**: 사용자 관심종목 설정을 항상 보존
 
 ## Streamlit 실행 규칙
 - **기존 프로세스 중지**: Streamlit 실행 전에 기존 Python 프로세스를 중지
