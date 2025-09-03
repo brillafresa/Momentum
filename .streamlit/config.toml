@@ -31,8 +31,6 @@ toolbarMode = "minimal"
 [runner]
 # 러너 설정
 magicEnabled = true
-installTracer = false
-fixMatplotlib = true
 
 [logger]
 # 로깅 설정

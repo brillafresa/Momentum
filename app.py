@@ -435,8 +435,8 @@ def scan_market_for_new_opportunities():
         if not all_results:
             return pd.DataFrame(), "스캔 결과가 없습니다."
         
-        # 모든 결과 합치기
-        combined_results = pd.concat(all_results, ignore_index=True)
+        # 모든 결과 합치기 (인덱스 유지)
+        combined_results = pd.concat(all_results)
         
         # 상위 30개 선택
         top_performers = combined_results.head(30)
@@ -476,24 +476,34 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             if not scan_results.empty:
                 st.success(scan_message)
                 
-                # 상위 10개만 표시
+                # 상위 10개만 표시하고 세션 상태에 저장
                 top_results = scan_results.head(10)
-                
-                # 간단한 표시
-                for idx, (symbol, row) in enumerate(top_results.iterrows()):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.write(f"**{symbol}** (FMS: {row['FMS']:.1f})")
-                    with col2:
-                        if st.button("➕", key=f"add_{symbol}"):
-                            if symbol not in st.session_state.watchlist:
-                                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
-                                st.success(f"'{symbol}' 추가 완료!")
-                                st.rerun()
-                            else:
-                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                st.session_state['scan_results'] = top_results
             else:
                 st.error("스캔 결과가 없습니다.")
+                st.session_state['scan_results'] = None
+    
+    # 스캔 결과가 있으면 표시
+    if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:
+        top_results = st.session_state['scan_results']
+        st.markdown("**📋 발견된 종목:**")
+        
+        for idx, (symbol, row) in enumerate(top_results.iterrows()):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**{symbol}** (FMS: {row['FMS']:.1f})")
+            with col2:
+                if st.button("➕", key=f"add_{symbol}"):
+                    if symbol not in st.session_state.watchlist:
+                        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                        # 스캔 결과에서도 제거
+                        if 'scan_results' in st.session_state:
+                            st.session_state['scan_results'] = None
+                        # 캐시 무효화 및 페이지 새로고침
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
 
 # 관심종목 재평가
 with st.sidebar.expander("🔄 관심종목 재평가", expanded=False):
@@ -510,19 +520,33 @@ with st.sidebar.expander("🔄 관심종목 재평가", expanded=False):
                 if not stale_candidates.empty:
                     st.warning(f"FMS 하위 25% 종목 ({len(stale_candidates)}개) 발견")
                     
-                    for symbol in stale_candidates.index[:5]:  # 상위 5개만 표시
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"**{symbol}** (FMS: {stale_candidates.loc[symbol, 'FMS']:.1f})")
-                        with col2:
-                            if st.button("🗑️", key=f"remove_{symbol}"):
-                                st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
-                                st.success(f"'{symbol}' 삭제 완료!")
-                                st.rerun()
+                    # 세션 상태에 재평가 결과 저장
+                    st.session_state['reassessment_results'] = stale_candidates
                 else:
                     st.success("모든 관심종목이 양호한 상태입니다!")
+                    st.session_state['reassessment_results'] = None
             else:
                 st.error("재평가 데이터를 가져올 수 없습니다.")
+                st.session_state['reassessment_results'] = None
+    
+    # 재평가 결과가 있으면 표시
+    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
+        stale_candidates = st.session_state['reassessment_results']
+        st.markdown("**📋 제거 제안 종목:**")
+        
+        for symbol in stale_candidates.index[:5]:  # 상위 5개만 표시
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**{symbol}** (FMS: {stale_candidates.loc[symbol, 'FMS']:.1f})")
+            with col2:
+                if st.button("🗑️", key=f"remove_{symbol}"):
+                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
+                    # 재평가 결과에서도 제거
+                    if 'reassessment_results' in st.session_state:
+                        st.session_state['reassessment_results'] = None
+                    # 캐시 무효화 및 페이지 새로고침
+                    st.cache_data.clear()
+                    st.rerun()
 
 # 수동 티커 추가/삭제
 st.sidebar.markdown("**수동 관리**")
@@ -532,7 +556,8 @@ new_ticker = st.sidebar.text_input("티커 추가 (예: AAPL)", "").upper().stri
 if st.sidebar.button("➕ 추가"):
     if new_ticker and new_ticker not in st.session_state.watchlist:
         st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
-        st.sidebar.success(f"'{new_ticker}' 추가 완료!")
+        # 캐시 무효화 및 페이지 새로고침
+        st.cache_data.clear()
         st.rerun()
     elif new_ticker in st.session_state.watchlist:
         st.sidebar.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
@@ -549,7 +574,8 @@ if st.session_state.watchlist:
     if st.sidebar.button("🗑️ 선택 삭제"):
         if tickers_to_remove:
             st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, tickers_to_remove)
-            st.sidebar.warning(f"{len(tickers_to_remove)}개 종목 삭제 완료!")
+            # 캐시 무효화 및 페이지 새로고침
+            st.cache_data.clear()
             st.rerun()
         else:
             st.sidebar.error("삭제할 종목을 선택해주세요.")
@@ -584,15 +610,19 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
 
 
 @st.cache_data(ttl=60*60*6, show_spinner=True)
-def build_prices_krw(period_key="6M"):
+def build_prices_krw(period_key="6M", watchlist_symbols=None):
     period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
     yf_period = period_map.get(period_key, "1y")
     interval = "1d"
 
+    # 관심종목 목록을 매개변수로 받아서 캐시 키에 포함
+    if watchlist_symbols is None:
+        watchlist_symbols = st.session_state.watchlist
+
     # 현재 관심종목에서 국가별로 분류
-    usd_symbols = [s for s in st.session_state.watchlist if classify(s) == "USA"]
-    krw_symbols = [s for s in st.session_state.watchlist if classify(s) == "KOR"]
-    jpy_symbols = [s for s in st.session_state.watchlist if classify(s) == "JPN"]
+    usd_symbols = [s for s in watchlist_symbols if classify(s) == "USA"]
+    krw_symbols = [s for s in watchlist_symbols if classify(s) == "KOR"]
+    jpy_symbols = [s for s in watchlist_symbols if classify(s) == "JPN"]
 
     usdkrw, usdjpy, jpykrw, fx_missing = download_fx(yf_period, interval)
     usd_df, miss_us = download_prices(usd_symbols, yf_period, interval)
@@ -656,7 +686,7 @@ def fetch_long_names(symbols):
 # 데이터 로드 및 이름
 # ------------------------------
 with st.spinner("데이터 불러오는 중…"):
-    prices_krw, miss = build_prices_krw(period)
+    prices_krw, miss = build_prices_krw(period, st.session_state.watchlist)
 if prices_krw.empty:
     st.error("가격 데이터를 불러오지 못했습니다.")
     st.stop()
