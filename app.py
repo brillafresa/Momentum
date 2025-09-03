@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v2.8
+# KRW Momentum Radar - v2.9
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,11 +9,11 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
 #
-# v2.8 개선사항:
-# - 관심종목 영구 저장 기능
-# - 신규 종목 탐색 엔진 (전체 미국 ETF 시장 스캔)
-# - 진부한 종목 자동 편출 제안
-# - 동적 포트폴리오 관리
+# v2.9 개선사항:
+# - 진정한 전체 시장 스캔 (Finviz.com 기반)
+# - 2단계 추진 로켓 방식 (사전 필터링 + 온디맨드 FMS 스캔)
+# - 유니버스 스크리닝 스크립트 (update_universe.py)
+# - 동적 스크리닝 (8,000+ 종목에서 유망주 발굴)
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -53,14 +53,16 @@ DEFAULT_JPY_SYMBOLS = ['2563.T']
 
 
 def classify(sym):
-    if sym.endswith(".KS"): return "KOR"
-    if sym.endswith(".T"):  return "JPN"
+    # sym이 float이나 다른 타입일 경우를 대비해 str로 변환
+    sym_str = str(sym)
+    if sym_str.endswith(".KS"): return "KOR"
+    if sym_str.endswith(".T"):  return "JPN"
     return "USA"
 
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v2.8", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v2.9", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -79,9 +81,9 @@ if 'watchlist' not in st.session_state:
     # 관심종목 초기화 완료
 
 # 현재 관심종목을 기존 변수명으로 매핑 (하위 호환성)
-USD_SYMBOLS = [s for s in st.session_state.watchlist if classify(s) == "USA"]
-KRW_SYMBOLS = [s for s in st.session_state.watchlist if classify(s) == "KOR"]
-JPY_SYMBOLS = [s for s in st.session_state.watchlist if classify(s) == "JPN"]
+USD_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "USA"]
+KRW_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "KOR"]
+JPY_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "JPN"]
 
 # ------------------------------
 # 데이터 다운로드 및 처리 함수들
@@ -312,7 +314,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
             return pd.DataFrame()
         
         # KRW 환산을 위한 FX 데이터 다운로드
-        usd_symbols = [s for s in symbols_batch if classify(s) == "USA"]
+        usd_symbols = [str(s) for s in symbols_batch if classify(s) == "USA"]
         if usd_symbols:
             usdkrw, _, _, _ = download_fx(period_, interval)
             if not usdkrw.empty:
@@ -322,7 +324,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
                     prices[usd_prices.columns] = usd_prices.mul(usdkrw_matched, axis=0)
         
         # JPY 심볼 처리
-        jpy_symbols = [s for s in symbols_batch if classify(s) == "JPN"]
+        jpy_symbols = [str(s) for s in symbols_batch if classify(s) == "JPN"]
         if jpy_symbols:
             _, _, jpykrw, _ = download_fx(period_, interval)
             if not jpykrw.empty:
@@ -344,117 +346,70 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
         st.error(f"FMS 계산 중 오류: {str(e)}")
         return pd.DataFrame()
 
-def get_comprehensive_ticker_list():
-    """
-    실시간으로 포괄적인 종목 목록을 가져옵니다.
-    
-    Returns:
-        list: 종목 심볼 목록
-    """
-    try:
-        # 포괄적인 종목 목록 (중복 제거됨)
-        major_indices = [
-            # S&P 500 주요 종목들 (상위 100개)
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'BRK-B', 'UNH', 'XOM',
-            'JNJ', 'JPM', 'V', 'PG', 'MA', 'HD', 'CVX', 'PFE', 'ABBV', 'BAC',
-            'KO', 'AVGO', 'PEP', 'TMO', 'COST', 'WMT', 'MRK', 'ABT', 'ACN', 'DHR',
-            'VZ', 'ADBE', 'NFLX', 'CRM', 'TXN', 'NKE', 'QCOM', 'AMD', 'INTC', 'HON',
-            'UNP', 'IBM', 'SPGI', 'LOW', 'AMGN', 'CAT', 'GE', 'AXP', 'BKNG', 'GS',
-            'DE', 'SYK', 'BLK', 'ELV', 'LMT', 'TJX', 'GILD', 'MDT', 'ISRG', 'VRTX',
-            'ZTS', 'T', 'ADP', 'MMM', 'RTX', 'PLD', 'SO', 'DUK', 'NEE', 'AON',
-            'ICE', 'ITW', 'ECL', 'SHW', 'CL', 'EMR', 'APD', 'NSC', 'FDX', 'UPS',
-            'CME', 'CCI', 'EQIX', 'REGN', 'BSX', 'BDX', 'EW', 'SYY', 'AEP', 'EXC',
-            'XEL', 'WEC', 'ES', 'ETR', 'PEG', 'ED', 'D',
-            
-            # 주요 ETF들 (대표적인 것만 선택)
-            'SPY', 'QQQ', 'IWM', 'VTI', 'VEA', 'VWO', 'BND', 'GLD', 'SLV',
-            
-            # 섹터 ETF들
-            'XLK', 'XLF', 'XLV', 'XLE', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE', 'XLC',
-            
-            # 테마 ETF들
-            'ARKK', 'ARKQ', 'ARKG', 'ARKW', 'ARKF',  # ARK 시리즈
-            'ICLN', 'QCLN', 'PBW', 'TAN', 'FAN',     # Clean Energy
-            'SOXX', 'SMH', 'BOTZ', 'ROBO', 'AIQ',    # Technology Themes
-            'IBB', 'XBI', 'BIS', 'LABU', 'LABD',     # Biotech
-            'TQQQ', 'SQQQ', 'UPRO', 'SPXU',          # Leveraged
-            'JEPI', 'JEPQ', 'QYLD', 'XYLD', 'RYLD',  # Covered Call
-            'SCHD', 'VYM', 'HDV', 'DVY', 'NOBL',     # Dividend
-            'MTUM', 'QUAL', 'VLUE', 'SIZE',          # Factor ETFs
-            'USMV', 'EFAV', 'EEMV', 'ACWV', 'SPLV',  # Low Volatility
-            
-            # 개별 주식들 (주요 기업들)
-            'COIN', 'PYPL', 'SQ', 'V', 'MA', 'JPM', 'BAC', 'WFC', 'GS', 'MS', 'C',
-            'XOM', 'CVX', 'COP', 'EOG', 'SLB', 'KMI', 'PXD', 'MPC', 'VLO', 'PSX',
-        ]
-        
-        # 중복 제거 및 정렬
-        unique_symbols = list(set(major_indices))
-        unique_symbols.sort()
-        
-        log(f"포괄적 종목 목록 생성: {len(unique_symbols)}개 종목")
-        return unique_symbols
-        
-    except Exception as e:
-        log(f"종목 목록 생성 중 오류: {str(e)}")
-        # 오류 시 기본 목록 반환
-        return ['SPY', 'QQQ', 'VOO', 'VTI', 'IWM', 'GLD', 'TLT', 'XLK', 'XLF', 'XLV']
-
+@st.cache_data(ttl=3600)  # 1시간 캐시하여 반복적인 파일 I/O 및 계산 방지
 def scan_market_for_new_opportunities():
     """
-    전체 미국 시장을 스캔하여 새로운 투자 기회를 발굴합니다.
+    사전 스크리닝된 유망주 유니버스 파일을 읽어 FMS 스코어를 계산합니다.
     
     Returns:
         tuple: (top_performers_df, message)
     """
     try:
-        # 실시간으로 포괄적인 종목 목록 가져오기
-        all_symbols = get_comprehensive_ticker_list()
+        # 변경점 1: 스크리닝된 유니버스 파일 로드
+        universe_df = pd.read_csv('screened_universe.csv')
+        master_list = universe_df['Symbol'].tolist()
         
-        # 현재 관심종목에서 제외
-        current_watchlist = st.session_state.watchlist
-        new_symbols = [s for s in all_symbols if s not in current_watchlist]
+        log(f"스크리닝된 유니버스 로드: {len(master_list)}개 종목")
         
-        if not new_symbols:
-            return pd.DataFrame(), "스캔할 새로운 종목이 없습니다."
-        
-        log(f"총 {len(new_symbols)}개 신규 종목을 스캔합니다...")
-        
-        # 배치 단위로 처리 (API 제한 고려)
-        batch_size = 20
-        all_results = []
-        
-        for i in range(0, len(new_symbols), batch_size):
-            batch = new_symbols[i:i+batch_size]
-            log(f"배치 {i//batch_size + 1}/{(len(new_symbols)-1)//batch_size + 1} 처리 중... ({len(batch)}개 종목)")
-            
-            batch_results = calculate_fms_for_batch(batch)
-            if not batch_results.empty:
-                all_results.append(batch_results)
-        
-        if not all_results:
-            return pd.DataFrame(), "스캔 결과가 없습니다."
-        
-        # 모든 결과 합치기 (인덱스 유지)
-        combined_results = pd.concat(all_results)
-        
-        # 상위 30개 선택
-        top_performers = combined_results.head(30)
-        
-        scan_message = f"✅ {len(new_symbols)}개 종목 스캔 완료! 상위 {len(top_performers)}개 종목 발견"
-        log(scan_message)
-        
-        return top_performers, scan_message
-        
-    except Exception as e:
-        error_msg = f"스캔 중 오류 발생: {str(e)}"
+    except FileNotFoundError:
+        # 변경점 2: 파일이 없을 경우 사용자에게 안내
+        error_msg = "오류: 'screened_universe.csv' 파일을 찾을 수 없습니다. 먼저 `update_universe.py` 스크립트를 실행하여 유망주 목록을 생성해야 합니다."
         log(error_msg)
         return pd.DataFrame(), error_msg
+    except Exception as e:
+        error_msg = f"유니버스 파일 로딩 중 오류 발생: {e}"
+        log(error_msg)
+        return pd.DataFrame(), error_msg
+
+    # 기존 관심종목 제외 로직은 그대로 유지
+    current_watchlist = st.session_state.get('watchlist', [])
+    scan_targets = [s for s in master_list if s not in current_watchlist]
+    
+    if not scan_targets:
+        return pd.DataFrame(), "알림: 현재 유망주 목록의 모든 종목이 이미 관심종목에 포함되어 있습니다."
+
+    log(f"총 {len(scan_targets)}개 신규 종목을 스캔합니다...")
+    
+    # 배치 처리 및 FMS 계산 로직은 기존 구조를 그대로 활용
+    batch_size = 25  # 배치 사이즈는 그대로 유지하거나 조정 가능
+    all_results = []
+    
+    for i in range(0, len(scan_targets), batch_size):
+        batch = scan_targets[i:i+batch_size]
+        log(f"배치 {i//batch_size + 1}/{(len(scan_targets)-1)//batch_size + 1} 처리 중... ({len(batch)}개 종목)")
+        
+        batch_results = calculate_fms_for_batch(batch)
+        if not batch_results.empty:
+            all_results.append(batch_results)
+
+    if not all_results:
+        return pd.DataFrame(), "알림: 스캔 대상 종목에 대한 데이터를 가져오지 못했습니다."
+        
+    # 모든 결과 합치기 (인덱스 유지)
+    combined_results = pd.concat(all_results)
+    
+    # 상위 30개 선택
+    top_performers = combined_results.head(30)
+    
+    scan_message = f"✅ {len(scan_targets)}개 유망 후보 종목 스캔 완료! 상위 {len(top_performers)}개 종목 발견"
+    log(scan_message)
+    
+    return top_performers, scan_message
 
 # ------------------------------
 # 좌측 제어
 # ------------------------------
-st.sidebar.header("⚡ KRW Momentum Radar v2.8")
+st.sidebar.header("⚡ KRW Momentum Radar v2.9")
 
 # 자주 사용하는 설정 (상단)
 st.sidebar.subheader("⚙️ 분석 설정")
@@ -468,8 +423,8 @@ st.sidebar.subheader("📋 관심종목 관리")
 st.sidebar.info(f"현재 관심종목: **{len(st.session_state.watchlist)}개**")
 
 # 신규 종목 탐색
-with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
-    if st.button('🔍 전체 미국 ETF 시장 스캔', type="primary"):
+with st.sidebar.expander("🚀 신규 모멘텀 종목 탐색", expanded=False):
+    if st.button('🔍 유망주 유니버스 스캔 실행', type="primary", help="사전 스크리닝된 목록에서 FMS 상위 종목을 탐색합니다."):
         with st.spinner("전체 시장을 스캔 중입니다..."):
             scan_results, scan_message = scan_market_for_new_opportunities()
             
@@ -504,6 +459,9 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                         st.rerun()
                     else:
                         st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+    
+    # 변경점 2: 안내 문구 추가
+    st.caption("💡 매일 업데이트되는 유망주 목록(1개월 수익률 > 0%, 거래량 > 200k 등) 내에서 FMS 상위 종목을 탐색합니다.")
 
 # 관심종목 재평가
 with st.sidebar.expander("🔄 관심종목 재평가", expanded=False):
@@ -620,9 +578,9 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None):
         watchlist_symbols = st.session_state.watchlist
 
     # 현재 관심종목에서 국가별로 분류
-    usd_symbols = [s for s in watchlist_symbols if classify(s) == "USA"]
-    krw_symbols = [s for s in watchlist_symbols if classify(s) == "KOR"]
-    jpy_symbols = [s for s in watchlist_symbols if classify(s) == "JPN"]
+    usd_symbols = [str(s) for s in watchlist_symbols if classify(s) == "USA"]
+    krw_symbols = [str(s) for s in watchlist_symbols if classify(s) == "KOR"]
+    jpy_symbols = [str(s) for s in watchlist_symbols if classify(s) == "JPN"]
 
     usdkrw, usdjpy, jpykrw, fx_missing = download_fx(yf_period, interval)
     usd_df, miss_us = download_prices(usd_symbols, yf_period, interval)
@@ -701,7 +659,7 @@ def only_name(sym):
     nm = NAME_MAP.get(sym, sym)
     return nm if nm else sym
 
-st.title("⚡ KRW Momentum Radar v2.8")
+st.title("⚡ KRW Momentum Radar v2.9")
 
 
 

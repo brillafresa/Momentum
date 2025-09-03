@@ -152,4 +152,4 @@ Thumbs.db
 *.log
 temp/
 cache/
-watchlist.csv  # 사용자별 관심종목 파일
+# watchlist.csv는 버전 관리에 포함 (기본 관심종목 목록 제공)
