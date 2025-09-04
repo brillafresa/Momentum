@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v2.9
+# KRW Momentum Radar - v2.9.1
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -62,7 +62,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v2.9", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v2.9.1", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -409,7 +409,7 @@ def scan_market_for_new_opportunities():
 # ------------------------------
 # 좌측 제어
 # ------------------------------
-st.sidebar.header("⚡ KRW Momentum Radar v2.9")
+st.sidebar.header("⚡ KRW Momentum Radar v2.9.1")
 
 # 자주 사용하는 설정 (상단)
 st.sidebar.subheader("⚙️ 분석 설정")
@@ -659,7 +659,7 @@ def only_name(sym):
     nm = NAME_MAP.get(sym, sym)
     return nm if nm else sym
 
-st.title("⚡ KRW Momentum Radar v2.9")
+st.title("⚡ KRW Momentum Radar v2.9.1")
 
 
 

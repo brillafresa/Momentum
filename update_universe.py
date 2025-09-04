@@ -77,6 +77,67 @@ def main():
             df = df[df['Rel_Volume_clean'] >= 1.5]
             print(f"  • 상대 거래량 1.5배 이상: {len(df)}개")
         
+        # 레버리지/인버스 ETF 제외 필터링
+        if not df.empty and 'Ticker' in df.columns:
+            print("🚫 레버리지/인버스 ETF 제외 필터링 중...")
+            
+            # 레버리지/인버스 패턴 정의 (더 포괄적으로 확장)
+            leverage_patterns = [
+                # 명시적 레버리지 패턴
+                '2X', '3X', '2x', '3x', '2X', '3X',  # 레버리지
+                '2배', '3배', '2X배', '3X배',           # 한국어 레버리지
+                '1.5X', '1.75X', '1.5x', '1.75x',     # 소수점 레버리지
+                
+                # 인버스 패턴
+                'Inverse', 'Short', 'Bear',            # 인버스
+                '-1X', '-2X', '-3X', '-1x', '-2x', '-3x',  # 인버스 레버리지
+                
+                # ProShares 관련 패턴 (더 포괄적)
+                'Leveraged', 'Ultra', 'ProShares',     # 기타 레버리지 관련 키워드
+                'ULTRA', 'ULTRA SHORT', 'ULTRA LONG',  # Ultra 시리즈
+                
+                # 알려진 레버리지 ETF 티커 패턴
+                'AAPB', 'AAPU',  # ProShares UltraShort/Ultra AAPL
+                'SPXU', 'UPRO',  # ProShares S&P 500 레버리지
+                'TQQQ', 'SQQQ',  # ProShares NASDAQ 레버리지
+                'TMF', 'TMV',    # ProShares 20년+ 국채 레버리지
+                'FAS', 'FAZ',    # ProShares 금융 섹터 레버리지
+                'ERX', 'ERY',    # ProShares 에너지 섹터 레버리지
+                'TNA', 'TZA',    # ProShares 소형주 레버리지
+                'LABU', 'LABD',  # ProShares 바이오테크 레버리지
+                'CURE', 'RXL',   # ProShares 헬스케어 레버리지
+                'BOIL', 'KOLD',  # ProShares 천연가스 레버리지
+                'NUGT', 'DUST',  # ProShares 금광업 레버리지
+                'JNUG', 'JDST',  # ProShares 주니어 금광업 레버리지
+                'UVXY', 'SVXY',  # ProShares VIX 레버리지
+                'TVIX', 'XIV',   # ProShares VIX 레버리지
+                'YINN', 'YANG',  # ProShares 중국 레버리지
+                'KWEB', 'CQQQ',  # ProShares 중국 인터넷 레버리지
+                'TECL', 'TECS',  # ProShares 기술 섹터 레버리지
+                'SOXL', 'SOXS',  # ProShares 반도체 레버리지
+                'TBT', 'UBT',    # ProShares 국채 레버리지
+                'TYD', 'TYO',    # ProShares 7-10년 국채 레버리지
+                'UST', 'PST',    # ProShares 단기 국채 레버리지
+            ]
+            
+            # 제외할 종목들 식별
+            excluded_tickers = []
+            for ticker in df['Ticker'].tolist():
+                ticker_upper = str(ticker).upper()
+                for pattern in leverage_patterns:
+                    if pattern.upper() in ticker_upper:
+                        excluded_tickers.append(ticker)
+                        break
+            
+            # 제외할 종목들 제거
+            if excluded_tickers:
+                df = df[~df['Ticker'].isin(excluded_tickers)]
+                print(f"  • 레버리지/인버스 ETF 제외: {len(excluded_tickers)}개")
+                print(f"  • 제외된 종목 예시: {excluded_tickers[:10]}{'...' if len(excluded_tickers) > 10 else ''}")
+                print(f"  • 남은 종목: {len(df)}개")
+            else:
+                print(f"  • 레버리지/인버스 ETF 없음: {len(df)}개")
+        
         if not df.empty and 'Ticker' in df.columns:
             tickers = df['Ticker'].tolist()
             
