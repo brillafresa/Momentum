@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v2.9.1
+# KRW Momentum Radar - v3.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,17 +9,19 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
 #
-# v2.9 개선사항:
-# - 진정한 전체 시장 스캔 (Finviz.com 기반)
-# - 2단계 추진 로켓 방식 (사전 필터링 + 온디맨드 FMS 스캔)
-# - 유니버스 스크리닝 스크립트 (update_universe.py)
-# - 동적 스크리닝 (8,000+ 종목에서 유망주 발굴)
+# v3.0 개선사항:
+# - 모듈화된 유니버스 관리 시스템 (universe_utils.py)
+# - 실시간 진행률 표시 및 중복 제거
+# - 유니버스 파일 업로드 기능 복구
+# - 성능 최적화 및 사용자 경험 개선
+# - 코드 정리 및 문서화 강화
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
 
 import warnings
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -27,6 +29,7 @@ import pytz
 import streamlit as st
 import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
+from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -289,12 +292,16 @@ def momentum_now_and_delta(prices_krw):
     return df.sort_values("FMS", ascending=False)
 
 # ------------------------------
+# 유니버스 업데이트 함수들은 universe_utils.py로 이동
+# ------------------------------
+
+# ------------------------------
 # 신규 종목 탐색 엔진 함수들
 # ------------------------------
-@st.cache_data(ttl=60*60*2, show_spinner=False)  # 2시간 캐시
 def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
     """
     배치 단위로 FMS를 계산합니다.
+    API 제한을 회피하기 위해 재시도 로직과 타임아웃을 포함합니다.
     
     Args:
         symbols_batch (list): 계산할 심볼 목록
@@ -307,71 +314,149 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
     if not symbols_batch:
         return pd.DataFrame()
     
-    try:
-        # 가격 데이터 다운로드
-        prices, missing = download_prices(symbols_batch, period_, interval)
-        if prices.empty:
-            return pd.DataFrame()
-        
-        # KRW 환산을 위한 FX 데이터 다운로드
-        usd_symbols = [str(s) for s in symbols_batch if classify(s) == "USA"]
-        if usd_symbols:
-            usdkrw, _, _, _ = download_fx(period_, interval)
-            if not usdkrw.empty:
-                usdkrw_matched = usdkrw.reindex(prices.index).ffill()
-                usd_prices = prices[[s for s in usd_symbols if s in prices.columns]]
-                if not usd_prices.empty:
-                    prices[usd_prices.columns] = usd_prices.mul(usdkrw_matched, axis=0)
-        
-        # JPY 심볼 처리
-        jpy_symbols = [str(s) for s in symbols_batch if classify(s) == "JPN"]
-        if jpy_symbols:
-            _, _, jpykrw, _ = download_fx(period_, interval)
-            if not jpykrw.empty:
-                jpykrw_matched = jpykrw.reindex(prices.index).ffill()
-                jpy_prices = prices[[s for s in jpy_symbols if s in prices.columns]]
-                if not jpy_prices.empty:
-                    prices[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
-        
-        # 캘린더 정규화
-        prices_krw = harmonize_calendar(prices, coverage=0.8)
-        if prices_krw.empty:
-            return pd.DataFrame()
-        
-        # FMS 계산
-        df = momentum_now_and_delta(prices_krw)
-        return df.sort_values("FMS", ascending=False)
-        
-    except Exception as e:
-        st.error(f"FMS 계산 중 오류: {str(e)}")
-        return pd.DataFrame()
+    max_retries = 3
+    retry_delay = 2  # 초
+    
+    for attempt in range(max_retries):
+        try:
+            # 가격 데이터 다운로드
+            prices, missing = download_prices(symbols_batch, period_, interval)
+            if prices.empty:
+                if attempt < max_retries - 1:
+                    log(f"배치 데이터 없음, 재시도 {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay)
+                    continue
+                return pd.DataFrame()
+            
+            # KRW 환산을 위한 FX 데이터 다운로드
+            usd_symbols = [str(s) for s in symbols_batch if classify(s) == "USA"]
+            if usd_symbols:
+                usdkrw, _, _, _ = download_fx(period_, interval)
+                if not usdkrw.empty:
+                    usdkrw_matched = usdkrw.reindex(prices.index).ffill()
+                    usd_prices = prices[[s for s in usd_symbols if s in prices.columns]]
+                    if not usd_prices.empty:
+                        prices[usd_prices.columns] = usd_prices.mul(usdkrw_matched, axis=0)
+            
+            # JPY 심볼 처리
+            jpy_symbols = [str(s) for s in symbols_batch if classify(s) == "JPN"]
+            if jpy_symbols:
+                _, _, jpykrw, _ = download_fx(period_, interval)
+                if not jpykrw.empty:
+                    jpykrw_matched = jpykrw.reindex(prices.index).ffill()
+                    jpy_prices = prices[[s for s in jpy_symbols if s in prices.columns]]
+                    if not jpy_prices.empty:
+                        prices[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
+            
+            # 캘린더 정규화
+            prices_krw = harmonize_calendar(prices, coverage=0.8)
+            if prices_krw.empty:
+                if attempt < max_retries - 1:
+                    log(f"캘린더 정규화 실패, 재시도 {attempt + 1}/{max_retries}")
+                    time.sleep(retry_delay)
+                    continue
+                return pd.DataFrame()
+            
+            # FMS 계산
+            df = momentum_now_and_delta(prices_krw)
+            return df.sort_values("FMS", ascending=False)
+            
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(keyword in error_msg for keyword in ["rate limit", "too many requests", "429", "timeout"]):
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)  # 지수 백오프
+                    log(f"API 제한 감지, {wait_time}초 대기 후 재시도 {attempt + 1}/{max_retries}")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    log(f"API 제한으로 인한 최종 실패: {str(e)}")
+                    return pd.DataFrame()
+            else:
+                log(f"FMS 계산 중 오류 (시도 {attempt + 1}): {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return pd.DataFrame()
+    
+    return pd.DataFrame()
 
-@st.cache_data(ttl=3600)  # 1시간 캐시하여 반복적인 파일 I/O 및 계산 방지
 def scan_market_for_new_opportunities():
     """
-    사전 스크리닝된 유망주 유니버스 파일을 읽어 FMS 스코어를 계산합니다.
+    유니버스 업데이트 후 FMS 스코어를 계산합니다.
+    진행 상황을 실시간으로 모니터링할 수 있도록 개선되었습니다.
     
     Returns:
         tuple: (top_performers_df, message)
     """
+    # 1단계: 유니버스 파일 신선도 확인 및 업데이트
+    log("🔍 유니버스 파일 상태 확인 중...")
+    
+    is_fresh, last_modified, hours_since_update = check_universe_file_freshness()
+    
+    # 유니버스 업데이트 진행 상황 표시를 위한 컨테이너 생성
+    universe_progress_container = st.empty()
+    universe_status_container = st.empty()
+    
+    if is_fresh:
+        universe_status_container.text(f"✅ 유니버스 파일이 최신입니다 (업데이트: {last_modified.strftime('%Y-%m-%d %H:%M:%S')}, {hours_since_update:.1f}시간 전)")
+        log(f"✅ 유니버스 파일이 최신입니다 (업데이트: {last_modified.strftime('%Y-%m-%d %H:%M:%S')}, {hours_since_update:.1f}시간 전)")
+    else:
+        if last_modified:
+            universe_status_container.text(f"⚠️ 유니버스 파일이 오래되었습니다 (업데이트: {last_modified.strftime('%Y-%m-%d %H:%M:%S')}, {hours_since_update:.1f}시간 전)")
+            log(f"⚠️ 유니버스 파일이 오래되었습니다 (업데이트: {last_modified.strftime('%Y-%m-%d %H:%M:%S')}, {hours_since_update:.1f}시간 전)")
+        else:
+            universe_status_container.text("⚠️ 유니버스 파일이 없습니다")
+            log("⚠️ 유니버스 파일이 없습니다")
+        
+        universe_status_container.text("🔄 유니버스 업데이트 시작...")
+        log("🔄 유니버스 업데이트 시작...")
+        
+        # 진행률 콜백 함수 정의
+        def progress_callback(progress, message):
+            universe_progress_container.progress(progress, text=message)
+            log(f"진행률 {progress*100:.0f}%: {message}")
+        
+        def status_callback(message):
+            universe_status_container.text(message)
+            log(message)
+        
+        # 유니버스 업데이트 실행 (진행 상황 표시 포함)
+        update_success, update_message, symbol_count = update_universe_file(
+            progress_callback=progress_callback,
+            status_callback=status_callback
+        )
+        
+        if not update_success:
+            error_msg = f"유니버스 업데이트 실패: {update_message}"
+            universe_status_container.text(f"❌ {error_msg}")
+            log(error_msg)
+            return pd.DataFrame(), error_msg
+        
+        universe_status_container.text(f"✅ {update_message}")
+        log(f"✅ {update_message}")
+    
+    # 유니버스 업데이트 컨테이너 정리
+    universe_progress_container.empty()
+    universe_status_container.empty()
+    
+    # 2단계: 스크리닝된 유니버스 파일 로드
     try:
-        # 변경점 1: 스크리닝된 유니버스 파일 로드
-        universe_df = pd.read_csv('screened_universe.csv')
-        master_list = universe_df['Symbol'].tolist()
+        success, master_list, load_message = load_universe_file()
         
-        log(f"스크리닝된 유니버스 로드: {len(master_list)}개 종목")
+        if not success:
+            error_msg = f"유니버스 파일 로드 실패: {load_message}"
+            log(error_msg)
+            return pd.DataFrame(), error_msg
         
-    except FileNotFoundError:
-        # 변경점 2: 파일이 없을 경우 사용자에게 안내
-        error_msg = "오류: 'screened_universe.csv' 파일을 찾을 수 없습니다. 먼저 `update_universe.py` 스크립트를 실행하여 유망주 목록을 생성해야 합니다."
-        log(error_msg)
-        return pd.DataFrame(), error_msg
+        log(f"📊 {load_message}")
+        
     except Exception as e:
         error_msg = f"유니버스 파일 로딩 중 오류 발생: {e}"
         log(error_msg)
         return pd.DataFrame(), error_msg
 
-    # 기존 관심종목 제외 로직은 그대로 유지
+    # 기존 관심종목 제외
     current_watchlist = st.session_state.get('watchlist', [])
     scan_targets = [s for s in master_list if s not in current_watchlist]
     
@@ -380,29 +465,127 @@ def scan_market_for_new_opportunities():
 
     log(f"총 {len(scan_targets)}개 신규 종목을 스캔합니다...")
     
-    # 배치 처리 및 FMS 계산 로직은 기존 구조를 그대로 활용
-    batch_size = 25  # 배치 사이즈는 그대로 유지하거나 조정 가능
-    all_results = []
+    # 진행 상황 모니터링을 위한 상태 초기화
+    if 'scan_progress' not in st.session_state:
+        st.session_state.scan_progress = {
+            'total_batches': 0,
+            'completed_batches': 0,
+            'current_batch': 0,
+            'successful_symbols': 0,
+            'failed_symbols': 0,
+            'start_time': None,
+            'last_update': None
+        }
     
-    for i in range(0, len(scan_targets), batch_size):
-        batch = scan_targets[i:i+batch_size]
-        log(f"배치 {i//batch_size + 1}/{(len(scan_targets)-1)//batch_size + 1} 처리 중... ({len(batch)}개 종목)")
-        
-        batch_results = calculate_fms_for_batch(batch)
-        if not batch_results.empty:
-            all_results.append(batch_results)
-
+    # 스캔 상태 초기화
+    st.session_state.scan_progress.update({
+        'total_batches': 0,
+        'completed_batches': 0,
+        'current_batch': 0,
+        'successful_symbols': 0,
+        'failed_symbols': 0,
+        'start_time': datetime.now(KST),
+        'last_update': datetime.now(KST)
+    })
+    
+    # 배치 처리 설정 (테스트 결과 기반 최적화)
+    batch_size = 20  # 테스트 결과: 20개가 최적
+    total_batches = (len(scan_targets) - 1) // batch_size + 1
+    st.session_state.scan_progress['total_batches'] = total_batches
+    
+    log(f"배치 크기: {batch_size}개, 총 배치 수: {total_batches}개")
+    
+    all_results = []
+    failed_batches = []
+    
+    # 진행 상황 표시를 위한 컨테이너 생성
+    progress_container = st.empty()
+    status_container = st.empty()
+    
+    try:
+        for i in range(0, len(scan_targets), batch_size):
+            batch_num = i // batch_size + 1
+            batch = scan_targets[i:i+batch_size]
+            
+            # 진행 상황 업데이트
+            st.session_state.scan_progress.update({
+                'current_batch': batch_num,
+                'last_update': datetime.now(KST)
+            })
+            
+            # 진행률 계산
+            progress = batch_num / total_batches
+            elapsed_time = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
+            
+            # 진행 상황 표시
+            progress_container.progress(progress, text=f"배치 {batch_num}/{total_batches} 처리 중... ({len(batch)}개 종목)")
+            status_container.text(f"처리 중: {batch[0]} ~ {batch[-1]} | 경과시간: {elapsed_time:.0f}초")
+            
+            log(f"배치 {batch_num}/{total_batches} 처리 중... ({len(batch)}개 종목: {batch[0]} ~ {batch[-1]})")
+            
+            try:
+                # 배치 처리 (타임아웃 설정)
+                batch_results = calculate_fms_for_batch(batch)
+                
+                if not batch_results.empty:
+                    all_results.append(batch_results)
+                    st.session_state.scan_progress['successful_symbols'] += len(batch_results)
+                    log(f"✅ 배치 {batch_num} 완료: {len(batch_results)}개 종목 성공")
+                else:
+                    st.session_state.scan_progress['failed_symbols'] += len(batch)
+                    failed_batches.append(batch_num)
+                    log(f"⚠️ 배치 {batch_num} 실패: 데이터 없음")
+                
+            except Exception as e:
+                st.session_state.scan_progress['failed_symbols'] += len(batch)
+                failed_batches.append(batch_num)
+                log(f"❌ 배치 {batch_num} 오류: {str(e)}")
+                
+                # yfinance API 제한 감지 시 잠시 대기
+                if "rate limit" in str(e).lower() or "too many requests" in str(e).lower():
+                    log("⏳ API 제한 감지, 5초 대기...")
+                    time.sleep(5)
+            
+            st.session_state.scan_progress['completed_batches'] = batch_num
+            
+            # 배치 간 대기 (API 제한 방지) - 테스트 결과 기반 최적화
+            time.sleep(2)  # 2초 대기로 API 제한 방지
+    
+    except Exception as e:
+        log(f"❌ 스캔 중 치명적 오류: {str(e)}")
+        return pd.DataFrame(), f"스캔 중 오류 발생: {str(e)}"
+    
+    finally:
+        # 진행 상황 컨테이너 정리
+        progress_container.empty()
+        status_container.empty()
+    
+    # 최종 결과 처리
     if not all_results:
         return pd.DataFrame(), "알림: 스캔 대상 종목에 대한 데이터를 가져오지 못했습니다."
-        
-    # 모든 결과 합치기 (인덱스 유지)
+    
+    # 모든 결과 합치기
     combined_results = pd.concat(all_results)
     
     # 상위 30개 선택
     top_performers = combined_results.head(30)
     
-    scan_message = f"✅ {len(scan_targets)}개 유망 후보 종목 스캔 완료! 상위 {len(top_performers)}개 종목 발견"
+    # 최종 통계
+    total_time = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
+    success_rate = (st.session_state.scan_progress['successful_symbols'] / 
+                   (st.session_state.scan_progress['successful_symbols'] + st.session_state.scan_progress['failed_symbols'])) * 100
+    
+    scan_message = (f"✅ 스캔 완료! "
+                   f"성공: {st.session_state.scan_progress['successful_symbols']}개, "
+                   f"실패: {st.session_state.scan_progress['failed_symbols']}개, "
+                   f"성공률: {success_rate:.1f}%, "
+                   f"소요시간: {total_time:.0f}초")
+    
     log(scan_message)
+    
+    # 실패한 배치가 있으면 경고
+    if failed_batches:
+        log(f"⚠️ 실패한 배치: {failed_batches[:10]}{'...' if len(failed_batches) > 10 else ''}")
     
     return top_performers, scan_message
 
@@ -513,49 +696,74 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
 
 # 3. 신규 종목 탐색
 with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
-    # 유니버스 파일 관리
-    st.markdown("**📊 유니버스 파일 관리**")
-    uploaded_universe = st.file_uploader(
-        "📤 유니버스 업로드", 
-        type=['csv'],
-        help="screened_universe.csv 파일을 업로드하여 유니버스를 업데이트합니다.",
-        key="universe_uploader"
-    )
-    
-    if uploaded_universe is not None and not st.session_state.get('universe_upload_processed', False):
-        try:
-            with open('screened_universe.csv', 'wb') as f:
-                f.write(uploaded_universe.getbuffer())
-            st.success("✅ 유니버스 파일이 업데이트되었습니다!")
-            st.session_state.universe_upload_processed = True
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ 파일 업로드 중 오류가 발생했습니다: {str(e)}")
-    
-    if st.session_state.get('universe_upload_processed', False):
-        st.session_state.universe_upload_processed = False
-    
-    # 구분선
-    st.divider()
     
     # 스캔 실행
     st.markdown("**🔍 종목 스캔**")
-    if st.button('유니버스 스캔 실행', type="primary", help="사전 스크리닝된 목록에서 FMS 상위 종목을 탐색합니다."):
-        with st.spinner("전체 시장을 스캔 중입니다..."):
-            try:
-                scan_results, scan_message = scan_market_for_new_opportunities()
-                
-                if not scan_results.empty:
-                    st.success(scan_message)
-                    top_results = scan_results.head(10)
-                    st.session_state['scan_results'] = top_results
-                else:
-                    st.error(f"스캔 결과가 없습니다: {scan_message}")
-                    st.session_state['scan_results'] = None
-                    
-            except Exception as e:
-                st.error(f"스캔 실행 중 오류가 발생했습니다: {str(e)}")
+    
+    # 유니버스 파일 상태 표시
+    is_fresh, last_modified, hours_since_update = check_universe_file_freshness()
+    if is_fresh and last_modified:
+        st.info(f"📊 유니버스 파일 최신 상태: {last_modified.strftime('%Y-%m-%d %H:%M:%S')} ({hours_since_update:.1f}시간 전)")
+    elif last_modified:
+        st.warning(f"⚠️ 유니버스 파일 오래됨: {last_modified.strftime('%Y-%m-%d %H:%M:%S')} ({hours_since_update:.1f}시간 전) - 업데이트 필요")
+    else:
+        st.error("❌ 유니버스 파일 없음 - 업데이트 필요")
+    
+    # 유니버스 파일 업로드
+    uploaded_universe = st.file_uploader(
+        "📤 유니버스 파일 업로드", 
+        type=['csv'],
+        help="CSV 파일을 업로드하여 유니버스를 교체합니다. (선택사항)",
+        key="universe_uploader"
+    )
+    
+    if uploaded_universe is not None:
+        try:
+            # 업로드된 파일을 임시로 저장
+            temp_universe = pd.read_csv(uploaded_universe)
+            if 'Symbol' in temp_universe.columns:
+                temp_universe.to_csv('screened_universe.csv', index=False)
+                st.success(f"✅ 유니버스 파일이 업데이트되었습니다: {len(temp_universe)}개 종목")
+                st.rerun()
+            else:
+                st.error("❌ CSV 파일에 'Symbol' 컬럼이 없습니다.")
+        except Exception as e:
+            st.error(f"❌ 파일 업로드 중 오류가 발생했습니다: {str(e)}")
+    
+    # 스캔 진행 상황 표시
+    if 'scan_progress' in st.session_state and st.session_state.scan_progress['total_batches'] > 0:
+        progress = st.session_state.scan_progress['completed_batches'] / st.session_state.scan_progress['total_batches']
+        st.progress(progress, text=f"FMS 스캔 진행률: {st.session_state.scan_progress['completed_batches']}/{st.session_state.scan_progress['total_batches']} 배치")
+        
+        if st.session_state.scan_progress['start_time']:
+            elapsed = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
+            st.caption(f"경과시간: {elapsed:.0f}초 | 성공: {st.session_state.scan_progress['successful_symbols']}개 | 실패: {st.session_state.scan_progress['failed_symbols']}개")
+        
+        # 스캔 중단 버튼
+        if st.button('⏹️ 스캔 중단', help="진행 중인 스캔을 중단합니다."):
+            if 'scan_progress' in st.session_state:
+                del st.session_state.scan_progress
+            st.rerun()
+    
+    if st.button('🚀 유니버스 스캔 실행', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다."):
+        # 스캔 상태 초기화
+        if 'scan_progress' in st.session_state:
+            del st.session_state.scan_progress
+        
+        try:
+            scan_results, scan_message = scan_market_for_new_opportunities()
+            
+            if not scan_results.empty:
+                st.success(scan_message)
+                top_results = scan_results.head(10)
+                st.session_state['scan_results'] = top_results
+            else:
+                st.error(f"스캔 결과가 없습니다: {scan_message}")
                 st.session_state['scan_results'] = None
+                
+        except Exception as e:
+            st.error(f"스캔 실행 중 오류가 발생했습니다: {str(e)}")
+            st.session_state['scan_results'] = None
     
     # 스캔 결과 표시
     if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:

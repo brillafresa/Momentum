@@ -30,8 +30,8 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션 (v2.9)
-├── update_universe.py        # 유니버스 스크리닝 스크립트
+├── app.py                    # 메인 Streamlit 애플리케이션 (v3.0)
+├── universe_utils.py         # 유니버스 관리 유틸리티 (NEW!)
 ├── watchlist_utils.py        # 관심종목 관리 유틸리티
 ├── watchlist.csv            # 사용자 관심종목 저장 파일 (버전 관리 포함)
 ├── screened_universe.csv     # 사전 필터링된 유망주 목록
@@ -50,7 +50,7 @@ Momentum/
 ### 중요 파일 관리
 - **watchlist.csv**: 사용자 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
 - **screened_universe.csv**: 사전 필터링된 유망주 목록 (매일 업데이트 권장)
-- **update_universe.py**: 유니버스 스크리닝 스크립트 (독립 실행 가능)
+- **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
 
 ## 개발 가이드라인
 - **캐싱**: `@st.cache_data` 적절히 사용하여 성능 최적화
