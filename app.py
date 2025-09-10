@@ -65,7 +65,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v2.9.1", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -567,8 +567,8 @@ def scan_market_for_new_opportunities():
     # 모든 결과 합치기
     combined_results = pd.concat(all_results)
     
-    # 상위 30개 선택
-    top_performers = combined_results.head(30)
+    # FMS 순으로 정렬 후 상위 30개 선택
+    top_performers = combined_results.sort_values("FMS", ascending=False).head(30)
     
     # 최종 통계
     total_time = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
@@ -932,7 +932,7 @@ def only_name(sym):
     nm = NAME_MAP.get(sym, sym)
     return nm if nm else sym
 
-st.title("⚡ KRW Momentum Radar v2.9.1")
+st.title("⚡ KRW Momentum Radar v3.0")
 
 
 
