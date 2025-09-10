@@ -26,7 +26,7 @@ import plotly.graph_objects as go
 import pytz
 import streamlit as st
 import yfinance as yf
-from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist
+from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -407,41 +407,160 @@ def scan_market_for_new_opportunities():
     return top_performers, scan_message
 
 # ------------------------------
-# 좌측 제어
+# 좌측 제어 - 깔끔하게 정리된 메뉴 구조
 # ------------------------------
-st.sidebar.header("⚡ KRW Momentum Radar v2.9.1")
 
-# 자주 사용하는 설정 (상단)
-st.sidebar.subheader("⚙️ 분석 설정")
-period = st.sidebar.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
-rank_by = st.sidebar.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)  # 기본 FMS
-TOP_N = st.sidebar.slider("Top N", 5, 60, 20, step=5)
-use_log_scale = st.sidebar.checkbox("비교차트 로그 스케일", True)
+# 1. 분석 설정
+with st.sidebar.expander("📊 분석 설정", expanded=True):
+    period = st.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
+    rank_by = st.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)
+    TOP_N = st.slider("Top N", 5, 60, 20, step=5)
+    use_log_scale = st.checkbox("비교차트 로그 스케일", True)
 
-# 관심종목 관리 섹션 (하단)
-st.sidebar.subheader("📋 관심종목 관리")
-st.sidebar.info(f"현재 관심종목: **{len(st.session_state.watchlist)}개**")
-
-# 신규 종목 탐색
-with st.sidebar.expander("🚀 신규 모멘텀 종목 탐색", expanded=False):
-    if st.button('🔍 유망주 유니버스 스캔 실행', type="primary", help="사전 스크리닝된 목록에서 FMS 상위 종목을 탐색합니다."):
-        with st.spinner("전체 시장을 스캔 중입니다..."):
-            scan_results, scan_message = scan_market_for_new_opportunities()
+# 2. 관심종목 관리
+with st.sidebar.expander("📋 관심종목 관리", expanded=False):
+    # 현재 관심종목 정보
+    st.info(f"현재 관심종목: **{len(st.session_state.watchlist)}개**")
+    
+    # 파일 관리
+    st.markdown("**📁 파일 관리**")
+    
+    # 다운로드
+    if st.button("💾 관심종목 다운로드", help="현재 관심종목을 CSV 파일로 다운로드합니다."):
+        csv_data = export_watchlist_to_csv(
+            st.session_state.watchlist, 
+            country_classifier=classify, 
+            name_display=display_name
+        )
+        
+        if csv_data:
+            st.download_button(
+                label="📥 CSV 파일 다운로드",
+                data=csv_data,
+                file_name=f"watchlist_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("❌ 다운로드 데이터 생성 중 오류가 발생했습니다.")
+    
+    # 업로드
+    uploaded_watchlist = st.file_uploader(
+        "📤 관심종목 업로드", 
+        type=['csv'],
+        help="CSV 파일을 업로드하여 관심종목을 교체합니다.",
+        key="watchlist_uploader"
+    )
+    
+    if uploaded_watchlist is not None and not st.session_state.get('upload_processed', False):
+        try:
+            csv_data = uploaded_watchlist.read().decode('utf-8-sig')
+            new_symbols, message = import_watchlist_from_csv(csv_data)
             
-            if not scan_results.empty:
-                st.success(scan_message)
-                
-                # 상위 10개만 표시하고 세션 상태에 저장
-                top_results = scan_results.head(10)
-                st.session_state['scan_results'] = top_results
+            if new_symbols:
+                st.session_state.watchlist = new_symbols
+                st.cache_data.clear()
+                st.success(message)
+                st.session_state.upload_processed = True
+                st.rerun()
             else:
-                st.error("스캔 결과가 없습니다.")
+                st.error(message)
+                
+        except Exception as e:
+            st.error(f"❌ 파일 업로드 중 오류가 발생했습니다: {str(e)}")
+    
+    # 업로드 처리 완료 후 플래그 리셋
+    if st.session_state.get('upload_processed', False):
+        st.session_state.upload_processed = False
+    
+    # 구분선
+    st.divider()
+    
+    # 재평가 기능
+    st.markdown("**🔄 재평가**")
+    if st.button("📊 재평가 실행", help="현재 관심종목의 FMS를 재계산하여 저성과 종목을 식별합니다."):
+        with st.spinner("관심종목을 재평가 중입니다..."):
+            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
+            
+            if not watchlist_fms.empty:
+                fms_25th = watchlist_fms['FMS'].quantile(0.25)
+                stale_candidates = watchlist_fms[watchlist_fms['FMS'] < fms_25th].sort_values('FMS')
+                
+                if not stale_candidates.empty:
+                    st.warning(f"FMS 하위 25% 종목 ({len(stale_candidates)}개) 발견")
+                    st.session_state['reassessment_results'] = stale_candidates
+                else:
+                    st.success("모든 관심종목이 양호한 상태입니다!")
+                    st.session_state['reassessment_results'] = None
+            else:
+                st.error("재평가 데이터를 가져올 수 없습니다.")
+                st.session_state['reassessment_results'] = None
+    
+    # 재평가 결과 표시
+    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
+        st.markdown("**📋 제거 제안 종목:**")
+        stale_candidates = st.session_state['reassessment_results']
+        
+        for symbol in stale_candidates.index[:5]:
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                fms_score = stale_candidates.loc[symbol, 'FMS']
+                st.write(f"**{symbol}** (FMS: {fms_score:.1f})")
+            with col2:
+                if st.button("🗑️", key=f"remove_{symbol}"):
+                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
+                    st.cache_data.clear()
+                    st.rerun()
+
+# 3. 신규 종목 탐색
+with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
+    # 유니버스 파일 관리
+    st.markdown("**📊 유니버스 파일 관리**")
+    uploaded_universe = st.file_uploader(
+        "📤 유니버스 업로드", 
+        type=['csv'],
+        help="screened_universe.csv 파일을 업로드하여 유니버스를 업데이트합니다.",
+        key="universe_uploader"
+    )
+    
+    if uploaded_universe is not None and not st.session_state.get('universe_upload_processed', False):
+        try:
+            with open('screened_universe.csv', 'wb') as f:
+                f.write(uploaded_universe.getbuffer())
+            st.success("✅ 유니버스 파일이 업데이트되었습니다!")
+            st.session_state.universe_upload_processed = True
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ 파일 업로드 중 오류가 발생했습니다: {str(e)}")
+    
+    if st.session_state.get('universe_upload_processed', False):
+        st.session_state.universe_upload_processed = False
+    
+    # 구분선
+    st.divider()
+    
+    # 스캔 실행
+    st.markdown("**🔍 종목 스캔**")
+    if st.button('유니버스 스캔 실행', type="primary", help="사전 스크리닝된 목록에서 FMS 상위 종목을 탐색합니다."):
+        with st.spinner("전체 시장을 스캔 중입니다..."):
+            try:
+                scan_results, scan_message = scan_market_for_new_opportunities()
+                
+                if not scan_results.empty:
+                    st.success(scan_message)
+                    top_results = scan_results.head(10)
+                    st.session_state['scan_results'] = top_results
+                else:
+                    st.error(f"스캔 결과가 없습니다: {scan_message}")
+                    st.session_state['scan_results'] = None
+                    
+            except Exception as e:
+                st.error(f"스캔 실행 중 오류가 발생했습니다: {str(e)}")
                 st.session_state['scan_results'] = None
     
-    # 스캔 결과가 있으면 표시
+    # 스캔 결과 표시
     if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:
-        top_results = st.session_state['scan_results']
         st.markdown("**📋 발견된 종목:**")
+        top_results = st.session_state['scan_results']
         
         for idx, (symbol, row) in enumerate(top_results.iterrows()):
             col1, col2 = st.columns([3, 1])
@@ -451,92 +570,38 @@ with st.sidebar.expander("🚀 신규 모멘텀 종목 탐색", expanded=False):
                 if st.button("➕", key=f"add_{symbol}"):
                     if symbol not in st.session_state.watchlist:
                         st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
-                        # 스캔 결과에서도 제거
                         if 'scan_results' in st.session_state:
                             st.session_state['scan_results'] = None
-                        # 캐시 무효화 및 페이지 새로고침
                         st.cache_data.clear()
                         st.rerun()
                     else:
                         st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
     
-    # 변경점 2: 안내 문구 추가
-    st.caption("💡 매일 업데이트되는 유망주 목록(1개월 수익률 > 0%, 거래량 > 200k 등) 내에서 FMS 상위 종목을 탐색합니다.")
 
-# 관심종목 재평가
-with st.sidebar.expander("🔄 관심종목 재평가", expanded=False):
-    if st.button("📊 FMS 기반 재평가 실행"):
-        with st.spinner("관심종목을 재평가 중입니다..."):
-            # 관심종목 FMS 계산
-            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
-            
-            if not watchlist_fms.empty:
-                # FMS 하위 25% 식별
-                fms_25th = watchlist_fms['FMS'].quantile(0.25)
-                stale_candidates = watchlist_fms[watchlist_fms['FMS'] < fms_25th].sort_values('FMS')
-                
-                if not stale_candidates.empty:
-                    st.warning(f"FMS 하위 25% 종목 ({len(stale_candidates)}개) 발견")
-                    
-                    # 세션 상태에 재평가 결과 저장
-                    st.session_state['reassessment_results'] = stale_candidates
-                else:
-                    st.success("모든 관심종목이 양호한 상태입니다!")
-                    st.session_state['reassessment_results'] = None
-            else:
-                st.error("재평가 데이터를 가져올 수 없습니다.")
-                st.session_state['reassessment_results'] = None
-    
-    # 재평가 결과가 있으면 표시
-    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
-        stale_candidates = st.session_state['reassessment_results']
-        st.markdown("**📋 제거 제안 종목:**")
-        
-        for symbol in stale_candidates.index[:5]:  # 상위 5개만 표시
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**{symbol}** (FMS: {stale_candidates.loc[symbol, 'FMS']:.1f})")
-            with col2:
-                if st.button("🗑️", key=f"remove_{symbol}"):
-                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
-                    # 재평가 결과에서도 제거
-                    if 'reassessment_results' in st.session_state:
-                        st.session_state['reassessment_results'] = None
-                    # 캐시 무효화 및 페이지 새로고침
-                    st.cache_data.clear()
-                    st.rerun()
-
-# 수동 티커 추가/삭제
-st.sidebar.markdown("**수동 관리**")
-
-# 티커 추가
-new_ticker = st.sidebar.text_input("티커 추가 (예: AAPL)", "").upper().strip()
-if st.sidebar.button("➕ 추가"):
-    if new_ticker and new_ticker not in st.session_state.watchlist:
-        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
-        # 캐시 무효화 및 페이지 새로고침
-        st.cache_data.clear()
-        st.rerun()
-    elif new_ticker in st.session_state.watchlist:
-        st.sidebar.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
-    else:
-        st.sidebar.error("유효한 티커를 입력해주세요.")
-
-# 티커 삭제
-if st.session_state.watchlist:
-    tickers_to_remove = st.sidebar.multiselect(
-        "삭제할 티커 선택",
-        options=st.session_state.watchlist,
-        key="remove_tickers"
-    )
-    if st.sidebar.button("🗑️ 선택 삭제"):
-        if tickers_to_remove:
-            st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, tickers_to_remove)
-            # 캐시 무효화 및 페이지 새로고침
-            st.cache_data.clear()
+# 4. 수동 관리 (간단한 추가/삭제)
+with st.sidebar.expander("✏️ 수동 관리", expanded=False):
+    # 티커 추가
+    new_ticker = st.text_input("티커 추가 (예: AAPL)", "").upper().strip()
+    if st.button("➕ 추가"):
+        if new_ticker and new_ticker not in st.session_state.watchlist:
+            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
+            st.success(f"'{new_ticker}' 추가됨")
             st.rerun()
+        elif new_ticker in st.session_state.watchlist:
+            st.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
         else:
-            st.sidebar.error("삭제할 종목을 선택해주세요.")
+            st.error("유효한 티커를 입력하세요.")
+
+    # 티커 삭제
+    if st.session_state.watchlist:
+        ticker_to_remove = st.selectbox("삭제할 티커 선택", [""] + st.session_state.watchlist)
+        if st.button("🗑️ 삭제"):
+            if ticker_to_remove:
+                st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [ticker_to_remove])
+                st.success(f"'{ticker_to_remove}' 삭제됨")
+                st.rerun()
+            else:
+                st.error("삭제할 종목을 선택해주세요.")
 
 with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     # FMS 설명
