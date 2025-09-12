@@ -73,6 +73,14 @@ def update_universe_file(progress_callback=None, status_callback=None):
         if progress_callback:
             progress_callback(0.1, "🔍 Finviz 데이터 다운로드 중...")
         
+        if progress_callback:
+            progress_callback(0.12, "📡 Finviz 서버에 연결 중...")
+        
+        if progress_callback:
+            progress_callback(0.15, "📊 8,000+ 종목 데이터 처리 중... (콘솔에서 실제 진행률 확인 가능)")
+        
+        # Finviz API 호출 (블로킹 작업)
+        # 실제 진행률은 콘솔에 [Info] loading page [####------] 형태로 표시됩니다.
         df = foverview.screener_view()
         
         if progress_callback:
@@ -191,3 +199,118 @@ def load_universe_file():
         
     except Exception as e:
         return False, [], f"유니버스 파일 로드 중 오류: {str(e)}"
+
+def save_scan_results(scan_results_df, fms_threshold=2.0):
+    """
+    FMS 스캔 결과를 파일로 저장합니다.
+    FMS 임계값 이상인 종목만 저장합니다.
+    
+    Args:
+        scan_results_df (pd.DataFrame): 스캔 결과 DataFrame
+        fms_threshold (float): FMS 임계값 (기본값: 2.0)
+    
+    Returns:
+        tuple: (success, message, saved_count)
+    """
+    try:
+        if scan_results_df.empty:
+            return False, "저장할 스캔 결과가 없습니다.", 0
+        
+        # FMS 임계값 이상인 종목만 필터링
+        filtered_results = scan_results_df[scan_results_df['FMS'] >= fms_threshold].copy()
+        
+        if filtered_results.empty:
+            return False, f"FMS {fms_threshold} 이상인 종목이 없습니다.", 0
+        
+        # 파일명에 타임스탬프 포함
+        timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
+        filename = f"scan_results_{timestamp}.csv"
+        
+        # 결과 저장
+        filtered_results.to_csv(filename, index=True)
+        
+        return True, f"스캔 결과 저장 완료: {len(filtered_results)}개 종목 (FMS ≥ {fms_threshold})", len(filtered_results)
+        
+    except Exception as e:
+        return False, f"스캔 결과 저장 중 오류: {str(e)}", 0
+
+def load_latest_scan_results(fms_threshold=2.0):
+    """
+    가장 최근의 스캔 결과 파일을 로드합니다.
+    
+    Args:
+        fms_threshold (float): FMS 임계값 (기본값: 2.0)
+    
+    Returns:
+        tuple: (success, results_df, message)
+    """
+    try:
+        # scan_results_*.csv 파일들 찾기
+        import glob
+        scan_files = glob.glob("scan_results_*.csv")
+        
+        if not scan_files:
+            return False, pd.DataFrame(), "저장된 스캔 결과가 없습니다."
+        
+        # 가장 최근 파일 선택
+        latest_file = max(scan_files, key=os.path.getctime)
+        
+        # 파일 로드
+        results_df = pd.read_csv(latest_file, index_col=0)
+        
+        # FMS 임계값 필터링
+        if 'FMS' in results_df.columns:
+            filtered_results = results_df[results_df['FMS'] >= fms_threshold].copy()
+        else:
+            filtered_results = results_df
+        
+        # 파일 수정 시간 정보
+        file_mtime = os.path.getmtime(latest_file)
+        file_time = datetime.fromtimestamp(file_mtime, KST)
+        
+        return True, filtered_results, f"스캔 결과 로드 완료: {len(filtered_results)}개 종목 (파일: {file_time.strftime('%Y-%m-%d %H:%M:%S')})"
+        
+    except Exception as e:
+        return False, pd.DataFrame(), f"스캔 결과 로드 중 오류: {str(e)}"
+
+def get_scan_results_info():
+    """
+    저장된 스캔 결과 파일들의 정보를 반환합니다.
+    
+    Returns:
+        list: 파일 정보 리스트
+    """
+    try:
+        import glob
+        scan_files = glob.glob("scan_results_*.csv")
+        
+        if not scan_files:
+            return []
+        
+        file_info = []
+        for file in scan_files:
+            try:
+                mtime = os.path.getmtime(file)
+                file_time = datetime.fromtimestamp(mtime, KST)
+                
+                # 파일 크기 및 종목 수 확인
+                df = pd.read_csv(file, index_col=0)
+                symbol_count = len(df)
+                
+                file_info.append({
+                    'filename': file,
+                    'timestamp': file_time,
+                    'symbol_count': symbol_count,
+                    'formatted_time': file_time.strftime('%Y-%m-%d %H:%M:%S')
+                })
+            except Exception:
+                continue
+        
+        # 시간순 정렬 (최신순)
+        file_info.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return file_info
+        
+    except Exception as e:
+        print(f"스캔 결과 정보 조회 중 오류: {str(e)}")
+        return []

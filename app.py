@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0
+# KRW Momentum Radar - v3.0.2
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,7 +9,11 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
 #
-# v3.0 개선사항:
+# v3.0.2 개선사항:
+# - FMS 스캔 결과 영구 저장 및 동적 후보 리스트 관리
+# - 페이징 시스템으로 대량 후보 효율적 탐색
+# - FMS 임계값 필터링 및 저장된 결과 로드 기능
+# - UI 리로드 문제 해결 및 사용자 경험 대폭 개선
 # - 모듈화된 유니버스 관리 시스템 (universe_utils.py)
 # - 실시간 진행률 표시 및 중복 제거
 # - 유니버스 파일 업로드 기능 복구
@@ -29,7 +33,7 @@ import pytz
 import streamlit as st
 import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
-from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file
+from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file, save_scan_results, load_latest_scan_results, get_scan_results_info
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -567,8 +571,8 @@ def scan_market_for_new_opportunities():
     # 모든 결과 합치기
     combined_results = pd.concat(all_results)
     
-    # FMS 순으로 정렬 후 상위 30개 선택
-    top_performers = combined_results.sort_values("FMS", ascending=False).head(30)
+    # FMS 순으로 정렬
+    all_performers = combined_results.sort_values("FMS", ascending=False)
     
     # 최종 통계
     total_time = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
@@ -587,7 +591,101 @@ def scan_market_for_new_opportunities():
     if failed_batches:
         log(f"⚠️ 실패한 배치: {failed_batches[:10]}{'...' if len(failed_batches) > 10 else ''}")
     
-    return top_performers, scan_message
+    # FMS 2.0 이상인 종목만 저장
+    fms_threshold = 2.0
+    filtered_results = all_performers[all_performers['FMS'] >= fms_threshold]
+    
+    if not filtered_results.empty:
+        # 스캔 결과 파일로 저장
+        save_success, save_message, saved_count = save_scan_results(filtered_results, fms_threshold)
+        if save_success:
+            log(f"💾 {save_message}")
+        else:
+            log(f"⚠️ 저장 실패: {save_message}")
+    
+    return all_performers, scan_message
+
+def get_dynamic_candidates(scan_results_df, current_watchlist, page_size=10, page_num=1):
+    """
+    현재 관심종목에 없는 종목들을 동적으로 반환합니다.
+    페이징 처리를 통해 대량의 후보를 효율적으로 관리합니다.
+    
+    Args:
+        scan_results_df (pd.DataFrame): 전체 스캔 결과
+        current_watchlist (list): 현재 관심종목 목록
+        page_size (int): 페이지당 표시할 종목 수
+        page_num (int): 현재 페이지 번호 (1부터 시작)
+    
+    Returns:
+        tuple: (candidates_df, total_pages, current_page)
+    """
+    if scan_results_df.empty:
+        return pd.DataFrame(), 0, 1
+    
+    # 현재 관심종목에 없는 종목만 필터링
+    available_candidates = scan_results_df[~scan_results_df.index.isin(current_watchlist)].copy()
+    
+    if available_candidates.empty:
+        return pd.DataFrame(), 0, 1
+    
+    # FMS 순으로 정렬 (이미 정렬되어 있지만 확실히 하기 위해)
+    available_candidates = available_candidates.sort_values("FMS", ascending=False)
+    
+    # 페이징 처리
+    total_candidates = len(available_candidates)
+    total_pages = (total_candidates - 1) // page_size + 1
+    
+    # 페이지 번호 유효성 검사
+    page_num = max(1, min(page_num, total_pages))
+    
+    # 현재 페이지의 종목들 추출
+    start_idx = (page_num - 1) * page_size
+    end_idx = start_idx + page_size
+    current_page_candidates = available_candidates.iloc[start_idx:end_idx]
+    
+    return current_page_candidates, total_pages, page_num
+
+# ------------------------------
+# UI 관련 함수들
+# ------------------------------
+def display_name(sym):
+    """심볼을 표시용 이름으로 변환합니다."""
+    if 'NAME_MAP' not in globals():
+        return sym
+    nm = NAME_MAP.get(sym, sym)
+    return f"{nm} ({sym})" if nm and nm != sym else sym
+
+def only_name(sym):
+    """심볼의 이름만 반환합니다."""
+    if 'NAME_MAP' not in globals():
+        return sym
+    nm = NAME_MAP.get(sym, sym)
+    return nm if nm else sym
+
+def update_candidates_after_addition(symbol_to_remove):
+    """
+    종목 추가 후 후보 리스트를 업데이트합니다.
+    추가된 종목을 제거하고 다음 페이지의 종목을 표시합니다.
+    
+    Args:
+        symbol_to_remove (str): 제거할 종목 심볼
+    
+    Returns:
+        bool: 업데이트 성공 여부
+    """
+    try:
+        # 현재 세션 상태의 스캔 결과에서 해당 종목 제거
+        if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:
+            current_results = st.session_state['scan_results']
+            if symbol_to_remove in current_results.index:
+                # 해당 종목 제거
+                updated_results = current_results.drop(symbol_to_remove)
+                st.session_state['scan_results'] = updated_results
+                return True
+        return False
+    except Exception as e:
+        log(f"후보 리스트 업데이트 중 오류: {str(e)}")
+        return False
 
 # ------------------------------
 # 좌측 제어 - 깔끔하게 정리된 메뉴 구조
@@ -745,7 +843,25 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 del st.session_state.scan_progress
             st.rerun()
     
-    if st.button('🚀 유니버스 스캔 실행', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다."):
+    # FMS 임계값 설정
+    fms_threshold = st.slider("FMS 임계값", 0.0, 5.0, 2.0, 0.1, help="이 값 이상의 FMS를 가진 종목만 표시됩니다.")
+    
+    # 저장된 스캔 결과 로드 버튼
+    if st.button('📂 저장된 결과 로드', help="이전에 저장된 스캔 결과를 불러옵니다."):
+        try:
+            success, loaded_results, load_message = load_latest_scan_results(fms_threshold)
+            if success and not loaded_results.empty:
+                st.success(load_message)
+                st.session_state['scan_results'] = loaded_results
+                st.session_state['scan_page'] = 1  # 페이지 초기화
+            else:
+                st.warning(load_message)
+        except Exception as e:
+            st.error(f"결과 로드 중 오류: {str(e)}")
+    
+   
+    # 스캔 실행 버튼
+    if st.button('🚀 유니버스 스캔 실행', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다. (실제 진행률은 콘솔에서 확인 가능)"):
         # 스캔 상태 초기화
         if 'scan_progress' in st.session_state:
             del st.session_state.scan_progress
@@ -755,8 +871,14 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             
             if not scan_results.empty:
                 st.success(scan_message)
-                top_results = scan_results.head(10)
-                st.session_state['scan_results'] = top_results
+                # FMS 임계값 적용
+                filtered_results = scan_results[scan_results['FMS'] >= fms_threshold]
+                if not filtered_results.empty:
+                    st.session_state['scan_results'] = filtered_results
+                    st.session_state['scan_page'] = 1  # 페이지 초기화
+                else:
+                    st.warning(f"FMS {fms_threshold} 이상인 종목이 없습니다.")
+                    st.session_state['scan_results'] = None
             else:
                 st.error(f"스캔 결과가 없습니다: {scan_message}")
                 st.session_state['scan_results'] = None
@@ -768,22 +890,76 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
     # 스캔 결과 표시
     if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:
         st.markdown("**📋 발견된 종목:**")
-        top_results = st.session_state['scan_results']
         
-        for idx, (symbol, row) in enumerate(top_results.iterrows()):
-            col1, col2 = st.columns([3, 1])
+        # 페이징 설정
+        page_size = st.selectbox("페이지당 표시 종목 수", [5, 10, 15, 20, 25, 30], index=1)
+        
+        # 현재 페이지 초기화
+        if 'scan_page' not in st.session_state:
+            st.session_state['scan_page'] = 1
+        
+        # 동적 후보 리스트 생성
+        current_watchlist = st.session_state.get('watchlist', [])
+        candidates_df, total_pages, current_page = get_dynamic_candidates(
+            st.session_state['scan_results'], 
+            current_watchlist, 
+            page_size, 
+            st.session_state['scan_page']
+        )
+        
+        if not candidates_df.empty:
+            # 페이지 정보 표시
+            st.info(f"📄 페이지 {current_page}/{total_pages} | 총 {len(st.session_state['scan_results'])}개 종목 중 {len(candidates_df)}개 표시")
+            
+            # 페이징 컨트롤
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
             with col1:
-                st.write(f"**{symbol}** (FMS: {row['FMS']:.1f})")
+                if st.button("⬅️ 이전", disabled=(current_page <= 1)):
+                    st.session_state['scan_page'] = max(1, current_page - 1)
+                    st.rerun()
             with col2:
-                if st.button("➕", key=f"add_{symbol}"):
-                    if symbol not in st.session_state.watchlist:
-                        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
-                        if 'scan_results' in st.session_state:
-                            st.session_state['scan_results'] = None
-                        st.cache_data.clear()
-                        st.rerun()
-                    else:
-                        st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                if st.button("다음 ➡️", disabled=(current_page >= total_pages)):
+                    st.session_state['scan_page'] = min(total_pages, current_page + 1)
+                    st.rerun()
+            with col3:
+                if st.button("🔄 새로고침"):
+                    st.rerun()
+            
+            # 종목 목록 표시
+            for idx, (symbol, row) in enumerate(candidates_df.iterrows()):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    fms_score = row['FMS']
+                    fms_color = "🟢" if fms_score >= 3.0 else "🟡" if fms_score >= 2.0 else "🔴"
+                    st.write(f"{fms_color} **{symbol}** (FMS: {fms_score:.1f})")
+                with col2:
+                    if st.button("➕", key=f"add_{symbol}_{current_page}"):
+                        if symbol not in st.session_state.watchlist:
+                            # 관심종목에 추가
+                            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                            
+                            # 후보 리스트에서 제거
+                            update_candidates_after_addition(symbol)
+                            
+                            # 캐시 초기화
+                            st.cache_data.clear()
+                            
+                            # 성공 메시지 표시
+                            st.success(f"✅ '{symbol}'가 관심종목에 추가되었습니다!")
+                            
+                            # 페이지 새로고침 (rerun 대신 동적 업데이트)
+                            st.rerun()
+                        else:
+                            st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+        else:
+            st.info("더 이상 추가할 수 있는 종목이 없습니다.")
+            
+            # 저장된 스캔 결과 파일 정보 표시
+            scan_files_info = get_scan_results_info()
+            if scan_files_info:
+                st.markdown("**📁 저장된 스캔 결과 파일:**")
+                for file_info in scan_files_info[:3]:  # 최근 3개만 표시
+                    st.caption(f"📄 {file_info['formatted_time']} - {file_info['symbol_count']}개 종목")
     
 
 # 4. 수동 관리 (간단한 추가/삭제)
@@ -925,12 +1101,6 @@ if prices_krw.empty:
 with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연)"):
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
-def display_name(sym):
-    nm = NAME_MAP.get(sym, sym)
-    return f"{nm} ({sym})" if nm and nm != sym else sym
-def only_name(sym):
-    nm = NAME_MAP.get(sym, sym)
-    return nm if nm else sym
 
 st.title("⚡ KRW Momentum Radar v3.0")
 
