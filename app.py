@@ -19,6 +19,8 @@
 # - 상태 표시: 작업 진행 중 버튼 텍스트 변경으로 현재 상태 명확히 표시
 # - 유니버스 스크리닝 고도화: 추세 품질 중심 필터링으로 노이즈 종목 제거 및 안정적 모멘텀 종목 선별
 # - 워치리스트 초기값 업데이트: 더 균형잡힌 글로벌 포트폴리오로 초기 관심종목 목록 개선
+# - 스캔 완료 후 UI 정리: FMS 스캔 완료 시 스캔 중단 버튼이 자동으로 사라지도록 개선
+# - 스캔 상태 표시 개선: 스캔 완료/중지 시 "스캔 중..." 표시가 정확히 사라지도록 개선
 # - 변수명 개선: col1, col2, col3 → prev_col, spacer_col, next_col 등으로 명확화
 # - 에러 처리: print 문을 주석으로 변경하여 콘솔 출력 정리
 
@@ -600,6 +602,10 @@ def scan_market_for_new_opportunities():
         else:
             log(f"⚠️ 저장 실패: {save_message}")
     
+    # 스캔 완료 후 진행 상태 초기화
+    if 'scan_progress' in st.session_state:
+        del st.session_state.scan_progress
+    
     return all_performers, scan_message
 
 def get_dynamic_candidates(scan_results_df, current_watchlist, page_size=10, page_num=1):
@@ -655,7 +661,9 @@ def get_button_states():
             - is_reassessing (bool): 재평가 진행 중 여부
             - button_disabled (bool): 버튼 비활성화 여부
     """
-    is_scanning = 'scan_progress' in st.session_state and st.session_state.scan_progress.get('total_batches', 0) > 0
+    is_scanning = ('scan_progress' in st.session_state and 
+                   st.session_state.scan_progress.get('total_batches', 0) > 0 and
+                   st.session_state.scan_progress.get('completed_batches', 0) < st.session_state.scan_progress.get('total_batches', 0))
     is_reassessing = 'reassessing' in st.session_state and st.session_state.reassessing
     return is_scanning, is_reassessing, is_scanning or is_reassessing
 def display_name(sym):
@@ -863,11 +871,12 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             elapsed = (datetime.now(KST) - st.session_state.scan_progress['start_time']).total_seconds()
             st.caption(f"경과시간: {elapsed:.0f}초 | 성공: {st.session_state.scan_progress['successful_symbols']}개 | 실패: {st.session_state.scan_progress['failed_symbols']}개")
         
-        # 스캔 중단 버튼
-        if st.button('⏹️ 스캔 중단', help="진행 중인 스캔을 중단합니다."):
-            if 'scan_progress' in st.session_state:
-                del st.session_state.scan_progress
-            st.rerun()
+        # 스캔이 완료되지 않은 경우에만 중단 버튼 표시
+        if st.session_state.scan_progress['completed_batches'] < st.session_state.scan_progress['total_batches']:
+            if st.button('⏹️ 스캔 중단', help="진행 중인 스캔을 중단합니다."):
+                if 'scan_progress' in st.session_state:
+                    del st.session_state.scan_progress
+                st.rerun()
     
     # FMS 임계값 설정
     fms_threshold = st.slider("FMS 임계값", 0.0, 5.0, 2.0, 0.1, help="이 값 이상의 FMS를 가진 종목만 표시됩니다.")
