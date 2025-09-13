@@ -50,7 +50,13 @@ def check_universe_file_freshness():
 def update_universe_file(progress_callback=None, status_callback=None):
     """
     Finviz를 사용하여 유니버스 파일을 업데이트합니다.
+    추세 품질 중심의 필터링을 통해 안정적이고 지속적인 모멘텀을 가진 종목들을 선별합니다.
     진행 상황을 콜백 함수를 통해 실시간으로 전달합니다.
+    
+    필터링 조건:
+    - 유동성: 가격 $10 이상, 평균 거래량 300K 이상
+    - 추세 지속성: 분기 10% 이상, 반기 20% 이상 상승
+    - 추세 안정성: 50일/200일 이동평균 위에 위치
     
     Args:
         progress_callback: 진행률 콜백 함수 (progress, message)
@@ -66,12 +72,19 @@ def update_universe_file(progress_callback=None, status_callback=None):
         if progress_callback:
             progress_callback(0.0, "🔍 Finviz 스크리너 실행 중...")
         
-        # 스크리닝 필터 조건 설정
+        # 스크리닝 필터 조건 설정 (추세 품질 중심)
         filters = {
-            'Price': 'Over $5',           # 가격 $5 이상
-            'Average Volume': 'Over 200K', # 평균 거래량 200,000주 이상
-            'Performance': 'Month +>0%',  # 1개월 수익률 0% 이상
-            'Relative Volume': 'Over 1.5' # 최근 거래량 평소의 1.5배 이상
+            # 1. 유동성 필터 (기준 강화)
+            'Price': 'Over $10',           # 가격 $10 이상 (기존 $5에서 강화)
+            'Average Volume': 'Over 300K', # 평균 거래량 300,000주 이상 (기존 200K에서 강화)
+
+            # 2. 추세 지속성 필터 (신규 도입)
+            'Performance': 'Quarter +10%',       # 최소 3개월간 10% 이상 상승
+            'Performance 2': 'Half +20%',        # 최소 6개월간 20% 이상 상승
+
+            # 3. 추세 안정성 필터 (핵심 신규 도입)
+            '50-Day Simple Moving Average': 'Price above SMA50',  # 중기 상승 추세 확인
+            '200-Day Simple Moving Average': 'Price above SMA200' # 장기 상승 추세 확인
         }
         
         if progress_callback:
@@ -96,44 +109,55 @@ def update_universe_file(progress_callback=None, status_callback=None):
         if progress_callback:
             progress_callback(0.2, f"📥 전체 데이터 다운로드 완료: {len(df)}개 종목")
         
-        # 2단계: 필터링 적용
+        # 2단계: 추세 품질 중심 필터링 적용
         if progress_callback:
-            progress_callback(0.25, "🔍 필터링 적용 중...")
+            progress_callback(0.25, "🔍 추세 품질 중심 필터링 적용 중...")
         
         original_count = len(df)
         
-        # 가격 필터
+        # 1. 유동성 필터 (기준 강화)
         if 'Price' in df.columns:
             df['Price_clean'] = df['Price'].astype(str).str.replace('$', '').str.replace(',', '').astype(float)
-            df = df[df['Price_clean'] >= 5.0]
+            df = df[df['Price_clean'] >= 10.0]  # $5 → $10으로 강화
             if progress_callback:
-                progress_callback(0.35, f"💰 가격 $5 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.35, f"💰 가격 $10 이상 필터링: {len(df)}개 종목")
         
-        # 거래량 필터
         if 'Avg Volume' in df.columns:
             df['Volume_clean'] = df['Avg Volume'].str.replace(',', '').astype(float)
-            df = df[df['Volume_clean'] >= 200000]
+            df = df[df['Volume_clean'] >= 300000]  # 200K → 300K로 강화
             if progress_callback:
-                progress_callback(0.45, f"📈 거래량 200K 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.45, f"📈 거래량 300K 이상 필터링: {len(df)}개 종목")
         
-        # 수익률 필터
-        if 'Perf Month' in df.columns:
-            df['Perf_Month_clean'] = df['Perf Month'].str.replace('%', '').astype(float)
-            df = df[df['Perf_Month_clean'] >= 0.0]
+        # 2. 추세 지속성 필터 (신규 도입)
+        if 'Perf Quarter' in df.columns:
+            df['Perf_Quarter_clean'] = df['Perf Quarter'].str.replace('%', '').astype(float)
+            df = df[df['Perf_Quarter_clean'] >= 10.0]  # 3개월간 10% 이상 상승
             if progress_callback:
-                progress_callback(0.55, f"📊 1개월 수익률 0% 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.55, f"📊 분기 수익률 10% 이상 필터링: {len(df)}개 종목")
         
-        # 상대 거래량 필터
-        if 'Rel Volume' in df.columns:
-            df['Rel_Volume_clean'] = df['Rel Volume'].astype(float)
-            df = df[df['Rel_Volume_clean'] >= 1.5]
+        if 'Perf Half' in df.columns:
+            df['Perf_Half_clean'] = df['Perf Half'].str.replace('%', '').astype(float)
+            df = df[df['Perf_Half_clean'] >= 20.0]  # 6개월간 20% 이상 상승
             if progress_callback:
-                progress_callback(0.65, f"🔄 상대 거래량 1.5배 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.65, f"📊 반기 수익률 20% 이상 필터링: {len(df)}개 종목")
         
-        # 3단계: 레버리지/인버스 ETF 제외
+        # 3. 추세 안정성 필터 (핵심 신규 도입)
+        if 'SMA50' in df.columns:
+            df['Price_vs_SMA50'] = df['Price_clean'] / df['SMA50'].astype(str).str.replace('$', '').str.replace(',', '').astype(float)
+            df = df[df['Price_vs_SMA50'] >= 1.0]  # 현재가 > 50일 이동평균
+            if progress_callback:
+                progress_callback(0.75, f"📈 50일 이동평균 위 종목 필터링: {len(df)}개 종목")
+        
+        if 'SMA200' in df.columns:
+            df['Price_vs_SMA200'] = df['Price_clean'] / df['SMA200'].astype(str).str.replace('$', '').str.replace(',', '').astype(float)
+            df = df[df['Price_vs_SMA200'] >= 1.0]  # 현재가 > 200일 이동평균
+            if progress_callback:
+                progress_callback(0.85, f"📈 200일 이동평균 위 종목 필터링: {len(df)}개 종목")
+        
+        # 4단계: 레버리지/인버스 ETF 제외
         if not df.empty and 'Ticker' in df.columns:
             if progress_callback:
-                progress_callback(0.7, "🚫 레버리지/인버스 ETF 제외 필터링 중...")
+                progress_callback(0.9, "🚫 레버리지/인버스 ETF 제외 필터링 중...")
             
             leverage_patterns = [
                 '2X', '3X', '2x', '3x', '2X', '3X',
@@ -163,12 +187,12 @@ def update_universe_file(progress_callback=None, status_callback=None):
             if excluded_tickers:
                 df = df[~df['Ticker'].isin(excluded_tickers)]
                 if progress_callback:
-                    progress_callback(0.8, f"🚫 레버리지/인버스 ETF 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
+                    progress_callback(0.92, f"🚫 레버리지/인버스 ETF 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
         
-        # 4단계: 파일 저장
+        # 5단계: 파일 저장
         if not df.empty and 'Ticker' in df.columns:
             if progress_callback:
-                progress_callback(0.9, "💾 유니버스 파일 저장 중...")
+                progress_callback(0.95, "💾 유니버스 파일 저장 중...")
             
             tickers = df['Ticker'].tolist()
             unique_tickers = sorted(list(set(tickers)))

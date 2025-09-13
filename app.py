@@ -14,6 +14,11 @@
 # - 사용자 경험: 관심종목 추가 시 불필요한 메시지 제거로 깔끔한 UI 제공
 # - 페이징 안전성: 종목 추가 후 페이징이 깨지지 않도록 안전장치 추가
 # - 유니버스 신선도 체크: Streamlit 웨이크업 시 파일 타임스탬프 변경 문제 해결
+# - 재평가 UI 개선: 재평가 후 제거 제안 종목에서 휴지통 버튼 클릭 시 목록에서 즉시 제거
+# - 버튼 비활성화: 오래 걸리는 작업 실행 중 관련 버튼들 자동 비활성화로 중복 실행 방지
+# - 상태 표시: 작업 진행 중 버튼 텍스트 변경으로 현재 상태 명확히 표시
+# - 유니버스 스크리닝 고도화: 추세 품질 중심 필터링으로 노이즈 종목 제거 및 안정적 모멘텀 종목 선별
+# - 워치리스트 초기값 업데이트: 더 균형잡힌 글로벌 포트폴리오로 초기 관심종목 목록 개선
 # - 변수명 개선: col1, col2, col3 → prev_col, spacer_col, next_col 등으로 명확화
 # - 에러 처리: print 문을 주석으로 변경하여 콘솔 출력 정리
 
@@ -39,20 +44,15 @@ KST = pytz.timezone("Asia/Seoul")
 # 기본 유니버스 (관심종목 초기화용)
 # ------------------------------
 DEFAULT_USD_SYMBOLS = [
-    'JEPI','IAU','JEPQ','VOO','NLY','PAVE','ITA','INDA','MCHI','EWG','GREK','GOOGL',
-    'URA','GDX','ENFR','MDST','VNM','FXU','SPY','DIA','QQQ','EWQ','EWU','EWJ','EWH',
-    'EWA','EWZ','EIDO','TUR','VT','VEA','VWO','BND','BNDX','GLD','SLV','DBC','CPER',
-    'VNQ','VNQI','DBA','CORN','WEAT','USO','UNG','QUAL','VLUE','MTUM','USMV','IJR',
-    'VB','TIP','XLK','XLF','XLV','SOXX','EWC','EWT','EPOL','EWW','BOTZ','ICLN','IBB',
-    'QYLD','XYLD','REM','MORT','AGNC','TLTW','ULTY','BIZD','BKLN','SRLN','FLOT',
-    'NOBL','SCHD','KSA','EZA','EDEN','JETS','SRVR','REMX','UUP','IVOL','PFIX','AOR',
-    'NVDA'
+    'AAPL','ABBV','AMZN','ARKK','AVGO','BND','BRK-B','CAT','COST','CRM','CVX','DIA',
+    'DIS','EEM','EFA','EWJ','GLD','GOOGL','HD','ICLN','INDA','IWM','IYT','JNJ','JPM',
+    'KO','LLY','META','MRK','MSFT','NFLX','NVDA','PFE','PG','QQQ','SLV','SMH','SOXX',
+    'SPY','T','TSLA','UNH','URA','V','VNQ','WMT','XLE','XLF','XLI','XLK','XLP','XLV','XLY'
 ]
 DEFAULT_KRW_SYMBOLS = [
-    '005930.KS','102110.KS','474220.KS','441680.KS','289480.KS',
-    '166400.KS','276970.KS','482730.KS','486290.KS','480020.KS'
+    '000660.KS','005930.KS'
 ]
-DEFAULT_JPY_SYMBOLS = ['2563.T']
+DEFAULT_JPY_SYMBOLS = ['7203.T']
 
 
 
@@ -645,6 +645,19 @@ def get_dynamic_candidates(scan_results_df, current_watchlist, page_size=10, pag
 # ------------------------------
 # UI 관련 함수들
 # ------------------------------
+def get_button_states():
+    """
+    버튼 비활성화 상태를 반환합니다.
+    
+    Returns:
+        tuple: (is_scanning, is_reassessing, button_disabled)
+            - is_scanning (bool): 유니버스 스캔 진행 중 여부
+            - is_reassessing (bool): 재평가 진행 중 여부
+            - button_disabled (bool): 버튼 비활성화 여부
+    """
+    is_scanning = 'scan_progress' in st.session_state and st.session_state.scan_progress.get('total_batches', 0) > 0
+    is_reassessing = 'reassessing' in st.session_state and st.session_state.reassessing
+    return is_scanning, is_reassessing, is_scanning or is_reassessing
 def display_name(sym):
     """심볼을 표시용 이름으로 변환합니다."""
     if 'NAME_MAP' not in globals():
@@ -755,7 +768,13 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
     
     # 재평가 기능
     st.markdown("**🔄 재평가**")
-    if st.button("📊 재평가 실행", help="현재 관심종목의 FMS를 재계산하여 저성과 종목을 식별합니다."):
+    is_scanning, is_reassessing, button_disabled = get_button_states()
+    button_text = '⏳ 재평가 중...' if is_reassessing else '📊 재평가 실행'
+    
+    if st.button(button_text, disabled=button_disabled, help="현재 관심종목의 FMS를 재계산하여 저성과 종목을 식별합니다."):
+        # 재평가 상태 설정
+        st.session_state.reassessing = True
+        
         with st.spinner("관심종목을 재평가 중입니다..."):
             watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
             
@@ -772,6 +791,9 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
             else:
                 st.error("재평가 데이터를 가져올 수 없습니다.")
                 st.session_state['reassessment_results'] = None
+        
+        # 재평가 완료
+        st.session_state.reassessing = False
     
     # 재평가 결과 표시
     if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
@@ -785,7 +807,14 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
                 st.write(f"**{symbol}** (FMS: {fms_score:.1f})")
             with col2:
                 if st.button("🗑️", key=f"remove_{symbol}"):
+                    # 관심종목에서 제거
                     st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
+                    
+                    # 재평가 결과에서도 제거
+                    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
+                        if symbol in st.session_state['reassessment_results'].index:
+                            st.session_state['reassessment_results'] = st.session_state['reassessment_results'].drop(symbol)
+                    
                     st.cache_data.clear()
                     st.rerun()
 
@@ -858,7 +887,9 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
     
    
     # 스캔 실행 버튼
-    if st.button('🚀 유니버스 스캔', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다. (실제 진행률은 콘솔에서 확인 가능)"):
+    is_scanning, is_reassessing, button_disabled = get_button_states()
+    button_text = '⏳ 스캔 중...' if is_scanning else '🚀 유니버스 스캔'
+    if st.button(button_text, type="primary", disabled=button_disabled, help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다. (실제 진행률은 콘솔에서 확인 가능)"):
         # 스캔 상태 초기화
         if 'scan_progress' in st.session_state:
             del st.session_state.scan_progress
@@ -1004,7 +1035,8 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
         st.cache_data.clear()
         st.success("캐시 초기화 완료 → 상단 Rerun 클릭")
     
-    if st.button("🔄 관심종목 초기화"):
+    is_scanning, is_reassessing, button_disabled = get_button_states()
+    if st.button("🔄 관심종목 초기화", disabled=button_disabled):
         default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
         st.session_state.watchlist = default_symbols
         save_watchlist(default_symbols)
