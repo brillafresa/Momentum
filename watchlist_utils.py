@@ -33,7 +33,7 @@ def load_watchlist(default_symbols: List[str]) -> List[str]:
         return default_symbols
         
     except Exception as e:
-        print(f"관심종목 로드 중 오류 발생: {e}")
+        # 관심종목 로드 중 오류는 조용히 처리
         # 오류 발생 시 기본 목록 반환 (저장하지 않음)
         return default_symbols
 
@@ -50,10 +50,10 @@ def save_watchlist(symbols: List[str]) -> None:
         unique_symbols = sorted(list(set(symbols)))
         df = pd.DataFrame({"symbol": unique_symbols})
         df.to_csv(WATCHLIST_FILE, index=False)
-        # print(f"관심종목 {len(unique_symbols)}개 저장 완료")  # 디버그용 출력 제거
         
     except Exception as e:
-        print(f"관심종목 저장 중 오류 발생: {e}")
+        # 관심종목 저장 중 오류는 조용히 처리
+        pass
 
 def add_to_watchlist(symbols: List[str], new_symbols: List[str]) -> List[str]:
     """
@@ -142,7 +142,7 @@ def export_watchlist_to_csv(symbols: List[str], country_classifier=None, name_di
         return df.to_csv(index=False, encoding='utf-8-sig')
         
     except Exception as e:
-        print(f"관심종목 내보내기 중 오류 발생: {e}")
+        # 관심종목 내보내기 중 오류는 조용히 처리
         return ""
 
 def import_watchlist_from_csv(csv_data: str) -> Tuple[List[str], str]:

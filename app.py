@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0.2
+# KRW Momentum Radar - v3.0.3
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,16 +9,13 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
 #
-# v3.0.2 개선사항:
-# - FMS 스캔 결과 영구 저장 및 동적 후보 리스트 관리
-# - 페이징 시스템으로 대량 후보 효율적 탐색
-# - FMS 임계값 필터링 및 저장된 결과 로드 기능
-# - UI 리로드 문제 해결 및 사용자 경험 대폭 개선
-# - 모듈화된 유니버스 관리 시스템 (universe_utils.py)
-# - 실시간 진행률 표시 및 중복 제거
-# - 유니버스 파일 업로드 기능 복구
-# - 성능 최적화 및 사용자 경험 개선
-# - 코드 정리 및 문서화 강화
+# v3.0.3 개선사항:
+# - UI/UX 개선: 페이징 컨트롤을 가로 배치로 변경 (⬅️➡️ 버튼 양쪽 끝 배치)
+# - 사용자 경험: 관심종목 추가 시 불필요한 메시지 제거로 깔끔한 UI 제공
+# - 페이징 안전성: 종목 추가 후 페이징이 깨지지 않도록 안전장치 추가
+# - 유니버스 신선도 체크: Streamlit 웨이크업 시 파일 타임스탬프 변경 문제 해결
+# - 변수명 개선: col1, col2, col3 → prev_col, spacer_col, next_col 등으로 명확화
+# - 에러 처리: print 문을 주석으로 변경하여 콘솔 출력 정리
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -69,7 +66,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0.3", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -665,7 +662,7 @@ def only_name(sym):
 def update_candidates_after_addition(symbol_to_remove):
     """
     종목 추가 후 후보 리스트를 업데이트합니다.
-    추가된 종목을 제거하고 다음 페이지의 종목을 표시합니다.
+    스캔 결과에서 해당 종목을 제거하여 UI에서 사라지도록 합니다.
     
     Args:
         symbol_to_remove (str): 제거할 종목 심볼
@@ -861,7 +858,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
     
    
     # 스캔 실행 버튼
-    if st.button('🚀 유니버스 스캔 실행', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다. (실제 진행률은 콘솔에서 확인 가능)"):
+    if st.button('🚀 유니버스 스캔', type="primary", help="유니버스 업데이트 후 FMS 상위 종목을 탐색합니다. (실제 진행률은 콘솔에서 확인 가능)"):
         # 스캔 상태 초기화
         if 'scan_progress' in st.session_state:
             del st.session_state.scan_progress
@@ -909,48 +906,48 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
         
         if not candidates_df.empty:
             # 페이지 정보 표시
-            st.info(f"📄 페이지 {current_page}/{total_pages} | 총 {len(st.session_state['scan_results'])}개 종목 중 {len(candidates_df)}개 표시")
+            st.info(f"📄 페이지 {current_page}/{total_pages}")
             
             # 페이징 컨트롤
-            col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
-            with col1:
-                if st.button("⬅️ 이전", disabled=(current_page <= 1)):
+            prev_col, spacer_col, next_col = st.columns([1, 2, 1])
+            with prev_col:
+                if st.button("⬅️", disabled=(current_page <= 1), key="prev_page"):
                     st.session_state['scan_page'] = max(1, current_page - 1)
                     st.rerun()
-            with col2:
-                if st.button("다음 ➡️", disabled=(current_page >= total_pages)):
+            with next_col:
+                if st.button("➡️", disabled=(current_page >= total_pages), key="next_page"):
                     st.session_state['scan_page'] = min(total_pages, current_page + 1)
-                    st.rerun()
-            with col3:
-                if st.button("🔄 새로고침"):
                     st.rerun()
             
             # 종목 목록 표시
             for idx, (symbol, row) in enumerate(candidates_df.iterrows()):
-                col1, col2 = st.columns([3, 1])
-                with col1:
+                info_col, button_col = st.columns([3, 1])
+                with info_col:
                     fms_score = row['FMS']
                     fms_color = "🟢" if fms_score >= 3.0 else "🟡" if fms_score >= 2.0 else "🔴"
                     st.write(f"{fms_color} **{symbol}** (FMS: {fms_score:.1f})")
-                with col2:
+                with button_col:
                     if st.button("➕", key=f"add_{symbol}_{current_page}"):
-                        if symbol not in st.session_state.watchlist:
-                            # 관심종목에 추가
-                            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
-                            
-                            # 후보 리스트에서 제거
-                            update_candidates_after_addition(symbol)
-                            
-                            # 캐시 초기화
-                            st.cache_data.clear()
-                            
-                            # 성공 메시지 표시
-                            st.success(f"✅ '{symbol}'가 관심종목에 추가되었습니다!")
-                            
-                            # 페이지 새로고침 (rerun 대신 동적 업데이트)
-                            st.rerun()
-                        else:
-                            st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                        # 관심종목에 추가 (이미 있어도 중복 제거됨)
+                        st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                        
+                        # 후보 리스트에서 제거 (성공/실패 관계없이)
+                        update_candidates_after_addition(symbol)
+                        
+                        # 페이징 안전성 보장: 현재 페이지가 유효하지 않으면 첫 페이지로
+                        if 'scan_results' in st.session_state and st.session_state['scan_results'] is not None:
+                            remaining_candidates = st.session_state['scan_results'][~st.session_state['scan_results'].index.isin(st.session_state.watchlist)]
+                            if not remaining_candidates.empty:
+                                total_pages = (len(remaining_candidates) - 1) // page_size + 1
+                                if st.session_state.get('scan_page', 1) > total_pages:
+                                    st.session_state['scan_page'] = 1
+                        
+                        # 캐시 초기화
+                        st.cache_data.clear()
+                        
+                        # 페이지 새로고침 (rerun 대신 동적 업데이트)
+                        st.rerun()
+
         else:
             st.info("더 이상 추가할 수 있는 종목이 없습니다.")
             
@@ -1102,7 +1099,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.0")
+st.title("⚡ KRW Momentum Radar v3.0.3")
 
 
 

@@ -15,26 +15,36 @@ KST = pytz.timezone("Asia/Seoul")
 
 def check_universe_file_freshness():
     """
-    screened_universe.csv 파일의 최근 업데이트 시간을 확인합니다.
+    screened_universe.csv 파일의 실제 업데이트 시간을 확인합니다.
+    파일 타임스탬프 대신 별도 저장된 업데이트 시간을 사용합니다.
     
     Returns:
-        tuple: (is_fresh, last_modified_time, hours_since_update)
+        tuple: (is_fresh, last_updated_time, hours_since_update)
     """
     try:
         if not os.path.exists('screened_universe.csv'):
             return False, None, None
         
-        file_mtime = os.path.getmtime('screened_universe.csv')
-        last_modified = datetime.fromtimestamp(file_mtime, KST)
-        hours_since_update = (datetime.now(KST) - last_modified).total_seconds() / 3600
+        # 실제 업데이트 시간이 저장된 파일 확인
+        timestamp_file = 'universe_last_updated.txt'
+        if os.path.exists(timestamp_file):
+            with open(timestamp_file, 'r', encoding='utf-8') as f:
+                timestamp_str = f.read().strip()
+                last_updated = datetime.fromisoformat(timestamp_str)
+        else:
+            # 타임스탬프 파일이 없으면 파일 생성 시간으로 fallback
+            file_mtime = os.path.getmtime('screened_universe.csv')
+            last_updated = datetime.fromtimestamp(file_mtime, KST)
+        
+        hours_since_update = (datetime.now(KST) - last_updated).total_seconds() / 3600
         
         # 6시간 이내면 fresh로 간주
         is_fresh = hours_since_update < 6
         
-        return is_fresh, last_modified, hours_since_update
+        return is_fresh, last_updated, hours_since_update
         
     except Exception as e:
-        print(f"파일 타임스탬프 확인 중 오류: {str(e)}")
+        # 유니버스 파일 신선도 확인 중 오류는 조용히 처리
         return False, None, None
 
 def update_universe_file(progress_callback=None, status_callback=None):
@@ -165,6 +175,12 @@ def update_universe_file(progress_callback=None, status_callback=None):
             
             output_df = pd.DataFrame({'Symbol': unique_tickers})
             output_df.to_csv('screened_universe.csv', index=False)
+            
+            # 실제 업데이트 시간 저장
+            timestamp_file = 'universe_last_updated.txt'
+            current_time = datetime.now(KST)
+            with open(timestamp_file, 'w', encoding='utf-8') as f:
+                f.write(current_time.isoformat())
             
             if progress_callback:
                 progress_callback(1.0, f"✅ 유니버스 업데이트 완료: {len(unique_tickers)}개 종목")
@@ -312,5 +328,5 @@ def get_scan_results_info():
         return file_info
         
     except Exception as e:
-        print(f"스캔 결과 정보 조회 중 오류: {str(e)}")
+        # 스캔 결과 정보 조회 중 오류는 조용히 처리
         return []
