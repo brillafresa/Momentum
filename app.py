@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0.4
+# KRW Momentum Radar - v3.0.5
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -10,14 +10,12 @@
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
 #
 # v3.0.4 개선사항:
-# - 신규 FMS 전략 '안정 성장형(Stable Growth)' 추가: 추세의 지속성과 안정성을 중시
+# - FMS 전략 단일화: 안정 성장형 전략으로 통일하여 일관된 모멘텀 분석
 # - 3M수익률 지표: 3개월(63거래일) 수익률을 통한 중기 모멘텀 평가
 # - 변동성 가속도 지표: (20일 표준편차) / (120일 표준편차)로 급등 패턴 감지
-# - FMS 전략 선택 UI: 좌측 사이드바에서 Standard/Stable Growth 전략 선택 가능
 # - 이벤트성 급등주 필터링: 변동성 가속도로 수직 폭등 종목 자동 제거
 # - 안정적 추세 종목 발굴: 꾸준하고 지속 가능한 상승 추세 종목 우선 표시
-# - 전략별 UI 동적 표시: 선택된 전략에 따라 다른 지표 및 설명 표시
-# - 변동성 제어 강화: Stable Growth 전략에서 변동성 페널티 4배 강화
+# - 변동성 제어 강화: 변동성 페널티 4배 강화로 안정성 중시
 #
 # v3.0.3 개선사항:
 # - UI/UX 개선: 페이징 컨트롤을 가로 배치로 변경 (⬅️➡️ 버튼 양쪽 끝 배치)
@@ -48,7 +46,7 @@ import streamlit as st
 import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
 from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file, save_scan_results, load_latest_scan_results, get_scan_results_info
-from config import FMS_STRATEGIES
+from config import FMS_FORMULA, FMS_DESCRIPTION
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -79,7 +77,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.0.4", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0.5", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -263,39 +261,31 @@ def last_vol_annualized(df, window=20):
 
 def rolling_max(s, window): return s.rolling(window).max()
 
-def _mom_snapshot(prices_krw, strategy='Standard'):
+def _mom_snapshot(prices_krw):
     """
     모멘텀 스냅샷을 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
-        strategy (str): FMS 전략 ('Standard' 또는 'Stable Growth')
     
     Returns:
         pd.DataFrame: 모멘텀 지표들이 포함된 DataFrame
     """
     r_1m = returns_pct(prices_krw, 21)
-    r_3m = returns_pct(prices_krw, 63)  # 3개월 수익률 추가
+    r_3m = returns_pct(prices_krw, 63)  # 3개월 수익률
     
-    slope30 = {}
     above_ema50 = {}
-    breakout120 = {}
-    vol_acceleration = {}  # 변동성 가속도 추가
+    vol_acceleration = {}  # 변동성 가속도
     
     for c in prices_krw.columns:
         s = prices_krw[c].dropna()
         if s.empty:
-            slope30[c] = np.nan
             above_ema50[c] = np.nan
-            breakout120[c] = np.nan
             vol_acceleration[c] = np.nan
             continue
             
-        slope30[c] = log_slope_annualized(s, 30)
         e50 = ema(s, 50)
         above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
-        hi120 = rolling_max(s, 120).iloc[-1]
-        breakout120[c] = (s.iloc[-1]/hi120-1.0) if hi120 and hi120>0 else np.nan
         
         # 변동성 가속도 계산: (20일 표준편차) / (120일 표준편차)
         if len(s) >= 120:
@@ -305,9 +295,7 @@ def _mom_snapshot(prices_krw, strategy='Standard'):
         else:
             vol_acceleration[c] = np.nan
     
-    slope30 = pd.Series(slope30, name="Slope30(ann)")
     above_ema50 = pd.Series(above_ema50, name="AboveEMA50")
-    breakout120 = pd.Series(breakout120, name="Breakout120")
     vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20(ann)")
     vol_acceleration = pd.Series(vol_acceleration, name="VolAcceleration")
 
@@ -316,39 +304,30 @@ def _mom_snapshot(prices_krw, strategy='Standard'):
         m = np.nanmean(x); sd = np.nanstd(x)
         return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
 
-    # 전략에 따른 FMS 계산
-    if strategy == 'Stable Growth':
-        FMS = (0.4*z(r_1m) + 0.3*z(r_3m) + 0.2*z(above_ema50) 
-               - 0.4*z(vol20.fillna(vol20.median())) 
-               - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
-    else:  # Standard 전략
-        FMS = (0.5*z(r_1m) + 0.3*z(slope30) + 0.2*z(above_ema50) + 0.1*z(breakout120)
-               - 0.1*z(vol20.fillna(vol20.median())))
+    # FMS 계산
+    FMS = (0.4*z(r_1m) + 0.3*z(r_3m) + 0.2*z(above_ema50) 
+           - 0.4*z(vol20.fillna(vol20.median())) 
+           - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
     
     # 결과 DataFrame 구성
-    if strategy == 'Stable Growth':
-        snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
-                         vol20, vol_acceleration, FMS.rename("FMS")], axis=1)
-    else:
-        snap = pd.concat([r_1m.rename("R_1M"), above_ema50, breakout120, slope30, 
-                         vol20, FMS.rename("FMS")], axis=1)
+    snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
+                     vol20, vol_acceleration, FMS.rename("FMS")], axis=1)
     
     return snap
 
-def momentum_now_and_delta(prices_krw, strategy='Standard'):
+def momentum_now_and_delta(prices_krw):
     """
     모멘텀과 델타를 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
-        strategy (str): FMS 전략 ('Standard' 또는 'Stable Growth')
     
     Returns:
         pd.DataFrame: 모멘텀 지표와 델타가 포함된 DataFrame
     """
-    now = _mom_snapshot(prices_krw, strategy)
-    d1 = _mom_snapshot(prices_krw.iloc[:-1], strategy) if len(prices_krw)>1 else now*np.nan
-    d5 = _mom_snapshot(prices_krw.iloc[:-5], strategy) if len(prices_krw)>5 else now*np.nan
+    now = _mom_snapshot(prices_krw)
+    d1 = _mom_snapshot(prices_krw.iloc[:-1]) if len(prices_krw)>1 else now*np.nan
+    d5 = _mom_snapshot(prices_krw.iloc[:-5]) if len(prices_krw)>5 else now*np.nan
     df = now.copy()
     df["ΔFMS_1D"] = df["FMS"] - d1["FMS"]
     df["ΔFMS_5D"] = df["FMS"] - d5["FMS"]
@@ -364,7 +343,7 @@ def momentum_now_and_delta(prices_krw, strategy='Standard'):
 # ------------------------------
 # 신규 종목 탐색 엔진 함수들
 # ------------------------------
-def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", strategy='Standard'):
+def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
     """
     배치 단위로 FMS를 계산합니다.
     API 제한을 회피하기 위해 재시도 로직과 타임아웃을 포함합니다.
@@ -373,7 +352,6 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", strategy
         symbols_batch (list): 계산할 심볼 목록
         period_ (str): 데이터 기간
         interval (str): 데이터 간격
-        strategy (str): FMS 전략 ('Standard' 또는 'Stable Growth')
         
     Returns:
         pd.DataFrame: FMS 계산 결과
@@ -416,7 +394,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", strategy
                         prices[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
             
             # 캘린더 정규화
-            prices_krw = harmonize_calendar(prices, coverage=0.8)
+            prices_krw = harmonize_calendar(prices, coverage=0.9)
             if prices_krw.empty:
                 if attempt < max_retries - 1:
                     log(f"캘린더 정규화 실패, 재시도 {attempt + 1}/{max_retries}")
@@ -425,7 +403,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", strategy
                 return pd.DataFrame()
             
             # FMS 계산
-            df = momentum_now_and_delta(prices_krw, strategy)
+            df = momentum_now_and_delta(prices_krw)
             return df.sort_values("FMS", ascending=False)
             
         except Exception as e:
@@ -448,13 +426,10 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", strategy
     
     return pd.DataFrame()
 
-def scan_market_for_new_opportunities(strategy='Standard'):
+def scan_market_for_new_opportunities():
     """
     유니버스 업데이트 후 FMS 스코어를 계산합니다.
     진행 상황을 실시간으로 모니터링할 수 있도록 개선되었습니다.
-    
-    Args:
-        strategy (str): FMS 전략 ('Standard' 또는 'Stable Growth')
     
     Returns:
         tuple: (top_performers_df, message)
@@ -595,7 +570,7 @@ def scan_market_for_new_opportunities(strategy='Standard'):
             
             try:
                 # 배치 처리 (타임아웃 설정)
-                batch_results = calculate_fms_for_batch(batch, strategy=strategy)
+                batch_results = calculate_fms_for_batch(batch)
                 
                 if not batch_results.empty:
                     all_results.append(batch_results)
@@ -780,18 +755,6 @@ def update_candidates_after_addition(symbol_to_remove):
 with st.sidebar.expander("📊 분석 설정", expanded=True):
     period = st.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
     
-    # FMS 전략 선택
-    fms_strategy = st.selectbox(
-        "FMS 전략", 
-        list(FMS_STRATEGIES.keys()),
-        index=1,  # Stable Growth를 기본값으로 설정
-        help="Standard: 기본 모멘텀 전략, Stable Growth: 안정 성장형 전략"
-    )
-    
-    # 전략 설명 표시
-    if fms_strategy in FMS_STRATEGIES:
-        st.caption(f"💡 {FMS_STRATEGIES[fms_strategy]['description']}")
-    
     rank_by = st.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
     use_log_scale = st.checkbox("비교차트 로그 스케일", True)
@@ -864,7 +827,7 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
         st.session_state.reassessing = True
         
         with st.spinner("관심종목을 재평가 중입니다..."):
-            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y", strategy=fms_strategy)
+            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
             
             if not watchlist_fms.empty:
                 fms_25th = watchlist_fms['FMS'].quantile(0.25)
@@ -984,7 +947,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             del st.session_state.scan_progress
         
         try:
-            scan_results, scan_message = scan_market_for_new_opportunities(fms_strategy)
+            scan_results, scan_message = scan_market_for_new_opportunities()
             
             if not scan_results.empty:
                 st.success(scan_message)
@@ -1031,11 +994,11 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             # 페이징 컨트롤
             prev_col, spacer_col, next_col = st.columns([1, 2, 1])
             with prev_col:
-                if st.button("⬅️", disabled=(current_page <= 1), key="prev_page"):
+                if st.button("⬅️", disabled=(current_page <= 1), key=f"prev_page_{current_page}"):
                     st.session_state['scan_page'] = max(1, current_page - 1)
                     st.rerun()
             with next_col:
-                if st.button("➡️", disabled=(current_page >= total_pages), key="next_page"):
+                if st.button("➡️", disabled=(current_page >= total_pages), key=f"next_page_{current_page}"):
                     st.session_state['scan_page'] = min(total_pages, current_page + 1)
                     st.rerun()
             
@@ -1047,7 +1010,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                     fms_color = "🟢" if fms_score >= 3.0 else "🟡" if fms_score >= 2.0 else "🔴"
                     st.write(f"{fms_color} **{symbol}** (FMS: {fms_score:.1f})")
                 with button_col:
-                    if st.button("➕", key=f"add_{symbol}_{current_page}"):
+                    if st.button("➕", key=f"add_{symbol}_{idx}"):
                         # 관심종목에 추가 (이미 있어도 중복 제거됨)
                         st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
                         
@@ -1062,10 +1025,8 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                                 if st.session_state.get('scan_page', 1) > total_pages:
                                     st.session_state['scan_page'] = 1
                         
-                        # 캐시 초기화
+                        # 캐시 초기화 및 페이지 새로고침
                         st.cache_data.clear()
-                        
-                        # 페이지 새로고침 (rerun 대신 동적 업데이트)
                         st.rerun()
 
         else:
@@ -1108,34 +1069,21 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     # FMS 설명
     st.markdown("**📊 FMS (Fast Momentum Score)**")
     
-    if fms_strategy == 'Stable Growth':
-        st.markdown("""
-        **안정 성장형 전략:**
-        
-        **FMS = 0.4×Z(1M수익률) + 0.3×Z(3M수익률) + 0.2×Z(EMA50상대위치) - 0.4×Z(20일변동성) - 0.4×Z(변동성 가속도)**
-        
-        • **추세 지속성**: 1M + 3M 수익률로 단기/중기 모멘텀 종합 평가
-        • **안정성 중시**: 변동성 페널티 4배 강화 (-0.4)
-        • **급등 필터링**: 변동성 가속도로 수직 폭등 종목 제거
-        • **목표**: 꾸준하고 지속 가능한 상승 추세 종목 발굴
-        """)
-    else:
-        st.markdown("""
-        **기본 전략:**
-        
-        **FMS = 0.5×Z(1M수익률) + 0.3×Z(30일기울기) + 0.2×Z(EMA50상대위치) + 0.1×Z(120일돌파) - 0.1×Z(20일변동성)**
-        
-        • **Z()**: Z-score 정규화 (평균 0, 표준편차 1)  
-        • **가중치**: 수익률(50%) > 기울기(30%) > EMA50위치(20%) > 돌파(10%) > 변동성(-10%)  
-        • **높은 FMS**: 강한 상승 모멘텀과 낮은 변동성
-        """)
+    st.markdown(f"""
+    **FMS = {FMS_FORMULA}**
+    
+    • **추세 지속성**: 1M + 3M 수익률로 단기/중기 모멘텀 종합 평가
+    • **안정성 중시**: 변동성 페널티 4배 강화 (-0.4)
+    • **급등 필터링**: 변동성 가속도로 수직 폭등 종목 제거
+    • **목표**: 꾸준하고 지속 가능한 상승 추세 종목 발굴
+    """)
     
     st.markdown("---")
     
     # 도구 버튼들
     if st.button("🗂️ 데이터 캐시 초기화"):
         st.cache_data.clear()
-        st.success("캐시 초기화 완료 → 상단 Rerun 클릭")
+        st.success("캐시 초기화 완료")
     
     is_scanning, is_reassessing, button_disabled = get_button_states()
     if st.button("🔄 관심종목 초기화", disabled=button_disabled):
@@ -1233,7 +1181,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.0.4")
+st.title("⚡ KRW Momentum Radar v3.0.5")
 
 
 
@@ -1241,7 +1189,7 @@ st.title("⚡ KRW Momentum Radar v3.0.4")
 # 모멘텀/가속 계산
 # ------------------------------
 with st.spinner("모멘텀/가속 계산 중…"):
-    mom = momentum_now_and_delta(prices_krw, fms_strategy)
+    mom = momentum_now_and_delta(prices_krw)
 rank_col = {"ΔFMS(1D)":"ΔFMS_1D","ΔFMS(5D)":"ΔFMS_5D","FMS(현재)":"FMS","1M 수익률":"R_1M"}[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
 
@@ -1579,12 +1527,9 @@ badges=[]
 if row["R_1M"]>0: badges.append("1M +")
 if row["AboveEMA50"]>0: badges.append("EMA50 상회")
 
-# 전략에 따라 다른 지표 표시
-if fms_strategy == 'Stable Growth':
-    if "R_3M" in row and row["R_3M"]>0: badges.append("3M +")
-    if "VolAcceleration" in row and row["VolAcceleration"]<1.0: badges.append("변동성 안정")
-else:
-    if "Breakout120" in row and row["Breakout120"]>=-0.01: badges.append("120D 신고가 근접")
+# FMS 지표 표시
+if "R_3M" in row and row["R_3M"]>0: badges.append("3M +")
+if "VolAcceleration" in row and row["VolAcceleration"]<1.0: badges.append("변동성 안정")
 
 if row["ΔFMS_1D"]>0: badges.append("가속(1D+)")
 if row["ΔFMS_5D"]>0: badges.append("가속(5D+)")
@@ -1596,17 +1541,10 @@ st.markdown(" ".join([f"<span class='badge'>{b}</span>" for b in badges]) or "<s
 st.subheader("모멘텀 테이블 (가속/추세/수익률)")
 disp = mom.copy()
 
-# 전략에 따라 다른 컬럼 표시
-if fms_strategy == 'Stable Growth':
-    # Stable Growth 전략용 컬럼
-    for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50"]:
-        if c in disp: disp[c] = (disp[c]*100).round(2)
-    if "VolAcceleration" in disp: disp["VolAcceleration"] = disp["VolAcceleration"].round(3)
-else:
-    # Standard 전략용 컬럼
-    for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50","Breakout120"]:
-        if c in disp: disp[c] = (disp[c]*100).round(2)
-    if "Slope30(ann)" in disp: disp["Slope30(ann)"] = disp["Slope30(ann)"].round(3)
+# FMS 컬럼 표시
+for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50"]:
+    if c in disp: disp[c] = (disp[c]*100).round(2)
+if "VolAcceleration" in disp: disp["VolAcceleration"] = disp["VolAcceleration"].round(3)
 
 for c in ["FMS","ΔFMS_1D","ΔFMS_5D"]:
     if c in disp: disp[c] = disp[c].round(2)
