@@ -18,7 +18,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 - **문서화**: 모든 함수와 클래스에 docstring 추가
 
 ## 주요 기능
-1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수
+1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수 (관심종목 기준 Z-score 정규화)
 2. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
 3. **비교 차트**: 다국가 종목들의 KRW 환산 가격 비교
 4. **수익률-변동성 이동맵**: 정적/애니메이션 모드 지원
@@ -51,6 +51,12 @@ Momentum/
 - **watchlist.csv**: 사용자 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
 - **screened_universe.csv**: 사전 필터링된 유망주 목록 (매일 업데이트 권장)
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
+
+## FMS 계산 로직 (중요!)
+- **Z-score 정규화 기준**: 관심종목 집합을 기준으로 통일
+- **참조 데이터 시스템**: `reference_prices_krw` 매개변수로 Z-score 계산 기준 지정
+- **일관성 보장**: 유니버스 스캔과 관심종목에서 동일한 FMS 값 계산
+- **하위 호환성**: `reference_prices_krw=None`일 때 기존 방식으로 동작
 
 ## 개발 가이드라인
 - **캐싱**: `@st.cache_data` 적절히 사용하여 성능 최적화

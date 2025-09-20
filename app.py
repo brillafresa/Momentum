@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0.5
+# KRW Momentum Radar - v3.0.6
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -77,7 +77,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.0.5", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0.6", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -246,27 +246,19 @@ def ytd_return(df):
     start_idx = dff.index.get_indexer([y0], method='nearest')[0]
     return dff.iloc[-1] / dff.iloc[start_idx] - 1.0
 
-def log_slope_annualized(s, window=30):
-    s = s.dropna().tail(window)
-    if len(s) < 3: return np.nan
-    y = np.log(s.values); x = np.arange(len(y))
-    slope = np.polyfit(x, y, 1)[0]
-    return slope * 252.0
-
 def last_vol_annualized(df, window=20):
     rets = warn_to_log(df.ffill().pct_change, fill_method=None).dropna()
     if rets.empty: return pd.Series(index=df.columns, dtype=float)
     vol = rets.rolling(window).std().iloc[-1] * np.sqrt(252.0)
     return vol
 
-def rolling_max(s, window): return s.rolling(window).max()
-
-def _mom_snapshot(prices_krw):
+def _mom_snapshot(prices_krw, reference_prices_krw=None):
     """
     모멘텀 스냅샷을 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
+        reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
     
     Returns:
         pd.DataFrame: 모멘텀 지표들이 포함된 DataFrame
@@ -299,15 +291,58 @@ def _mom_snapshot(prices_krw):
     vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20(ann)")
     vol_acceleration = pd.Series(vol_acceleration, name="VolAcceleration")
 
-    def z(x):
-        x = x.astype(float)
-        m = np.nanmean(x); sd = np.nanstd(x)
-        return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
+    # Z-score 계산 기준 결정
+    if reference_prices_krw is not None:
+        # 참조 데이터가 있으면 참조 데이터로 Z-score 계산
+        ref_r_1m = returns_pct(reference_prices_krw, 21)
+        ref_r_3m = returns_pct(reference_prices_krw, 63)
+        
+        ref_above_ema50 = {}
+        ref_vol_acceleration = {}
+        
+        for c in reference_prices_krw.columns:
+            s = reference_prices_krw[c].dropna()
+            if s.empty:
+                ref_above_ema50[c] = np.nan
+                ref_vol_acceleration[c] = np.nan
+                continue
+                
+            e50 = ema(s, 50)
+            ref_above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
+            
+            if len(s) >= 120:
+                vol_20 = s.pct_change().tail(20).std()
+                vol_120 = s.pct_change().tail(120).std()
+                ref_vol_acceleration[c] = vol_20 / vol_120 if vol_120 > 0 else 1.0
+            else:
+                ref_vol_acceleration[c] = np.nan
+        
+        ref_above_ema50 = pd.Series(ref_above_ema50, name="AboveEMA50")
+        ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename("Vol20(ann)")
+        ref_vol_acceleration = pd.Series(ref_vol_acceleration, name="VolAcceleration")
+        
+        # 참조 데이터로 Z-score 계산
+        def z_with_reference(x, ref_x):
+            x = x.astype(float)
+            ref_x = ref_x.astype(float)
+            m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
+            return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
+        
+        FMS = (0.4*z_with_reference(r_1m, ref_r_1m) + 
+               0.3*z_with_reference(r_3m, ref_r_3m) + 
+               0.2*z_with_reference(above_ema50, ref_above_ema50) 
+               - 0.4*z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())) 
+               - 0.4*z_with_reference(vol_acceleration.fillna(vol_acceleration.median()), ref_vol_acceleration.fillna(ref_vol_acceleration.median())))
+    else:
+        # 기존 방식: 현재 데이터로 Z-score 계산
+        def z(x):
+            x = x.astype(float)
+            m = np.nanmean(x); sd = np.nanstd(x)
+            return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
 
-    # FMS 계산
-    FMS = (0.4*z(r_1m) + 0.3*z(r_3m) + 0.2*z(above_ema50) 
-           - 0.4*z(vol20.fillna(vol20.median())) 
-           - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
+        FMS = (0.4*z(r_1m) + 0.3*z(r_3m) + 0.2*z(above_ema50) 
+               - 0.4*z(vol20.fillna(vol20.median())) 
+               - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
     
     # 결과 DataFrame 구성
     snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
@@ -315,19 +350,20 @@ def _mom_snapshot(prices_krw):
     
     return snap
 
-def momentum_now_and_delta(prices_krw):
+def momentum_now_and_delta(prices_krw, reference_prices_krw=None):
     """
     모멘텀과 델타를 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
+        reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
     
     Returns:
         pd.DataFrame: 모멘텀 지표와 델타가 포함된 DataFrame
     """
-    now = _mom_snapshot(prices_krw)
-    d1 = _mom_snapshot(prices_krw.iloc[:-1]) if len(prices_krw)>1 else now*np.nan
-    d5 = _mom_snapshot(prices_krw.iloc[:-5]) if len(prices_krw)>5 else now*np.nan
+    now = _mom_snapshot(prices_krw, reference_prices_krw)
+    d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw) if len(prices_krw)>1 else now*np.nan
+    d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw) if len(prices_krw)>5 else now*np.nan
     df = now.copy()
     df["ΔFMS_1D"] = df["FMS"] - d1["FMS"]
     df["ΔFMS_5D"] = df["FMS"] - d5["FMS"]
@@ -343,7 +379,7 @@ def momentum_now_and_delta(prices_krw):
 # ------------------------------
 # 신규 종목 탐색 엔진 함수들
 # ------------------------------
-def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
+def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", reference_prices_krw=None):
     """
     배치 단위로 FMS를 계산합니다.
     API 제한을 회피하기 위해 재시도 로직과 타임아웃을 포함합니다.
@@ -352,6 +388,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
         symbols_batch (list): 계산할 심볼 목록
         period_ (str): 데이터 기간
         interval (str): 데이터 간격
+        reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
         
     Returns:
         pd.DataFrame: FMS 계산 결과
@@ -402,8 +439,8 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d"):
                     continue
                 return pd.DataFrame()
             
-            # FMS 계산
-            df = momentum_now_and_delta(prices_krw)
+            # FMS 계산 (참조 데이터 사용)
+            df = momentum_now_and_delta(prices_krw, reference_prices_krw)
             return df.sort_values("FMS", ascending=False)
             
         except Exception as e:
@@ -508,6 +545,19 @@ def scan_market_for_new_opportunities():
     if not scan_targets:
         return pd.DataFrame(), "알림: 현재 유망주 목록의 모든 종목이 이미 관심종목에 포함되어 있습니다."
 
+    # 관심종목 데이터를 참조 데이터로 사용하기 위해 가져오기
+    log("📊 관심종목 데이터를 참조 기준으로 로드 중...")
+    try:
+        reference_prices_krw, _ = build_prices_krw("1y", current_watchlist)
+        if reference_prices_krw.empty:
+            log("⚠️ 관심종목 데이터가 없어서 기존 방식으로 FMS 계산합니다.")
+            reference_prices_krw = None
+        else:
+            log(f"✅ 관심종목 참조 데이터 로드 완료: {len(reference_prices_krw.columns)}개 종목")
+    except Exception as e:
+        log(f"⚠️ 관심종목 참조 데이터 로드 실패: {str(e)}, 기존 방식으로 FMS 계산합니다.")
+        reference_prices_krw = None
+
     log(f"총 {len(scan_targets)}개 신규 종목을 스캔합니다...")
     
     # 진행 상황 모니터링을 위한 상태 초기화
@@ -569,8 +619,8 @@ def scan_market_for_new_opportunities():
             log(f"배치 {batch_num}/{total_batches} 처리 중... ({len(batch)}개 종목: {batch[0]} ~ {batch[-1]})")
             
             try:
-                # 배치 처리 (타임아웃 설정)
-                batch_results = calculate_fms_for_batch(batch)
+                # 배치 처리 (참조 데이터 포함)
+                batch_results = calculate_fms_for_batch(batch, reference_prices_krw=reference_prices_krw)
                 
                 if not batch_results.empty:
                     all_results.append(batch_results)
@@ -1181,7 +1231,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.0.5")
+st.title("⚡ KRW Momentum Radar v3.0.6")
 
 
 
