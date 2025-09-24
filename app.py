@@ -78,7 +78,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.0.6", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0.7", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -407,29 +407,18 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
     r_3m = returns_pct(prices_krw, 63)  # 3개월 수익률
     
     above_ema50 = {}
-    vol_acceleration = {}  # 변동성 가속도
     
     for c in prices_krw.columns:
         s = prices_krw[c].dropna()
         if s.empty:
             above_ema50[c] = np.nan
-            vol_acceleration[c] = np.nan
             continue
             
         e50 = ema(s, 50)
         above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
-        
-        # 변동성 가속도 계산: (20일 표준편차) / (120일 표준편차)
-        if len(s) >= 120:
-            vol_20 = s.pct_change().tail(20).std()
-            vol_120 = s.pct_change().tail(120).std()
-            vol_acceleration[c] = vol_20 / vol_120 if vol_120 > 0 else 1.0
-        else:
-            vol_acceleration[c] = np.nan
     
     above_ema50 = pd.Series(above_ema50, name="AboveEMA50")
     vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20(ann)")
-    vol_acceleration = pd.Series(vol_acceleration, name="VolAcceleration")
 
     # 거래 적합성 실격 필터 적용
     disqualification_flags = {}
@@ -443,28 +432,18 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
         ref_r_3m = returns_pct(reference_prices_krw, 63)
         
         ref_above_ema50 = {}
-        ref_vol_acceleration = {}
         
         for c in reference_prices_krw.columns:
             s = reference_prices_krw[c].dropna()
             if s.empty:
                 ref_above_ema50[c] = np.nan
-                ref_vol_acceleration[c] = np.nan
                 continue
                 
             e50 = ema(s, 50)
             ref_above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
-            
-            if len(s) >= 120:
-                vol_20 = s.pct_change().tail(20).std()
-                vol_120 = s.pct_change().tail(120).std()
-                ref_vol_acceleration[c] = vol_20 / vol_120 if vol_120 > 0 else 1.0
-            else:
-                ref_vol_acceleration[c] = np.nan
         
         ref_above_ema50 = pd.Series(ref_above_ema50, name="AboveEMA50")
         ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename("Vol20(ann)")
-        ref_vol_acceleration = pd.Series(ref_vol_acceleration, name="VolAcceleration")
         
         # 참조 데이터로 Z-score 계산
         def z_with_reference(x, ref_x):
@@ -476,8 +455,7 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
         FMS = (0.4*z_with_reference(r_1m, ref_r_1m) + 
                0.3*z_with_reference(r_3m, ref_r_3m) + 
                0.2*z_with_reference(above_ema50, ref_above_ema50) 
-               - 0.4*z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())) 
-               - 0.4*z_with_reference(vol_acceleration.fillna(vol_acceleration.median()), ref_vol_acceleration.fillna(ref_vol_acceleration.median())))
+               - 0.4*z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
     else:
         # 기존 방식: 현재 데이터로 Z-score 계산
         def z(x):
@@ -486,8 +464,7 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
             return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
 
         FMS = (0.4*z(r_1m) + 0.3*z(r_3m) + 0.2*z(above_ema50) 
-               - 0.4*z(vol20.fillna(vol20.median())) 
-               - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
+               - 0.4*z(vol20.fillna(vol20.median())))
     
     # 거래 적합성 실격 필터 적용: 실격된 종목은 FMS를 -999로 설정
     if disqualification_flags:
@@ -498,7 +475,7 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
     
     # 결과 DataFrame 구성
     snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
-                     vol20, vol_acceleration, FMS.rename("FMS")], axis=1)
+                     vol20, FMS.rename("FMS")], axis=1)
     
     return snap
 
@@ -1749,7 +1726,6 @@ if row["AboveEMA50"]>0: badges.append("EMA50 상회")
 
 # FMS 지표 표시
 if "R_3M" in row and row["R_3M"]>0: badges.append("3M +")
-if "VolAcceleration" in row and row["VolAcceleration"]<1.0: badges.append("변동성 안정")
 
 if row["ΔFMS_1D"]>0: badges.append("가속(1D+)")
 if row["ΔFMS_5D"]>0: badges.append("가속(5D+)")
@@ -1764,7 +1740,6 @@ disp = mom.copy()
 # FMS 컬럼 표시
 for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50"]:
     if c in disp: disp[c] = (disp[c]*100).round(2)
-if "VolAcceleration" in disp: disp["VolAcceleration"] = disp["VolAcceleration"].round(3)
 
 for c in ["FMS","ΔFMS_1D","ΔFMS_5D"]:
     if c in disp: disp[c] = disp[c].round(2)
@@ -1804,8 +1779,7 @@ def generate_dynamic_column_order(fms_formula, available_columns):
         '1M수익률': 'R_1M',
         '3M수익률': 'R_3M', 
         'EMA50상대위치': 'AboveEMA50',
-        '20일변동성': 'Vol20(ann)',
-        '변동성 가속도': 'VolAcceleration'
+        '20일변동성': 'Vol20(ann)'
     }
     
     for var_name in matches:
