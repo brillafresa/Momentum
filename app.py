@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0.6
+# KRW Momentum Radar - v3.0.7
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytz
+import re
 import streamlit as st
 import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
@@ -177,6 +178,74 @@ def download_prices(tickers, period_="2y", interval="1d", chunk=25):
     return out, sorted(list(dict.fromkeys(list(missing)+list(all_nan))))
 
 @st.cache_data(ttl=60*60*6, show_spinner=False)
+def download_ohlc_prices(tickers, period_="2y", interval="1d", chunk=25):
+    """
+    거래 적합성 필터를 위한 OHLC 데이터를 다운로드합니다.
+    
+    Args:
+        tickers (list): 다운로드할 티커 목록
+        period_ (str): 데이터 기간
+        interval (str): 데이터 간격
+        chunk (int): 배치 크기
+    
+    Returns:
+        tuple: (ohlc_data, missing_tickers)
+    """
+    frames=[]; missing=[]
+    tickers = list(dict.fromkeys(tickers))
+    
+    for i in range(0, len(tickers), chunk):
+        part = tickers[i:i+chunk]
+        try:
+            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
+                              group_by='column', progress=False, threads=True)
+            
+            if raw.empty:
+                missing.extend(part)
+                continue
+                
+            # OHLC 데이터 추출
+            if isinstance(raw.columns, pd.MultiIndex):
+                ohlc_data = {}
+                for t in part:
+                    if ('High', t) in raw.columns and ('Low', t) in raw.columns and ('Close', t) in raw.columns:
+                        ohlc_data[t] = pd.DataFrame({
+                            'High': raw[('High', t)],
+                            'Low': raw[('Low', t)],
+                            'Close': raw[('Close', t)]
+                        })
+                    else:
+                        missing.append(t)
+            else:
+                # 단일 티커인 경우
+                if len(part) == 1 and 'High' in raw.columns and 'Low' in raw.columns and 'Close' in raw.columns:
+                    t = part[0]
+                    ohlc_data[t] = pd.DataFrame({
+                        'High': raw['High'],
+                        'Low': raw['Low'],
+                        'Close': raw['Close']
+                    })
+                else:
+                    missing.extend(part)
+                    continue
+            
+            if ohlc_data:
+                frames.append(pd.concat(ohlc_data, axis=1))
+                
+        except Exception as e:
+            log(f"ERROR download OHLC chunk: {part[:3]}... -> {e}")
+            missing.extend(part)
+    
+    if not frames:
+        return pd.DataFrame(), missing
+    
+    # 모든 OHLC 데이터를 하나의 DataFrame으로 합치기
+    all_ohlc = pd.concat(frames, axis=1)
+    all_ohlc = all_ohlc.loc[:, ~all_ohlc.columns.duplicated()].sort_index()
+    
+    return all_ohlc, sorted(list(dict.fromkeys(missing)))
+
+@st.cache_data(ttl=60*60*6, show_spinner=False)
 def download_fx(period_="2y", interval="1d"):
     fx_krw, miss1 = download_prices(["KRW=X"], period_, interval)
     fx_jpy, miss2 = download_prices(["JPY=X"], period_, interval)
@@ -252,13 +321,84 @@ def last_vol_annualized(df, window=20):
     vol = rets.rolling(window).std().iloc[-1] * np.sqrt(252.0)
     return vol
 
-def _mom_snapshot(prices_krw, reference_prices_krw=None):
+def calculate_tradeability_filters(ohlc_data, symbols):
+    """
+    거래 적합성 실격 필터를 계산합니다.
+    
+    Args:
+        ohlc_data (pd.DataFrame): OHLC 데이터 (MultiIndex columns)
+        symbols (list): 심볼 목록
+    
+    Returns:
+        dict: 각 심볼별 실격 여부 (True면 실격)
+    """
+    disqualification = {}
+    
+    for symbol in symbols:
+        try:
+            # OHLC 데이터 추출
+            if isinstance(ohlc_data.columns, pd.MultiIndex):
+                if ((symbol, 'High') in ohlc_data.columns and 
+                    (symbol, 'Low') in ohlc_data.columns and 
+                    (symbol, 'Close') in ohlc_data.columns):
+                    high = ohlc_data[(symbol, 'High')].dropna()
+                    low = ohlc_data[(symbol, 'Low')].dropna()
+                    close = ohlc_data[(symbol, 'Close')].dropna()
+                else:
+                    disqualification[symbol] = True
+                    continue
+            else:
+                # 단일 심볼인 경우
+                if 'High' in ohlc_data.columns and 'Low' in ohlc_data.columns and 'Close' in ohlc_data.columns:
+                    high = ohlc_data['High'].dropna()
+                    low = ohlc_data['Low'].dropna()
+                    close = ohlc_data['Close'].dropna()
+                else:
+                    disqualification[symbol] = True
+                    continue
+            
+            if len(close) < 63:  # 최소 63거래일 데이터 필요
+                disqualification[symbol] = True
+                continue
+            
+            # 일일 변동폭 계산: (당일 고가 - 당일 저가) / 전일 종가
+            daily_range = (high - low) / close.shift(1)
+            
+            # 일일 하방 리스크 계산: (당일 저가 / 전일 종가) - 1
+            daily_downside_risk = (low / close.shift(1)) - 1
+            
+            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 변동폭 15% 초과)
+            recent_63_days = daily_range.tail(63)
+            extreme_volatility_days = recent_63_days[recent_63_days > 0.15]  # 원래 요청: 15%
+            
+            # 필터 2: 반복적 하방 리스크 필터 (20거래일 내 하방 리스크 -7% 미만 4일 이상)
+            recent_20_days = daily_downside_risk.tail(20)
+            severe_downside_days = recent_20_days[recent_20_days < -0.07]  # 원래 요청: -7%, 4일
+            
+            # 실격 조건 확인
+            is_disqualified = (
+                len(extreme_volatility_days) > 0 or  # 치명적 변동성 1일 이상 (15% 초과)
+                len(severe_downside_days) >= 4      # 심각한 하방 리스크 4일 이상 (-7% 미만)
+            )
+            
+            
+            disqualification[symbol] = is_disqualified
+            
+        except Exception as e:
+            log(f"거래 적합성 필터 계산 오류 {symbol}: {str(e)}")
+            disqualification[symbol] = True
+    
+    return disqualification
+
+def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols=None):
     """
     모멘텀 스냅샷을 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
         reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
+        ohlc_data (pd.DataFrame, optional): OHLC 데이터 (거래 적합성 필터용)
+        symbols (list, optional): 심볼 목록 (거래 적합성 필터용)
     
     Returns:
         pd.DataFrame: 모멘텀 지표들이 포함된 DataFrame
@@ -291,6 +431,11 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None):
     vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20(ann)")
     vol_acceleration = pd.Series(vol_acceleration, name="VolAcceleration")
 
+    # 거래 적합성 실격 필터 적용
+    disqualification_flags = {}
+    if ohlc_data is not None and symbols is not None:
+        disqualification_flags = calculate_tradeability_filters(ohlc_data, symbols)
+    
     # Z-score 계산 기준 결정
     if reference_prices_krw is not None:
         # 참조 데이터가 있으면 참조 데이터로 Z-score 계산
@@ -344,26 +489,35 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None):
                - 0.4*z(vol20.fillna(vol20.median())) 
                - 0.4*z(vol_acceleration.fillna(vol_acceleration.median())))
     
+    # 거래 적합성 실격 필터 적용: 실격된 종목은 FMS를 -999로 설정
+    if disqualification_flags:
+        for symbol in FMS.index:
+            if symbol in disqualification_flags and disqualification_flags[symbol]:
+                FMS[symbol] = -999.0
+                log(f"거래 적합성 실격: {symbol} (FMS = -999)")
+    
     # 결과 DataFrame 구성
     snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
                      vol20, vol_acceleration, FMS.rename("FMS")], axis=1)
     
     return snap
 
-def momentum_now_and_delta(prices_krw, reference_prices_krw=None):
+def momentum_now_and_delta(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols=None):
     """
     모멘텀과 델타를 계산합니다.
     
     Args:
         prices_krw (pd.DataFrame): KRW 환산 가격 데이터
         reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
+        ohlc_data (pd.DataFrame, optional): OHLC 데이터 (거래 적합성 필터용)
+        symbols (list, optional): 심볼 목록 (거래 적합성 필터용)
     
     Returns:
         pd.DataFrame: 모멘텀 지표와 델타가 포함된 DataFrame
     """
-    now = _mom_snapshot(prices_krw, reference_prices_krw)
-    d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw) if len(prices_krw)>1 else now*np.nan
-    d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw) if len(prices_krw)>5 else now*np.nan
+    now = _mom_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
+    d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw, ohlc_data, symbols) if len(prices_krw)>1 else now*np.nan
+    d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw, ohlc_data, symbols) if len(prices_krw)>5 else now*np.nan
     df = now.copy()
     df["ΔFMS_1D"] = df["FMS"] - d1["FMS"]
     df["ΔFMS_5D"] = df["FMS"] - d5["FMS"]
@@ -383,6 +537,7 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", referenc
     """
     배치 단위로 FMS를 계산합니다.
     API 제한을 회피하기 위해 재시도 로직과 타임아웃을 포함합니다.
+    거래 적합성 실격 필터가 기본적으로 적용됩니다.
     
     Args:
         symbols_batch (list): 계산할 심볼 목록
@@ -409,6 +564,11 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", referenc
                     time.sleep(retry_delay)
                     continue
                 return pd.DataFrame()
+            
+            # OHLC 데이터 다운로드 (거래 적합성 필터용)
+            ohlc_data, ohlc_missing = download_ohlc_prices(symbols_batch, period_, interval)
+            if ohlc_data.empty:
+                ohlc_data = None
             
             # KRW 환산을 위한 FX 데이터 다운로드
             usd_symbols = [str(s) for s in symbols_batch if classify(s) == "USA"]
@@ -439,8 +599,8 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", referenc
                     continue
                 return pd.DataFrame()
             
-            # FMS 계산 (참조 데이터 사용)
-            df = momentum_now_and_delta(prices_krw, reference_prices_krw)
+            # FMS 계산 (참조 데이터 및 거래 적합성 필터 사용)
+            df = momentum_now_and_delta(prices_krw, reference_prices_krw, ohlc_data, symbols_batch)
             return df.sort_values("FMS", ascending=False)
             
         except Exception as e:
@@ -583,8 +743,8 @@ def scan_market_for_new_opportunities():
         'last_update': datetime.now(KST)
     })
     
-    # 배치 처리 설정 (테스트 결과 기반 최적화)
-    batch_size = 20  # 테스트 결과: 20개가 최적
+    # 배치 처리 설정 (API 제한 고려)
+    batch_size = 20  # Yahoo Finance API 제한을 고려한 최적 배치 크기
     total_batches = (len(scan_targets) - 1) // batch_size + 1
     st.session_state.scan_progress['total_batches'] = total_batches
     
@@ -643,8 +803,8 @@ def scan_market_for_new_opportunities():
             
             st.session_state.scan_progress['completed_batches'] = batch_num
             
-            # 배치 간 대기 (API 제한 방지) - 테스트 결과 기반 최적화
-            time.sleep(2)  # 2초 대기로 API 제한 방지
+            # 배치 간 대기 (API 제한 방지)
+            time.sleep(2)  # Yahoo Finance API 제한 방지를 위한 대기 시간
     
     except Exception as e:
         log(f"❌ 스캔 중 치명적 오류: {str(e)}")
@@ -944,7 +1104,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
     
     if uploaded_universe is not None:
         try:
-            # 업로드된 파일을 임시로 저장
+            # 업로드된 파일을 메모리에서 읽기
             temp_universe = pd.read_csv(uploaded_universe)
             if 'Symbol' in temp_universe.columns:
                 temp_universe.to_csv('screened_universe.csv', index=False)
@@ -1123,8 +1283,11 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     **FMS = {FMS_FORMULA}**
     
     • **추세 지속성**: 1M + 3M 수익률로 단기/중기 모멘텀 종합 평가
-    • **안정성 중시**: 변동성 페널티 4배 강화 (-0.4)
-    • **급등 필터링**: 변동성 가속도로 수직 폭등 종목 제거
+    • **안정성 중시**: 변동성 페널티 강화 (-0.4)로 급등 종목 필터링
+    • **EMA 상대위치**: 50일 지수이동평균 대비 현재가 위치로 추세 강도 측정
+    • **거래 적합성 필터**: 
+      - 치명적 변동성: 63거래일 내 일일 변동폭 15% 초과 시 실격
+      - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
     • **목표**: 꾸준하고 지속 가능한 상승 추세 종목 발굴
     """)
     
@@ -1231,15 +1394,22 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.0.6")
+st.title("⚡ KRW Momentum Radar v3.0.7")
 
 
 
 # ------------------------------
-# 모멘텀/가속 계산
+# 모멘텀/가속 계산 (거래 적합성 필터 적용)
 # ------------------------------
 with st.spinner("모멘텀/가속 계산 중…"):
-    mom = momentum_now_and_delta(prices_krw)
+    # 관심종목의 OHLC 데이터 다운로드 (거래 적합성 필터용)
+    watchlist_symbols = list(prices_krw.columns)
+    period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
+    ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, period_map.get(period, "1y"), "1d")
+    if ohlc_data.empty:
+        ohlc_data = None
+    
+    mom = momentum_now_and_delta(prices_krw, ohlc_data=ohlc_data, symbols=watchlist_symbols)
 rank_col = {"ΔFMS(1D)":"ΔFMS_1D","ΔFMS(5D)":"ΔFMS_5D","FMS(현재)":"FMS","1M 수익률":"R_1M"}[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
 
@@ -1586,7 +1756,7 @@ if row["ΔFMS_5D"]>0: badges.append("가속(5D+)")
 st.markdown(" ".join([f"<span class='badge'>{b}</span>" for b in badges]) or "<span class='small'>상태 배지 없음</span>", unsafe_allow_html=True)
 
 # ------------------------------
-# ⑤ 표
+# ⑤ 표 (컬럼 자동 재구성)
 # ------------------------------
 st.subheader("모멘텀 테이블 (가속/추세/수익률)")
 disp = mom.copy()
@@ -1598,8 +1768,90 @@ if "VolAcceleration" in disp: disp["VolAcceleration"] = disp["VolAcceleration"].
 
 for c in ["FMS","ΔFMS_1D","ΔFMS_5D"]:
     if c in disp: disp[c] = disp[c].round(2)
-disp = disp.sort_values(rank_col if rank_col in disp.columns else "FMS", ascending=False)
-st.dataframe(disp, use_container_width=True)
+
+# 컬럼 자동 재구성: FMS 전략에 맞춰 동적 컬럼 순서 생성
+def generate_dynamic_column_order(fms_formula, available_columns):
+    """
+    FMS 전략에 맞춰 동적 컬럼 순서를 생성합니다.
+    
+    Args:
+        fms_formula (str): FMS 공식 문자열
+        available_columns (list): 사용 가능한 컬럼 목록
+    
+    Returns:
+        list: 재구성된 컬럼 순서
+    """
+    
+    # 1. Symbol 컬럼 (가장 왼쪽)
+    column_order = []
+    if 'Symbol' in available_columns:
+        column_order.append('Symbol')
+    
+    # 2. FMS 컬럼 (두 번째)
+    if 'FMS' in available_columns:
+        column_order.append('FMS')
+    
+    # 3. FMS 공식에서 사용된 변수들을 순서대로 추출
+    fms_variables = []
+    
+    # 공식에서 변수명 추출 (정규식 사용)
+    # 예: "0.4 * Z('1M수익률') + 0.3 * Z('3M수익률')" -> ['1M수익률', '3M수익률']
+    variable_pattern = r"Z\('([^']+)'\)"
+    matches = re.findall(variable_pattern, fms_formula)
+    
+    # 변수명을 실제 컬럼명으로 매핑
+    variable_mapping = {
+        '1M수익률': 'R_1M',
+        '3M수익률': 'R_3M', 
+        'EMA50상대위치': 'AboveEMA50',
+        '20일변동성': 'Vol20(ann)',
+        '변동성 가속도': 'VolAcceleration'
+    }
+    
+    for var_name in matches:
+        if var_name in variable_mapping:
+            col_name = variable_mapping[var_name]
+            if col_name in available_columns and col_name not in column_order:
+                fms_variables.append(col_name)
+    
+    # FMS 변수들을 공식에 나타난 순서대로 추가
+    column_order.extend(fms_variables)
+    
+    # 4. 나머지 보조 변수들 추가
+    remaining_columns = [col for col in available_columns if col not in column_order]
+    
+    # 보조 변수들을 우선순위에 따라 정렬
+    priority_order = ['ΔFMS_1D', 'ΔFMS_5D', 'R_1W', 'R_6M', 'R_YTD']
+    prioritized_remaining = []
+    for priority_col in priority_order:
+        if priority_col in remaining_columns:
+            prioritized_remaining.append(priority_col)
+            remaining_columns.remove(priority_col)
+    
+    # 나머지 컬럼들을 알파벳 순으로 정렬
+    remaining_columns.sort()
+    
+    column_order.extend(prioritized_remaining)
+    column_order.extend(remaining_columns)
+    
+    return column_order
+
+# 현재 FMS 전략의 공식 가져오기
+current_fms_formula = FMS_FORMULA
+
+# 동적 컬럼 순서 생성
+dynamic_column_order = generate_dynamic_column_order(current_fms_formula, list(disp.columns))
+
+# 컬럼 순서 적용 (존재하는 컬럼만)
+final_column_order = [col for col in dynamic_column_order if col in disp.columns]
+
+# 데이터프레임 재구성
+disp_reordered = disp[final_column_order]
+
+# 정렬 적용
+disp_reordered = disp_reordered.sort_values(rank_col if rank_col in disp_reordered.columns else "FMS", ascending=False)
+
+st.dataframe(disp_reordered, use_container_width=True)
 
 # ------------------------------
 # ⑥ 디버그/진단
