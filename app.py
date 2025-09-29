@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.0.7
+# KRW Momentum Radar - v3.0.8
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -8,29 +8,7 @@
 # - 수익률-변동성 이동맵 (정적/애니메이션 모드)
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 신규 종목 탐색 엔진
-#
-# v3.0.4 개선사항:
-# - FMS 전략 단일화: 안정 성장형 전략으로 통일하여 일관된 모멘텀 분석
-# - 3M수익률 지표: 3개월(63거래일) 수익률을 통한 중기 모멘텀 평가
-# - 변동성 가속도 지표: (20일 표준편차) / (120일 표준편차)로 급등 패턴 감지
-# - 이벤트성 급등주 필터링: 변동성 가속도로 수직 폭등 종목 자동 제거
-# - 안정적 추세 종목 발굴: 꾸준하고 지속 가능한 상승 추세 종목 우선 표시
-# - 변동성 제어 강화: 변동성 페널티 4배 강화로 안정성 중시
-#
-# v3.0.3 개선사항:
-# - UI/UX 개선: 페이징 컨트롤을 가로 배치로 변경 (⬅️➡️ 버튼 양쪽 끝 배치)
-# - 사용자 경험: 관심종목 추가 시 불필요한 메시지 제거로 깔끔한 UI 제공
-# - 페이징 안전성: 종목 추가 후 페이징이 깨지지 않도록 안전장치 추가
-# - 유니버스 신선도 체크: Streamlit 웨이크업 시 파일 타임스탬프 변경 문제 해결
-# - 재평가 UI 개선: 재평가 후 제거 제안 종목에서 휴지통 버튼 클릭 시 목록에서 즉시 제거
-# - 버튼 비활성화: 오래 걸리는 작업 실행 중 관련 버튼들 자동 비활성화로 중복 실행 방지
-# - 상태 표시: 작업 진행 중 버튼 텍스트 변경으로 현재 상태 명확히 표시
-# - 유니버스 스크리닝 고도화: 추세 품질 중심 필터링으로 노이즈 종목 제거 및 안정적 모멘텀 종목 선별
-# - 워치리스트 초기값 업데이트: 더 균형잡힌 글로벌 포트폴리오로 초기 관심종목 목록 개선
-# - 스캔 완료 후 UI 정리: FMS 스캔 완료 시 스캔 중단 버튼이 자동으로 사라지도록 개선
-# - 스캔 상태 표시 개선: 스캔 완료/중지 시 "스캔 중..." 표시가 정확히 사라지도록 개선
-# - 변수명 개선: col1, col2, col3 → prev_col, spacer_col, next_col 등으로 명확화
-# - 에러 처리: print 문을 주석으로 변경하여 콘솔 출력 정리
+# - True Range 기반 거래 적합성 필터
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -47,7 +25,7 @@ import streamlit as st
 import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
 from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file, save_scan_results, load_latest_scan_results, get_scan_results_info
-from config import FMS_FORMULA, FMS_DESCRIPTION
+from config import FMS_FORMULA
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -78,7 +56,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.0.7", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.0.8", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -361,14 +339,25 @@ def calculate_tradeability_filters(ohlc_data, symbols):
                 disqualification[symbol] = True
                 continue
             
-            # 일일 변동폭 계산: (당일 고가 - 당일 저가) / 전일 종가
-            daily_range = (high - low) / close.shift(1)
+            # --- 거래 적합성 필터 ---
+            prev_close = close.shift(1)
             
-            # 일일 하방 리스크 계산: (당일 저가 / 전일 종가) - 1
-            daily_downside_risk = (low / close.shift(1)) - 1
+            # '트루 레인지'를 계산하여 가격 갭을 포함한 실제 변동폭을 측정
+            true_range_series = [
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            ]
+            true_range = pd.concat(true_range_series, axis=1).max(axis=1, skipna=False)
             
-            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 변동폭 15% 초과)
-            recent_63_days = daily_range.tail(63)
+            # 새로운 필터링 지표 '일일 트루 레인지 변동폭' 정의
+            daily_true_range_volatility = true_range / prev_close
+            
+            # 일일 하방 리스크 계산: (당일 저가 / 전일 종가) - 1 (기존 로직 유지)
+            daily_downside_risk = (low / prev_close) - 1
+            
+            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 트루 레인지 변동폭 15% 초과)
+            recent_63_days = daily_true_range_volatility.tail(63)
             extreme_volatility_days = recent_63_days[recent_63_days > 0.15]  # 원래 요청: 15%
             
             # 필터 2: 반복적 하방 리스크 필터 (20거래일 내 하방 리스크 -7% 미만 4일 이상)
@@ -1371,7 +1360,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.0.7")
+st.title("⚡ KRW Momentum Radar v3.0.8")
 
 
 
