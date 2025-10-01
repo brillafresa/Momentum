@@ -308,9 +308,12 @@ def calculate_tradeability_filters(ohlc_data, symbols):
         symbols (list): 심볼 목록
     
     Returns:
-        dict: 각 심볼별 실격 여부 (True면 실격)
+        tuple: (disqualification_dict, filter_reasons_dict)
+            - disqualification_dict: 각 심볼별 실격 여부 (True면 실격)
+            - filter_reasons_dict: 각 심볼별 실격 이유
     """
     disqualification = {}
+    filter_reasons = {}
     
     for symbol in symbols:
         try:
@@ -324,6 +327,7 @@ def calculate_tradeability_filters(ohlc_data, symbols):
                     close = ohlc_data[(symbol, 'Close')].dropna()
                 else:
                     disqualification[symbol] = True
+                    filter_reasons[symbol] = "OHLC 데이터 부족"
                     continue
             else:
                 # 단일 심볼인 경우
@@ -333,10 +337,12 @@ def calculate_tradeability_filters(ohlc_data, symbols):
                     close = ohlc_data['Close'].dropna()
                 else:
                     disqualification[symbol] = True
+                    filter_reasons[symbol] = "OHLC 데이터 부족"
                     continue
             
             if len(close) < 63:  # 최소 63거래일 데이터 필요
                 disqualification[symbol] = True
+                filter_reasons[symbol] = "데이터 기간 부족 (63일 미만)"
                 continue
             
             # --- 거래 적합성 필터 ---
@@ -356,28 +362,34 @@ def calculate_tradeability_filters(ohlc_data, symbols):
             # 일일 하방 리스크 계산: (당일 저가 / 전일 종가) - 1 (기존 로직 유지)
             daily_downside_risk = (low / prev_close) - 1
             
-            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 트루 레인지 변동폭 15% 초과)
+            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 트루 레인지 변동폭 30% 초과)
             recent_63_days = daily_true_range_volatility.tail(63)
-            extreme_volatility_days = recent_63_days[recent_63_days > 0.15]  # 원래 요청: 15%
+            extreme_volatility_days = recent_63_days[recent_63_days > 0.30]  # 15% → 30%로 완화
             
             # 필터 2: 반복적 하방 리스크 필터 (20거래일 내 하방 리스크 -7% 미만 4일 이상)
             recent_20_days = daily_downside_risk.tail(20)
             severe_downside_days = recent_20_days[recent_20_days < -0.07]  # 원래 요청: -7%, 4일
             
-            # 실격 조건 확인
-            is_disqualified = (
-                len(extreme_volatility_days) > 0 or  # 치명적 변동성 1일 이상 (15% 초과)
-                len(severe_downside_days) >= 4      # 심각한 하방 리스크 4일 이상 (-7% 미만)
-            )
+            # 실격 조건 확인 및 이유 기록
+            reasons = []
             
+            if len(extreme_volatility_days) > 0:
+                reasons.append(f"치명적 변동성 ({len(extreme_volatility_days)}일 30% 초과)")
+            
+            if len(severe_downside_days) >= 4:
+                reasons.append(f"반복적 하방리스크 ({len(severe_downside_days)}일 -7% 미만)")
+            
+            is_disqualified = len(reasons) > 0
             
             disqualification[symbol] = is_disqualified
+            filter_reasons[symbol] = "; ".join(reasons) if reasons else "정상"
             
         except Exception as e:
             log(f"거래 적합성 필터 계산 오류 {symbol}: {str(e)}")
             disqualification[symbol] = True
+            filter_reasons[symbol] = f"계산 오류: {str(e)}"
     
-    return disqualification
+    return disqualification, filter_reasons
 
 def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols=None):
     """
@@ -411,8 +423,9 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
 
     # 거래 적합성 실격 필터 적용
     disqualification_flags = {}
+    filter_reasons = {}
     if ohlc_data is not None and symbols is not None:
-        disqualification_flags = calculate_tradeability_filters(ohlc_data, symbols)
+        disqualification_flags, filter_reasons = calculate_tradeability_filters(ohlc_data, symbols)
     
     # Z-score 계산 기준 결정
     if reference_prices_krw is not None:
@@ -462,9 +475,12 @@ def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols
                 FMS[symbol] = -999.0
                 log(f"거래 적합성 실격: {symbol} (FMS = -999)")
     
+    # 필터링 이유 시리즈 생성
+    filter_reasons_series = pd.Series(filter_reasons, name="Filter_Status").reindex(FMS.index, fill_value="정상")
+    
     # 결과 DataFrame 구성
     snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
-                     vol20, FMS.rename("FMS")], axis=1)
+                     vol20, FMS.rename("FMS"), filter_reasons_series], axis=1)
     
     return snap
 
@@ -1252,7 +1268,7 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     • **안정성 중시**: 변동성 페널티 강화 (-0.4)로 급등 종목 필터링
     • **EMA 상대위치**: 50일 지수이동평균 대비 현재가 위치로 추세 강도 측정
     • **거래 적합성 필터**: 
-      - 치명적 변동성: 63거래일 내 일일 변동폭 15% 초과 시 실격
+      - 치명적 변동성: 63거래일 내 일일 변동폭 30% 초과 시 실격
       - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
     • **목표**: 꾸준하고 지속 가능한 상승 추세 종목 발굴
     """)
