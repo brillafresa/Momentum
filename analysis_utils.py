@@ -413,4 +413,3 @@ def calculate_fms_for_batch(symbols_batch: List[str], period_: str = '1y', inter
     df = momentum_now_and_delta(prices_krw, reference_prices_krw, ohlc_data, symbols_batch)
     return df.sort_values('FMS', ascending=False)
 
-
