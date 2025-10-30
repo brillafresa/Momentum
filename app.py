@@ -1063,6 +1063,57 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
 
 # 3. 신규 종목 탐색
 with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
+    # --- [신규] 배치 스캔 관리 ---
+    st.markdown("**📦 배치 스캔 관리**")
+    import subprocess
+    import psutil
+    import os as _os
+    from datetime import datetime as _dt
+
+    latest_scan_file = "scan_results/latest_scan_results.csv"
+    status_text = "배치 스캔 내역 없음"
+    if _os.path.exists(latest_scan_file):
+        last_mod_time = _dt.fromtimestamp(_os.path.getmtime(latest_scan_file))
+        time_diff_hours = (_dt.now() - last_mod_time).total_seconds() / 3600
+        if time_diff_hours <= 24:
+            status_text = f"✅ 최신 데이터: {last_mod_time.strftime('%Y-%m-%d %H:%M')}"
+        else:
+            status_text = f"⚠️ 오래된 데이터: {last_mod_time.strftime('%Y-%m-%d %H:%M')}"
+    st.info(status_text)
+
+    BATCH_SCRIPT_NAME = "run_scan_batch.py"
+    is_batch_running = False
+    try:
+        for proc in psutil.process_iter(['name', 'cmdline']):
+            cmdline = proc.info.get('cmdline')
+            if cmdline and BATCH_SCRIPT_NAME in " ".join(map(str, cmdline)):
+                is_batch_running = True
+                break
+    except Exception:
+        is_batch_running = False
+
+    if is_batch_running:
+        st.warning("⏳ 배치 스캔이 백그라운드에서 실행 중입니다...")
+
+    if st.button("🔄 지금 배치 강제 실행", help="백그라운드에서 전체 유니버스 스캔을 실행합니다. (기존 스캔은 강제 종료)"):
+        if is_batch_running:
+            try:
+                for proc in psutil.process_iter(['name', 'cmdline']):
+                    cmdline = proc.info.get('cmdline')
+                    if cmdline and BATCH_SCRIPT_NAME in " ".join(map(str, cmdline)):
+                        proc.kill()
+                        st.toast(f"기존 스캔(PID: {proc.pid})을 중지했습니다.")
+            except Exception as e:
+                st.error(f"기존 스캔 중지 실패: {e}")
+
+        try:
+            subprocess.Popen(["cmd", "/c", "start", "run_batch_manual.bat"], shell=True)
+            st.toast("새로운 배치 스캔을 시작합니다! (새 콘솔 창 확인)")
+            st.rerun()
+        except Exception as e:
+            st.error(f"배치 스캔 시작 실패: {e}")
+
+    st.divider()
     
     # 스캔 실행
     st.markdown("**🔍 종목 스캔**")
@@ -1391,7 +1442,7 @@ with st.spinner("모멘텀/가속 계산 중…"):
     if ohlc_data.empty:
         ohlc_data = None
     
-    mom = momentum_now_and_delta(prices_krw, ohlc_data=ohlc_data, symbols=watchlist_symbols)
+    mom = momentum_now_and_delta(prices_krw, reference_prices_krw=prices_krw, ohlc_data=ohlc_data, symbols=watchlist_symbols)
 rank_col = {"ΔFMS(1D)":"ΔFMS_1D","ΔFMS(5D)":"ΔFMS_5D","FMS(현재)":"FMS","1M 수익률":"R_1M"}[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
 

@@ -7,11 +7,18 @@
 
 ## [Unreleased]
 
-### 추가 예정
+### 추가
 
-- 더 많은 국가 시장 지원
-- 실시간 알림 기능
-- 백테스팅 모듈
+- 병렬 배치 스캔 시스템 추가
+  - `run_scan_batch.py` CLI 배치 실행기
+  - `run_batch_manual.bat` 수동 실행기 및 `README_BATCH.md` 가이드
+  - 앱 사이드바에 "📦 배치 스캔 관리" 섹션 추가 (상태 표시/강제 실행)
+
+### 변경
+
+- FMS 기준 일관화: 대시보드 산출에서도 `reference_prices_krw=prices_krw`를 사용하도록 통일
+- Finviz 스크리닝 완화: 분기/반기 수익률 기준 0% 이상으로 조정
+- 레버리지 제외 기준 조정: Inverse/Short 포함 허용, 'Leverage' 키워드만 제외
 
 ## [3.0.8] - 2025-10-01
 

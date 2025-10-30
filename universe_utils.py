@@ -128,18 +128,18 @@ def update_universe_file(progress_callback=None, status_callback=None):
             if progress_callback:
                 progress_callback(0.45, f"📈 거래량 300K 이상 필터링: {len(df)}개 종목")
         
-        # 2. 추세 지속성 필터 (신규 도입)
+        # 2. 추세 지속성 필터 (완화: 0% 이상)
         if 'Perf Quarter' in df.columns:
             df['Perf_Quarter_clean'] = df['Perf Quarter'].str.replace('%', '').astype(float)
-            df = df[df['Perf_Quarter_clean'] >= 10.0]  # 3개월간 10% 이상 상승
+            df = df[df['Perf_Quarter_clean'] >= 0.0]  # 3개월간 0% 이상 상승
             if progress_callback:
-                progress_callback(0.55, f"📊 분기 수익률 10% 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.55, f"📊 분기 수익률 0% 이상 필터링: {len(df)}개 종목")
         
         if 'Perf Half' in df.columns:
             df['Perf_Half_clean'] = df['Perf Half'].str.replace('%', '').astype(float)
-            df = df[df['Perf_Half_clean'] >= 20.0]  # 6개월간 20% 이상 상승
+            df = df[df['Perf_Half_clean'] >= 0.0]  # 6개월간 0% 이상 상승
             if progress_callback:
-                progress_callback(0.65, f"📊 반기 수익률 20% 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.65, f"📊 반기 수익률 0% 이상 필터링: {len(df)}개 종목")
         
         # 3. 추세 안정성 필터 (핵심 신규 도입)
         if 'SMA50' in df.columns:
@@ -154,40 +154,22 @@ def update_universe_file(progress_callback=None, status_callback=None):
             if progress_callback:
                 progress_callback(0.85, f"📈 200일 이동평균 위 종목 필터링: {len(df)}개 종목")
         
-        # 4단계: 레버리지/인버스 ETF 제외
+        # 4단계: 레버리지 ETF 제외 (완화: Inverse/Short 포함, 'Leverage' 키워드만 제외)
         if not df.empty and 'Ticker' in df.columns:
             if progress_callback:
-                progress_callback(0.9, "🚫 레버리지/인버스 ETF 제외 필터링 중...")
-            
-            leverage_patterns = [
-                '2X', '3X', '2x', '3x', '2X', '3X',
-                '2배', '3배', '2X배', '3X배',
-                '1.5X', '1.75X', '1.5x', '1.75x',
-                'Inverse', 'Short', 'Bear',
-                '-1X', '-2X', '-3X', '-1x', '-2x', '-3x',
-                'Leveraged', 'Ultra', 'ProShares',
-                'ULTRA', 'ULTRA SHORT', 'ULTRA LONG',
-                'AAPB', 'AAPU', 'SPXU', 'UPRO', 'TQQQ', 'SQQQ',
-                'TMF', 'TMV', 'FAS', 'FAZ', 'ERX', 'ERY',
-                'TNA', 'TZA', 'LABU', 'LABD', 'CURE', 'RXL',
-                'BOIL', 'KOLD', 'NUGT', 'DUST', 'JNUG', 'JDST',
-                'UVXY', 'SVXY', 'TVIX', 'XIV', 'YINN', 'YANG',
-                'KWEB', 'CQQQ', 'TECL', 'TECS', 'SOXL', 'SOXS',
-                'TBT', 'UBT', 'TYD', 'TYO', 'UST', 'PST'
-            ]
-            
+                progress_callback(0.9, "🚫 레버리지 ETF 제외 필터링 중 ('Leverage' 키워드)")
+
             excluded_tickers = []
             for ticker in df['Ticker'].tolist():
                 ticker_upper = str(ticker).upper()
-                for pattern in leverage_patterns:
-                    if pattern.upper() in ticker_upper:
-                        excluded_tickers.append(ticker)
-                        break
-            
+                # 변경 요구사항: 'Leverage' 키워드만 제외
+                if 'LEVERAGE' in ticker_upper:
+                    excluded_tickers.append(ticker)
+
             if excluded_tickers:
                 df = df[~df['Ticker'].isin(excluded_tickers)]
                 if progress_callback:
-                    progress_callback(0.92, f"🚫 레버리지/인버스 ETF 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
+                    progress_callback(0.92, f"🚫 레버리지 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
         
         # 5단계: 파일 저장
         if not df.empty and 'Ticker' in df.columns:
