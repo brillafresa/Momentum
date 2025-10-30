@@ -68,16 +68,25 @@
 
 ### 로컬 실행
 
+Windows (권장)
+```bat
+:: 저장소 클론 후 프로젝트 폴더에서
+start.bat
+```
+
+일반(수동) 방법
 ```bash
 # 저장소 클론
 git clone <repository-url>
 cd Momentum
 
-# 의존성 설치
+# 가상환경 생성/활성화 및 의존성 설치
+python -m venv venv
+./venv/Scripts/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# 애플리케이션 실행
-streamlit run app.py
+# 애플리케이션 실행 (포트 8501 사용 권장)
+streamlit run app.py --server.port 8501
 ```
 
 ### Streamlit Cloud 배포
