@@ -3,6 +3,98 @@
 """
 KRW Momentum Radar - 배치 스캔 실행기 (CLI)
 
+강제 유니버스 스캔 → 관심종목 기준으로 참조 가격 구성 →
+analysis_utils의 단일 FMS/필터 로직으로 결과 산출 및 저장.
+"""
+
+import os
+import sys
+from datetime import datetime
+import pytz
+import pandas as pd
+
+from universe_utils import (
+    update_universe_file,
+    load_universe_file,
+    save_scan_results,
+    get_scan_results_info,
+)
+from watchlist_utils import load_watchlist
+from analysis_utils import (
+    build_prices_krw_from_symbols,
+    calculate_fms_for_batch,
+)
+
+KST = pytz.timezone("Asia/Seoul")
+
+
+def ensure_dir(path: str) -> None:
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+
+
+def main() -> int:
+    print("[Batch] 🔄 Updating universe with relaxed filters...")
+    success, message, symbol_count = update_universe_file()
+    print(f"[Batch] Universe update: {message} (symbols: {symbol_count})")
+    if not success:
+        return 1
+
+    print("[Batch] 📥 Loading watchlist and building reference prices...")
+    watchlist = load_watchlist([])
+    ref_prices = build_prices_krw_from_symbols("1Y", watchlist)
+    if ref_prices.empty:
+        print("[Batch] ⚠️ Reference watchlist prices are empty; proceeding without reference baseline.")
+        ref_prices = None
+
+    print("[Batch] 📂 Loading screened universe symbols...")
+    ok, symbols, msg = load_universe_file()
+    if not ok or not symbols:
+        print(f"[Batch] ❌ Failed to load universe: {msg}")
+        return 1
+
+    scan_targets = [s for s in symbols if s not in watchlist]
+    if not scan_targets:
+        print("[Batch] ℹ️ No new symbols to scan.")
+        return 0
+
+    print(f"[Batch] 🚀 Calculating FMS for {len(scan_targets)} symbols (with tradeability filters)...")
+    results = calculate_fms_for_batch(scan_targets, reference_prices_krw=ref_prices)
+    if results.empty:
+        print("[Batch] ❌ No results were produced.")
+        return 1
+
+    print("[Batch] 💾 Saving results (FMS ≥ 2.0) to timestamped file and latest pointer...")
+    save_success, save_msg, saved_count = save_scan_results(results, fms_threshold=2.0)
+    print(f"[Batch] {save_msg}")
+
+    ensure_dir("scan_results")
+    info_list = get_scan_results_info()
+    if info_list:
+        latest_path = info_list[0]['filename']
+        try:
+            df_latest = pd.read_csv(latest_path, index_col=0)
+            timestamp_name = os.path.basename(latest_path)
+            target_timestamp_path = os.path.join("scan_results", timestamp_name)
+            df_latest.to_csv(target_timestamp_path, index=True)
+            latest_pointer_path = os.path.join("scan_results", "latest_scan_results.csv")
+            df_latest.to_csv(latest_pointer_path, index=True)
+            print(f"[Batch] ✅ Saved latest to {latest_pointer_path}")
+        except Exception as e:
+            print(f"[Batch] ⚠️ Failed to write scan_results copies: {e}")
+
+    print("[Batch] ✅ Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+KRW Momentum Radar - 배치 스캔 실행기 (CLI)
+
 윈도우 작업 스케줄러 등에서 정기적으로 실행하여:
 1) 유니버스 업데이트 (완화된 필터)
 2) 관심종목을 참조 기준으로 FMS 계산
@@ -124,6 +216,104 @@ def download_fx(period_: str = "1y", interval: str = "1d"):
         jpykrw = pd.Series(dtype=float, name="JPYKRW")
     return usdkrw, usdjpy, jpykrw
 
+
+def download_ohlc_prices(tickers: list[str], period_: str = "1y", interval: str = "1d", chunk: int = 25) -> tuple[pd.DataFrame, list[str]]:
+    frames = []
+    missing: list[str] = []
+    tickers = list(dict.fromkeys(tickers))
+    for i in range(0, len(tickers), chunk):
+        part = tickers[i:i + chunk]
+        try:
+            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
+                              group_by='column', progress=False, threads=True)
+            if raw.empty:
+                missing.extend(part)
+                continue
+            if isinstance(raw.columns, pd.MultiIndex):
+                ohlc_map: dict[str, pd.DataFrame] = {}
+                for t in part:
+                    if ('High', t) in raw.columns and ('Low', t) in raw.columns and ('Close', t) in raw.columns:
+                        ohlc_map[t] = pd.DataFrame({
+                            'High': raw[('High', t)],
+                            'Low': raw[('Low', t)],
+                            'Close': raw[('Close', t)]
+                        })
+                if ohlc_map:
+                    frames.append(pd.concat(ohlc_map, axis=1))
+            else:
+                if len(part) == 1 and all(c in raw.columns for c in ['High', 'Low', 'Close']):
+                    t = part[0]
+                    frames.append(pd.concat({t: raw[['High', 'Low', 'Close']].copy()}, axis=1))
+                else:
+                    missing.extend(part)
+        except Exception:
+            missing.extend(part)
+    if not frames:
+        return pd.DataFrame(), missing
+    all_ohlc = pd.concat(frames, axis=1)
+    all_ohlc = all_ohlc.loc[:, ~all_ohlc.columns.duplicated()].sort_index()
+    return all_ohlc, sorted(list(dict.fromkeys(missing)))
+
+
+def calculate_tradeability_filters(ohlc_data: pd.DataFrame, symbols: list[str]) -> tuple[dict, dict]:
+    disqualification: dict[str, bool] = {}
+    reasons: dict[str, str] = {}
+    if ohlc_data is None or ohlc_data.empty:
+        return disqualification, reasons
+    for symbol in symbols:
+        try:
+            if isinstance(ohlc_data.columns, pd.MultiIndex):
+                cols = ohlc_data.columns
+                if (symbol, 'High') in cols and (symbol, 'Low') in cols and (symbol, 'Close') in cols:
+                    high = ohlc_data[(symbol, 'High')].dropna()
+                    low = ohlc_data[(symbol, 'Low')].dropna()
+                    close = ohlc_data[(symbol, 'Close')].dropna()
+                else:
+                    disqualification[symbol] = True
+                    reasons[symbol] = 'OHLC 데이터 부족'
+                    continue
+            else:
+                if all(c in ohlc_data.columns for c in ['High', 'Low', 'Close']):
+                    high = ohlc_data['High'].dropna()
+                    low = ohlc_data['Low'].dropna()
+                    close = ohlc_data['Close'].dropna()
+                else:
+                    disqualification[symbol] = True
+                    reasons[symbol] = 'OHLC 데이터 부족'
+                    continue
+
+            if len(close) < 63:
+                disqualification[symbol] = True
+                reasons[symbol] = '데이터 기간 부족 (63일 미만)'
+                continue
+
+            prev_close = close.shift(1)
+            true_range = pd.concat([
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs()
+            ], axis=1).max(axis=1, skipna=False)
+            daily_true_range_vol = true_range / prev_close
+            daily_downside_risk = (low / prev_close) - 1
+
+            recent_63 = daily_true_range_vol.tail(63)
+            extreme_days = recent_63[recent_63 > 0.30]
+
+            recent_20 = daily_downside_risk.tail(20)
+            severe_days = recent_20[recent_20 < -0.07]
+
+            rs: list[str] = []
+            if len(extreme_days) > 0:
+                rs.append(f'치명적 변동성 ({len(extreme_days)}일 30% 초과)')
+            if len(severe_days) >= 4:
+                rs.append(f'반복적 하방리스크 ({len(severe_days)}일 -7% 미만)')
+
+            disqualification[symbol] = len(rs) > 0
+            reasons[symbol] = '; '.join(rs) if rs else '정상'
+        except Exception as e:
+            disqualification[symbol] = True
+            reasons[symbol] = f'계산 오류: {e}'
+    return disqualification, reasons
 
 def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
     if df.empty:
@@ -307,7 +497,20 @@ def calculate_fms_for_batch(symbols_batch: list[str], reference_prices_krw: pd.D
     if prices_krw.empty:
         return pd.DataFrame()
 
+    # 거래 적합성 필터 계산을 위해 OHLC 다운로드
+    ohlc_data, _ = download_ohlc_prices(symbols_batch, "1y", "1d")
+    disq, reasons = calculate_tradeability_filters(ohlc_data, symbols_batch) if not ohlc_data.empty else ({}, {})
+
     df = momentum_now_and_delta(prices_krw, reference_prices_krw)
+
+    # 실격 종목은 FMS = -999 적용
+    if disq:
+        for sym, bad in disq.items():
+            if bad and sym in df.index:
+                df.at[sym, 'FMS'] = -999.0
+    # 필터 상태 컬럼 추가(참고용)
+    if reasons:
+        df['Filter_Status'] = pd.Series(reasons)
     return df.sort_values("FMS", ascending=False)
 
 

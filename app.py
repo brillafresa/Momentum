@@ -26,6 +26,11 @@ import yfinance as yf
 from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
 from universe_utils import check_universe_file_freshness, update_universe_file, load_universe_file, save_scan_results, load_latest_scan_results, get_scan_results_info
 from config import FMS_FORMULA
+from analysis_utils import (
+    calculate_tradeability_filters as _au_trade_filters,
+    momentum_now_and_delta as _au_momentum_now_and_delta,
+    calculate_fms_for_batch as _au_calculate_fms_for_batch,
+)
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -604,6 +609,15 @@ def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", referenc
                 return pd.DataFrame()
     
     return pd.DataFrame()
+
+# ------------------------------
+# 중앙화된 FMS/필터 로직으로 오버라이드
+# ------------------------------
+calculate_tradeability_filters = _au_trade_filters
+momentum_now_and_delta = _au_momentum_now_and_delta
+
+def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", reference_prices_krw=None):
+    return _au_calculate_fms_for_batch(symbols_batch, period_, interval, reference_prices_krw)
 
 def scan_market_for_new_opportunities():
     """
