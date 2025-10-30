@@ -1,6 +1,6 @@
 # KRW Momentum Radar - 배치 스캔 설정 가이드 (Windows 11)
 
-이 문서는 Windows 작업 스케줄러로 매일 자동으로 배치 스캔을 실행하는 방법을 안내합니다.
+이 문서는 Windows 작업 스케줄러로 매일 자동으로 배치 스캔을 실행하는 방법을 안내합니다. (Python 3.11 권장)
 
 ## 실행할 프로그램
 - `run_batch_manual.bat`의 전체 경로 (예: `E:\Users\likedy\Projects\Momentum\run_batch_manual.bat`)

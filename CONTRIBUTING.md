@@ -13,10 +13,10 @@ git clone https://github.com/your-username/Momentum.git
 cd Momentum
 ```
 
-2. 가상환경을 생성하고 활성화합니다:
+2. 가상환경을 생성하고 활성화합니다 (Python 3.11 권장):
 
 ```bash
-python -m venv venv
+py -3.11 -m venv venv || python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 ```
 

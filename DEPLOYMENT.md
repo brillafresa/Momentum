@@ -22,7 +22,7 @@
 5. **설정 구성**:
    - **Main file path**: `app.py`
    - **App URL**: 원하는 URL 설정 (선택사항)
-   - **Python version**: 3.9+ 권장
+   - **Python version**: 3.11 권장
 
 ### 3. 배포 실행
 
@@ -42,7 +42,7 @@
 ### 1. Dockerfile 생성
 
 ```dockerfile
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 
@@ -164,7 +164,7 @@ gcloud run deploy --image gcr.io/PROJECT-ID/krw-momentum-radar --platform manage
 
 ```yaml
 # app.yaml
-runtime: python39
+runtime: python311
 
 env_variables:
   STREAMLIT_SERVER_HEADLESS: "true"
@@ -265,9 +265,9 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
