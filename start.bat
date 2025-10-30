@@ -7,7 +7,14 @@ taskkill /f /im python.exe >nul 2>&1
 
 echo Ensuring virtual environment...
 if not exist "venv\Scripts\python.exe" (
-  python -m venv venv
+  for /f "tokens=*" %%p in ('py -3.11 -c "print('ok')" 2^>nul') do set PY311=%%p
+  if defined PY311 (
+    echo Creating venv with Python 3.11...
+    py -3.11 -m venv venv
+  ) else (
+    echo Creating venv with default Python...
+    python -m venv venv
+  )
 )
 
 set "PYEXE=python"

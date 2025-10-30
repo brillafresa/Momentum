@@ -80,8 +80,8 @@ start.bat
 git clone <repository-url>
 cd Momentum
 
-# 가상환경 생성/활성화 및 의존성 설치
-python -m venv venv
+# 가상환경 생성/활성화 및 의존성 설치 (Python 3.11 권장)
+py -3.11 -m venv venv || python -m venv venv
 ./venv/Scripts/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
