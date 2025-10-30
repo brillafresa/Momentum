@@ -38,6 +38,11 @@ run_batch_manual.bat
 - 타임스탬프가 있는 결과 파일: `scan_results_YYYYMMDD_HHMMSS.csv` (프로젝트 루트 및 `scan_results/`에도 복사)
 - 최신 결과 포인터: `scan_results/latest_scan_results.csv`
 
+## 동작 참고
+- 배치 실행 시 유니버스를 강제로 재스크린합니다.
+- 앱과 동일한 FMS/거래 적합성 필터 로직(`analysis_utils.py`)을 사용합니다.
+- yfinance 레이트리밋이 발생하면 지수 백오프로 최대 10회 재시도하고, 상장폐지/데이터 없음은 건너뜁니다.
+
 ## 문제 해결
 - Python 경로 문제: 가상환경 사용 시 `run_batch_manual.bat`에서 `call venv\Scripts\activate.bat` 주석 해제
 - 네트워크/Rate limit: 자동 재시도는 스크립트에서 처리하지 않으므로, 스케줄 재시도 옵션을 활성화하세요

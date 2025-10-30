@@ -5,6 +5,7 @@ app.py 및 run_scan_batch.py가 이 모듈만 참조하도록 표준화합니다
 """
 
 from datetime import datetime
+import time
 from typing import Tuple, List, Dict, Optional
 import numpy as np
 import pandas as pd
@@ -56,28 +57,57 @@ def _extract_adj_close(df_chunk: pd.DataFrame, tickers: List[str]) -> pd.DataFra
     return adj
 
 
-def download_prices(tickers: List[str], period_: str = '1y', interval: str = '1d', chunk: int = 25) -> Tuple[pd.DataFrame, List[str]]:
+def _yf_download_with_retry(tickers_or_symbol, period_: str, interval: str, threads: bool = True, max_retries: int = 10, initial_sleep: float = 0.1) -> pd.DataFrame:
+    """
+    yfinance 다운로드에 대한 지수 백오프 재시도 래퍼.
+    - Too Many Requests(레이트리밋)만 재시도 사유로 간주
+    - PricesMissing(상장폐지/데이터 없음)은 재시도하지 않고 빈 결과 반환
+    """
+    delay = max(initial_sleep, 0.0)
+    last_exc: Optional[Exception] = None
+    for attempt in range(max_retries):
+        try:
+            df = yf.download(
+                tickers_or_symbol, period=period_, interval=interval, auto_adjust=False,
+                group_by='column', progress=False, threads=threads
+            )
+            return df
+        except Exception as e:
+            msg = str(e)
+            # Prices missing → 데이터 없음: 재시도하지 않고 빈 프레임 반환
+            if 'YFPricesMissingError' in msg or 'No data found, symbol may be delisted' in msg:
+                return pd.DataFrame()
+            # 레이트리밋만 재시도
+            if ('Too Many Requests' in msg) or ('Rate limited' in msg) or ('429' in msg):
+                last_exc = e
+                if delay > 0:
+                    time.sleep(delay)
+                delay = delay * 2 if delay > 0 else 0.1
+                continue
+            # 그 외 예외는 즉시 실패
+            raise
+    # 재시도 한계 초과 → 마지막 예외가 있으면 그에 준하여 빈 프레임 반환
+    # 배치 상에서 빈 결과는 실패로 간주되어 정상/실패 구분 가능
+    return pd.DataFrame()
+
+
+def download_prices(tickers: List[str], period_: str = '1y', interval: str = '1d', chunk: int = 25, initial_sleep: float = 0.1) -> Tuple[pd.DataFrame, List[str]]:
     frames: List[pd.DataFrame] = []
     missing: List[str] = []
     tickers = list(dict.fromkeys(tickers))
     for i in range(0, len(tickers), chunk):
         part = tickers[i:i+chunk]
-        try:
-            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
-                              group_by='column', progress=False, threads=True)
-            adj = _extract_adj_close(raw, part)
-        except Exception:
-            adj = pd.DataFrame()
+        raw = _yf_download_with_retry(part, period_, interval, threads=True, initial_sleep=initial_sleep)
+        adj = _extract_adj_close(raw, part) if not raw.empty else pd.DataFrame()
         if adj.empty or adj.isna().all().all():
             pframes = []
             for t in part:
-                try:
-                    r = yf.download(t, period=period_, interval=interval, auto_adjust=False,
-                                    group_by='column', progress=False, threads=False)
-                    a = _extract_adj_close(r, [t])
-                    pframes.append(a)
-                except Exception:
+                r = _yf_download_with_retry(t, period_, interval, threads=False, initial_sleep=initial_sleep)
+                if r.empty:
                     missing.append(t)
+                    continue
+                a = _extract_adj_close(r, [t])
+                pframes.append(a)
             if pframes:
                 frames.append(pd.concat(pframes, axis=1))
         else:
@@ -91,33 +121,29 @@ def download_prices(tickers: List[str], period_: str = '1y', interval: str = '1d
     return out, sorted(list(dict.fromkeys(list(missing) + list(all_nan))))
 
 
-def download_ohlc_prices(tickers: List[str], period_: str = '1y', interval: str = '1d', chunk: int = 25) -> Tuple[pd.DataFrame, List[str]]:
+def download_ohlc_prices(tickers: List[str], period_: str = '1y', interval: str = '1d', chunk: int = 25, initial_sleep: float = 0.1) -> Tuple[pd.DataFrame, List[str]]:
     frames: List[pd.DataFrame] = []
     missing: List[str] = []
     tickers = list(dict.fromkeys(tickers))
     for i in range(0, len(tickers), chunk):
         part = tickers[i:i+chunk]
-        try:
-            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
-                              group_by='column', progress=False, threads=True)
-            if raw.empty:
-                missing.extend(part)
-                continue
-            if isinstance(raw.columns, pd.MultiIndex):
+        raw = _yf_download_with_retry(part, period_, interval, threads=True, initial_sleep=initial_sleep)
+        if raw.empty:
+            missing.extend(part)
+            continue
+        if isinstance(raw.columns, pd.MultiIndex):
                 ohlc_map: Dict[str, pd.DataFrame] = {}
                 for t in part:
                     if ('High', t) in raw.columns and ('Low', t) in raw.columns and ('Close', t) in raw.columns:
                         ohlc_map[t] = pd.DataFrame({'High': raw[('High', t)], 'Low': raw[('Low', t)], 'Close': raw[('Close', t)]})
                 if ohlc_map:
                     frames.append(pd.concat(ohlc_map, axis=1))
+        else:
+            if len(part) == 1 and all(c in raw.columns for c in ['High', 'Low', 'Close']):
+                t = part[0]
+                frames.append(pd.concat({t: raw[['High', 'Low', 'Close']].copy()}, axis=1))
             else:
-                if len(part) == 1 and all(c in raw.columns for c in ['High', 'Low', 'Close']):
-                    t = part[0]
-                    frames.append(pd.concat({t: raw[['High', 'Low', 'Close']].copy()}, axis=1))
-                else:
-                    missing.extend(part)
-        except Exception:
-            missing.extend(part)
+                missing.extend(part)
     if not frames:
         return pd.DataFrame(), missing
     all_ohlc = pd.concat(frames, axis=1)
@@ -125,9 +151,9 @@ def download_ohlc_prices(tickers: List[str], period_: str = '1y', interval: str 
     return all_ohlc, sorted(list(dict.fromkeys(missing)))
 
 
-def download_fx(period_: str = '1y', interval: str = '1d') -> Tuple[pd.Series, pd.Series, pd.Series]:
-    fx_krw, _ = download_prices(['KRW=X'], period_, interval)
-    fx_jpy, _ = download_prices(['JPY=X'], period_, interval)
+def download_fx(period_: str = '1y', interval: str = '1d', initial_sleep: float = 0.1) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    fx_krw, _ = download_prices(['KRW=X'], period_, interval, initial_sleep=initial_sleep)
+    fx_jpy, _ = download_prices(['JPY=X'], period_, interval, initial_sleep=initial_sleep)
     usdkrw = fx_krw.iloc[:, 0].rename('USDKRW') if not fx_krw.empty else pd.Series(dtype=float, name='USDKRW')
     usdjpy = fx_jpy.iloc[:, 0].rename('USDJPY') if not fx_jpy.empty else pd.Series(dtype=float, name='USDJPY')
     if not usdkrw.empty and not usdjpy.empty:
