@@ -32,6 +32,8 @@ cd /d E:\Users\likedy\Projects\Momentum
 run_batch_manual.bat
 ```
 
+참고: `run_batch_manual.bat`은 자동으로 `venv\Scripts\python.exe`가 있으면 이를 사용하고, 없으면 시스템 `python`으로 실행합니다.
+
 ## 출력/결과
 - 타임스탬프가 있는 결과 파일: `scan_results_YYYYMMDD_HHMMSS.csv` (프로젝트 루트 및 `scan_results/`에도 복사)
 - 최신 결과 포인터: `scan_results/latest_scan_results.csv`
