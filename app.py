@@ -747,9 +747,12 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
         try:
             scan_results_df = pd.read_csv(latest_scan_file, index_col=0)
             
-            # FMS 임계값 필터링
+            # FMS 임계값 필터링 및 이미 관심종목에 추가된 종목 제외
             fms_threshold_scan = st.slider("FMS 임계값", 0.0, 5.0, 0.0, 0.1, key="scan_fms_threshold")
-            filtered_results = scan_results_df[scan_results_df['FMS'] >= fms_threshold_scan].sort_values('FMS', ascending=False)
+            filtered_results = scan_results_df[
+                (scan_results_df['FMS'] >= fms_threshold_scan) & 
+                (~scan_results_df.index.isin(st.session_state.watchlist))
+            ].sort_values('FMS', ascending=False)
             
             if not filtered_results.empty:
                 st.info(f"총 {len(filtered_results)}개 종목 (FMS ≥ {fms_threshold_scan})")
@@ -789,8 +792,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                         st.write(f"**{symbol}** (FMS: {fms_score:.2f})")
                     with col2:
                         if st.button("➕", key=f"add_scan_{symbol}"):
-                            if symbol not in st.session_state.watchlist:
-                                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
                             st.rerun()
             else:
                 st.info("조건에 맞는 종목이 없습니다.")
