@@ -791,10 +791,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                         if st.button("➕", key=f"add_scan_{symbol}"):
                             if symbol not in st.session_state.watchlist:
                                 st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
-                                st.success(f"'{symbol}' 추가됨")
-                                st.rerun()
-                            else:
-                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                            st.rerun()
             else:
                 st.info("조건에 맞는 종목이 없습니다.")
                 
