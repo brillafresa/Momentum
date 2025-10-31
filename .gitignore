@@ -153,5 +153,8 @@ temp/
 cache/
 # 유니버스 업데이트 타임스탬프 파일 (로컬에서만 관리)
 universe_last_updated.txt
+# 배치 스캔 결과 파일 (로컬에서만 관리)
+scan_results/*.csv
+!scan_results/.gitkeep
 # watchlist.csv는 버전 관리에 포함 (기본 관심종목 목록 제공)
 # start.bat은 Windows 실행 스크립트로 버전 관리에 포함

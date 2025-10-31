@@ -112,6 +112,11 @@ def download_prices(tickers: List[str], period_: str = '1y', interval: str = '1d
                 frames.append(pd.concat(pframes, axis=1))
         else:
             frames.append(adj)
+        
+        # 배치 간 대기 (API 제한 방지)
+        if i + chunk < len(tickers):  # 마지막 배치가 아니면 대기
+            time.sleep(0.1)
+    
     if not frames:
         return pd.DataFrame(), missing
     out = pd.concat(frames, axis=1)
@@ -144,6 +149,11 @@ def download_ohlc_prices(tickers: List[str], period_: str = '1y', interval: str 
                 frames.append(pd.concat({t: raw[['High', 'Low', 'Close']].copy()}, axis=1))
             else:
                 missing.extend(part)
+        
+        # 배치 간 대기 (API 제한 방지)
+        if i + chunk < len(tickers):  # 마지막 배치가 아니면 대기
+            time.sleep(0.1)
+    
     if not frames:
         return pd.DataFrame(), missing
     all_ohlc = pd.concat(frames, axis=1)
@@ -287,10 +297,20 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     above_ema50 = pd.Series(above_ema50, name='AboveEMA50')
     vol20 = last_vol_annualized(prices_krw, 20).rename('Vol20(ann)')
 
+    # 거래 적합성 필터 먼저 확인
     disqualification_flags: Dict[str, bool] = {}
     filter_reasons: Dict[str, str] = {}
     if ohlc_data is not None and symbols is not None:
         disqualification_flags, filter_reasons = calculate_tradeability_filters(ohlc_data, symbols)
+    
+    # 실격 종목 추출 (prices_krw에 있는 종목만)
+    disqualified_symbols = set()
+    if disqualification_flags:
+        disqualified_symbols = {sym for sym, is_disq in disqualification_flags.items() 
+                               if is_disq and sym in prices_krw.columns}
+    
+    # 참조 데이터가 없는 경우(current 데이터만 있는 경우) 실격 종목 제외하고 Z-score 계산
+    # 참조 데이터가 있는 경우는 참조 데이터 기준으로만 normalize하므로 실격 종목 제외 불필요
 
     if reference_prices_krw is not None:
         ref_r_1m = returns_pct(reference_prices_krw, 21)
@@ -308,20 +328,31 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         def z_with_reference(x: pd.Series, ref_x: pd.Series) -> pd.Series:
             x = x.astype(float); ref_x = ref_x.astype(float)
+            # 평균/표준편차는 항상 ref_x 전체 기준
             m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
-            return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
+            result = (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
+            # 실격 종목은 추후 -999 적용될 예정이므로, Z-score 계산 후에도 결과 반환
+            return result
 
         FMS = (0.4 * z_with_reference(r_1m, ref_r_1m)
                + 0.3 * z_with_reference(r_3m, ref_r_3m)
                + 0.2 * z_with_reference(above_ema50, ref_above_ema50)
                - 0.4 * z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
     else:
-        def z(x: pd.Series) -> pd.Series:
-            x = x.astype(float); m = np.nanmean(x); sd = np.nanstd(x)
+        def z(x: pd.Series, exclude_disq: bool = False) -> pd.Series:
+            x = x.astype(float)
+            # 실격 종목 제외하고 평균/표준편차 계산
+            if exclude_disq and disqualified_symbols:
+                valid_idx = [idx for idx in x.index if idx not in disqualified_symbols]
+                valid_x = x.loc[valid_idx] if valid_idx else x
+            else:
+                valid_x = x
+            m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
             return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
-        FMS = (0.4 * z(r_1m) + 0.3 * z(r_3m) + 0.2 * z(above_ema50) - 0.4 * z(vol20.fillna(vol20.median())))
+        FMS = (0.4 * z(r_1m, exclude_disq=True) + 0.3 * z(r_3m, exclude_disq=True) + 0.2 * z(above_ema50, exclude_disq=True) - 0.4 * z(vol20.fillna(vol20.median()), exclude_disq=True))
 
+    # 실격 종목은 FMS = -999 적용
     if disqualification_flags:
         for symbol in FMS.index:
             if symbol in disqualification_flags and disqualification_flags[symbol]:

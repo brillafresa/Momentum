@@ -7,18 +7,45 @@
 
 ## [Unreleased]
 
+## [3.2.0] - 2025-11-01
+
+### 추가
+- **배치 간 API 제한 방지**: `download_prices`와 `download_ohlc_prices`에 chunk 간 0.1초 대기 추가
+- **Watchlist 실격 필터링**: 배치 스캔 시 watchlist에서 실격 종목을 자동으로 제외하여 참조 데이터 품질 향상
+
+### 수정
+- **FMS 계산 Z-score 왜곡 문제 해결**: -999 패널티 종목을 Z-score 계산에서 제외하여 정확도 향상
+  - 참조 데이터 없는 경우: 실격 종목 제외하고 평균/표준편차 계산
+  - 참조 데이터 있는 경우: 참조 데이터 기준으로 normalize (실격 제외 불필요)
+- **Watchlist 필터링 버그**: 모든 종목이 실격될 때 필터링이 적용되지 않던 문제 수정
+- **OHLC 다운로드 실패 처리**: OHLC 다운로드 실패 시 명확한 경고 메시지 표시
+- **FMS 임계값 조정**: 신규 탐색 시 FMS 임계값을 2.0에서 0.0으로 조정하여 더 많은 종목 포함
+
 ### 개선
-- yfinance 레이트리밋 대응: 지수 백오프(최대 10회) 재시도 도입, 상장폐지/데이터 없음은 건너뛰도록 처리
-- FMS/거래 적합성 필터 중앙화: `analysis_utils.py`로 통일, 앱/배치 공통 사용
+- **임시 테스트 파일 정리**: 중복된 scan_results 파일 제거 및 디렉토리 정리
+- **코드 중복 제거**: `run_scan_batch.py`에서 중복된 download/FMS 계산 로직 제거, `analysis_utils.py`로 통일
+- **불필요한 import 정리**: 사용하지 않는 `datetime`, `pytz` import 제거
+
+### 제거
+- **`🔍 종목 스캔` UI 섹션 제거**: 배치 스캔 안정화로 인터랙티브 스캔 기능 제거
+- **interactive scan 함수 제거**: `scan_market_for_new_opportunities`, `get_dynamic_candidates`, `update_candidates_after_addition` 등
+- **세션 상태 관리 간소화**: scan_progress, scan_results 관련 복잡한 세션 상태 제거
+
+### 변경
+- **아키텍처 단순화**: 배치 스캔 전용 시스템으로 UI 복잡도 대폭 감소
+- **버튼 상태 관리**: `get_button_states` 함수 간소화 (is_scanning = False 고정)
 
 ## [3.1.0] - 2025-10-30
 
 ### 추가
-
 - 병렬 배치 스캔 시스템 추가
   - `run_scan_batch.py` CLI 배치 실행기
   - `run_batch_manual.bat` 수동 실행기 및 `README_BATCH.md` 가이드
   - 앱 사이드바에 "📦 배치 스캔 관리" 섹션 추가 (상태 표시/강제 실행)
+
+### 개선
+- **yfinance 레이트리밋 대응**: 지수 백오프(최대 10회) 재시도 도입, 상장폐지/데이터 없음은 건너뛰도록 처리
+- **FMS/거래 적합성 필터 중앙화**: `analysis_utils.py`로 통일, 앱/배치 공통 사용
 
 ### 변경
 
