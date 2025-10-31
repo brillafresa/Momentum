@@ -222,6 +222,26 @@ def load_universe_file():
     except Exception as e:
         return False, [], f"유니버스 파일 로드 중 오류: {str(e)}"
 
+def load_korean_universe():
+    """
+    korean_universe.csv 파일을 로드합니다.
+    KOSPI 200 + KOSDAQ 150 종목 리스트를 반환합니다.
+    
+    Returns:
+        tuple: (success, symbols_list, message)
+    """
+    try:
+        if not os.path.exists('korean_universe.csv'):
+            return False, [], "한국 유니버스 파일이 없습니다."
+        
+        universe_df = pd.read_csv('korean_universe.csv')
+        symbols = universe_df['Symbol'].tolist()
+        
+        return True, symbols, f"한국 유니버스 로드 완료: {len(symbols)}개 종목"
+        
+    except Exception as e:
+        return False, [], f"한국 유니버스 파일 로드 중 오류: {str(e)}"
+
 def save_scan_results(scan_results_df, fms_threshold=2.0):
     """
     FMS 스캔 결과를 파일로 저장합니다.

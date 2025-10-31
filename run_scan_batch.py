@@ -14,6 +14,7 @@ import pandas as pd
 from universe_utils import (
     update_universe_file,
     load_universe_file,
+    load_korean_universe,
     save_scan_results,
     get_scan_results_info,
 )
@@ -58,13 +59,27 @@ def main() -> int:
         print("[Batch] ⚠️ Reference watchlist prices are empty; proceeding without reference baseline.")
         ref_prices = None
 
-    print("[Batch] 📂 Loading screened universe symbols...")
-    ok, symbols, msg = load_universe_file()
-    if not ok or not symbols:
-        print(f"[Batch] ❌ Failed to load universe: {msg}")
+    print("[Batch] 📂 Loading screened universe symbols (USA + Korea)...")
+    ok, usa_symbols, msg = load_universe_file()
+    if not ok or not usa_symbols:
+        print(f"[Batch] ⚠️ Failed to load USA universe: {msg}")
+        usa_symbols = []
+    
+    # 한국 유니버스 로드 (KOSPI 200 + KOSDAQ 150)
+    ok_kor, kor_symbols, msg_kor = load_korean_universe()
+    if not ok_kor or not kor_symbols:
+        print(f"[Batch] ⚠️ Failed to load Korean universe: {msg_kor}")
+        kor_symbols = []
+    
+    # USA + 한국 유니버스 병합
+    all_symbols = usa_symbols + kor_symbols
+    print(f"[Batch] 📊 Loaded {len(usa_symbols)} USA + {len(kor_symbols)} Korean = {len(all_symbols)} total symbols")
+    
+    if not all_symbols:
+        print(f"[Batch] ❌ No universe symbols to scan.")
         return 1
 
-    scan_targets = [s for s in symbols if s not in watchlist]
+    scan_targets = [s for s in all_symbols if s not in watchlist]
     if not scan_targets:
         print("[Batch] ℹ️ No new symbols to scan.")
         return 0
