@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.2.0
+# KRW Momentum Radar - v3.3.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -738,6 +738,68 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
             st.rerun()
         except Exception as e:
             st.error(f"배치 스캔 시작 실패: {e}")
+    
+    # 배치 스캔 결과 표시
+    if _os.path.exists(latest_scan_file):
+        st.divider()
+        st.markdown("**📋 배치 스캔 결과**")
+        
+        try:
+            scan_results_df = pd.read_csv(latest_scan_file, index_col=0)
+            
+            # FMS 임계값 필터링
+            fms_threshold_scan = st.slider("FMS 임계값", 0.0, 5.0, 0.0, 0.1, key="scan_fms_threshold")
+            filtered_results = scan_results_df[scan_results_df['FMS'] >= fms_threshold_scan].sort_values('FMS', ascending=False)
+            
+            if not filtered_results.empty:
+                st.info(f"총 {len(filtered_results)}개 종목 (FMS ≥ {fms_threshold_scan})")
+                
+                # 페이지당 표시 개수
+                items_per_page = st.selectbox("페이지당 표시", [5, 10, 20, 30], index=1, key="scan_items_per_page")
+                
+                # 페이징 계산
+                total_pages = max(1, (len(filtered_results) + items_per_page - 1) // items_per_page)
+                current_page = st.session_state.get('scan_page', 1)
+                if current_page > total_pages:
+                    current_page = 1
+                    st.session_state.scan_page = 1
+                
+                start_idx = (current_page - 1) * items_per_page
+                end_idx = start_idx + items_per_page
+                page_results = filtered_results.iloc[start_idx:end_idx]
+                
+                # 페이징 컨트롤
+                prev_col, info_col, next_col, button_col = st.columns([0.8, 2, 0.8, 1.4])
+                with prev_col:
+                    if st.button("⬅️ 이전", disabled=(current_page <= 1), key="scan_prev"):
+                        st.session_state.scan_page = max(1, current_page - 1)
+                        st.rerun()
+                with info_col:
+                    st.caption(f"페이지 {current_page}/{total_pages} ({start_idx+1}-{min(end_idx, len(filtered_results))} / {len(filtered_results)}개)")
+                with next_col:
+                    if st.button("다음 ➡️", disabled=(current_page >= total_pages), key="scan_next"):
+                        st.session_state.scan_page = min(total_pages, current_page + 1)
+                        st.rerun()
+                
+                # 결과 표시
+                for symbol in page_results.index:
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        fms_score = page_results.loc[symbol, 'FMS']
+                        st.write(f"**{symbol}** (FMS: {fms_score:.2f})")
+                    with col2:
+                        if st.button("➕", key=f"add_scan_{symbol}"):
+                            if symbol not in st.session_state.watchlist:
+                                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                                st.success(f"'{symbol}' 추가됨")
+                                st.rerun()
+                            else:
+                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+            else:
+                st.info("조건에 맞는 종목이 없습니다.")
+                
+        except Exception as e:
+            st.error(f"스캔 결과 로드 실패: {str(e)}")
 
 # 4. 수동 관리 (간단한 추가/삭제)
 with st.sidebar.expander("✏️ 수동 관리", expanded=False):
@@ -883,7 +945,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.1.0")
+st.title("⚡ KRW Momentum Radar v3.3.0")
 
 
 
