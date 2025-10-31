@@ -769,15 +769,15 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 page_results = filtered_results.iloc[start_idx:end_idx]
                 
                 # 페이징 컨트롤
-                prev_col, info_col, next_col, button_col = st.columns([0.8, 2, 0.8, 1.4])
+                prev_col, info_col, next_col = st.columns([0.5, 1, 0.5])
                 with prev_col:
-                    if st.button("⬅️ 이전", disabled=(current_page <= 1), key="scan_prev"):
+                    if st.button("⬅️", disabled=(current_page <= 1), key="scan_prev"):
                         st.session_state.scan_page = max(1, current_page - 1)
                         st.rerun()
                 with info_col:
-                    st.caption(f"페이지 {current_page}/{total_pages} ({start_idx+1}-{min(end_idx, len(filtered_results))} / {len(filtered_results)}개)")
+                    st.caption(f"{current_page}/{total_pages}")
                 with next_col:
-                    if st.button("다음 ➡️", disabled=(current_page >= total_pages), key="scan_next"):
+                    if st.button("➡️", disabled=(current_page >= total_pages), key="scan_next"):
                         st.session_state.scan_page = min(total_pages, current_page + 1)
                         st.rerun()
                 
