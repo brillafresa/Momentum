@@ -3,7 +3,8 @@
 이 문서는 Windows 작업 스케줄러로 매일 자동으로 배치 스캔을 실행하는 방법을 안내합니다. (Python 3.11 권장)
 
 ## 실행할 프로그램
-- `run_batch_manual.bat`의 전체 경로 (예: `E:\Users\likedy\Projects\Momentum\run_batch_manual.bat`)
+- 프로그램: `run_batch_manual.bat`의 전체 경로 (예: `E:\Users\likedy\Projects\Momentum\run_batch_manual.bat`)
+- 인수 추가: `--no-pause` (작업 스케줄러 실행 시 필수)
 
 ## 권장 스케줄
 - 트리거: 매일, 미국 정규장 마감 후 (예: 오전 6:00 KST)
@@ -18,19 +19,24 @@
    - 새로 만들기 → 매일 → 시작 시간: 06:00:00
 4. [동작] 탭
    - 새로 만들기 → 프로그램/스크립트: `run_batch_manual.bat` 전체 경로
+   - 인수 추가 (선택적): `--no-pause` 입력
+   - 참고: `--no-pause` 인수를 추가하면 작업 완료 후 자동으로 종료됩니다.
 5. [설정] 탭 (견고성)
    - "예약된 시작 시간이 지난 경우 가능한 빨리 작업 실행" 체크
    - "작업이 실패하는 경우 다시 시작": 30분 간격, 3회
    - "작업이 이미 실행 중인 경우 다음 규칙 적용": 새 인스턴스 시작 안 함 (권장)
 
 ## 수동 실행
-- 프로젝트 루트에서 `run_batch_manual.bat`를 더블 클릭
-- 또는 PowerShell/명령 프롬프트에서 실행:
-
-```bat
-cd /d E:\Users\likedy\Projects\Momentum
-run_batch_manual.bat
-```
+- **더블 클릭**: 프로젝트 루트에서 `run_batch_manual.bat`를 더블 클릭 (종료 시 키 입력 대기)
+- **PowerShell/명령 프롬프트**: 
+  ```bat
+  cd /d E:\Users\likedy\Projects\Momentum
+  run_batch_manual.bat
+  ```
+- **즉시 종료**: 수동 실행 시에도 키 입력을 원하지 않으면 `--no-pause` 인수 추가
+  ```bat
+  run_batch_manual.bat --no-pause
+  ```
 
 참고: `run_batch_manual.bat`은 자동으로 `venv\Scripts\python.exe`가 있으면 이를 사용하고, 없으면 시스템 `python`으로 실행합니다.
 
@@ -44,6 +50,7 @@ run_batch_manual.bat
 - yfinance 레이트리밋이 발생하면 지수 백오프로 최대 10회 재시도하고, 상장폐지/데이터 없음은 건너뜁니다.
 
 ## 문제 해결
+- **프로세스 종료 안 됨**: 작업 스케줄러 실행 시 `--no-pause` 인수를 추가하지 않아서 발생하는 문제입니다. [동작] 탭의 "인수 추가"에 `--no-pause`를 입력하세요.
 - Python 경로 문제: 가상환경 사용 시 `run_batch_manual.bat`에서 `call venv\Scripts\activate.bat` 주석 해제
 - 네트워크/Rate limit: 자동 재시도는 스크립트에서 처리하지 않으므로, 스케줄 재시도 옵션을 활성화하세요
 - 권한 문제: 관리자 권한으로 작업 스케줄러 실행

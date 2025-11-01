@@ -27,7 +27,13 @@ echo Ensuring dependencies are installed...
 REM 4) 배치 스캔 실행
 "%PYEXE%" run_scan_batch.py
 
-echo Batch scan complete. Press any key to exit.
-pause
+REM 5) 파라미터로 pause 여부 결정 (작업 스케줄러 실행 시 --no-pause 사용)
+if "%1"=="--no-pause" (
+  echo Batch scan complete. Exiting...
+  exit /b 0
+) else (
+  echo Batch scan complete. Press any key to exit.
+  pause
+)
 
 
