@@ -36,4 +36,3 @@ if "%1"=="--no-pause" (
   pause
 )
 
-
