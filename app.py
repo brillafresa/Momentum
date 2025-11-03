@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.4.0
+# KRW Momentum Radar - v3.5.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -59,7 +59,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.4.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.5.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -720,7 +720,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.4.0")
+st.title("⚡ KRW Momentum Radar v3.5.0")
 
 
 
@@ -840,7 +840,8 @@ def add_tail_segments(fig, sym, tail_len, color="rgba(0,0,0,1)"):
             prev_xy = None
             continue
         x = float(p.iloc[0,0])*100.0  # Vol%
-        y = float(p.iloc[0,1])*100.0  # CAGR%
+        y_raw = float(p.iloc[0,1])*100.0  # CAGR%
+        y = max(y_raw + 100.0, 0.1)  # 로그 스케일을 위한 offset 적용 (100 = 0%, 최소값 0.1 보장)
         if prev_xy is not None:
             age = (tail_len - k + 1)  # 최근일수록 작음
             alpha = max(0.15, min(0.5, age/(tail_len+1)))  # 0.15~0.5
@@ -860,46 +861,57 @@ def make_static_scatter():
 
     # 꼬리 길이가 0일 때만 과거 시점들 표시
     if tail_days == 0:
-        # 1M ago
+        # 1M ago (데이터가 있는 경우만 표시)
+        if not pts_mago.empty and "CAGR" in pts_mago.columns:
+            cagr_mago = pts_mago["CAGR"]*100
+            fig.add_trace(go.Scatter(
+                x=pts_mago["Vol"]*100, y=(cagr_mago + 100).clip(lower=0.1), mode="markers",
+                marker=dict(size=7, color="lightgray"),
+                text=[display_name(s) for s in pts_mago.index],
+                customdata=cagr_mago.values,
+                hovertemplate="%{text}<br>1M ago<br>Vol: %{x:.2f}% | CAGR: %{customdata:.2f}%<extra></extra>",
+                name="1M ago", showlegend=True
+            ))
+        # Yesterday (데이터가 있는 경우만 표시)
+        if not pts_yest.empty and "CAGR" in pts_yest.columns:
+            cagr_yest = pts_yest["CAGR"]*100
+            fig.add_trace(go.Scatter(
+                x=pts_yest["Vol"]*100, y=(cagr_yest + 100).clip(lower=0.1), mode="markers",
+                marker=dict(size=8, color="silver"),
+                text=[display_name(s) for s in pts_yest.index],
+                customdata=cagr_yest.values,
+                hovertemplate="%{text}<br>Yesterday<br>Vol: %{x:.2f}% | CAGR: %{customdata:.2f}%<extra></extra>",
+                name="Yesterday", showlegend=True
+            ))
+    # Today (데이터가 있는 경우만 표시)
+    if not pts_today.empty and "CAGR" in pts_today.columns:
+        cagr_today = pts_today["CAGR"]*100
         fig.add_trace(go.Scatter(
-            x=pts_mago["Vol"]*100, y=pts_mago["CAGR"]*100, mode="markers",
-            marker=dict(size=7, color="lightgray"),
-            text=[display_name(s) for s in pts_mago.index],
-            hovertemplate="%{text}<br>1M ago<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
-            name="1M ago", showlegend=True
+            x=pts_today["Vol"]*100, y=(cagr_today + 100).clip(lower=0.1), mode="markers+text",
+            marker=dict(size=9),
+            text=[display_name(s) for s in pts_today.index],
+            textposition="top center",
+            customdata=cagr_today.values,
+            hovertemplate="%{text}<br>Today<br>Vol: %{x:.2f}% | CAGR: %{customdata:.2f}%<extra></extra>",
+            name="Today", showlegend=True
         ))
-        # Yesterday
-        fig.add_trace(go.Scatter(
-            x=pts_yest["Vol"]*100, y=pts_yest["CAGR"]*100, mode="markers",
-            marker=dict(size=8, color="silver"),
-            text=[display_name(s) for s in pts_yest.index],
-            hovertemplate="%{text}<br>Yesterday<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
-            name="Yesterday", showlegend=True
-        ))
-    # Today
-    fig.add_trace(go.Scatter(
-        x=pts_today["Vol"]*100, y=pts_today["CAGR"]*100, mode="markers+text",
-        marker=dict(size=9),
-        text=[display_name(s) for s in pts_today.index],
-        textposition="top center",
-        hovertemplate="%{text}<br>Today<br>Vol: %{x:.2f}% | CAGR: %{y:.2f}%<extra></extra>",
-        name="Today", showlegend=True
-    ))
-    # 꼬리 길이가 0일 때만 1M→Yest→Today 연결선 표시
+    # 꼬리 길이가 0일 때만 1M→Yest→Today 연결선 표시 (데이터가 있는 경우만)
     if tail_days == 0:
         for c in plot_syms:
             xs=[]; ys=[]
             for dfp in (pts_mago, pts_yest, pts_today):
-                if c in dfp.index and not dfp.loc[c].isna().any():
+                if not dfp.empty and "CAGR" in dfp.columns and c in dfp.index and not dfp.loc[c].isna().any():
                     xs.append(float(dfp.loc[c,"Vol"])*100)
-                    ys.append(float(dfp.loc[c,"CAGR"])*100)
+                    y_val = float(dfp.loc[c,"CAGR"])*100 + 100
+                    ys.append(max(y_val, 0.1))  # offset 적용 (최소값 0.1 보장)
             if len(xs)>=2:
                 fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines",
                                          line=dict(width=1), opacity=0.35,
                                          name=f"path-{c}", showlegend=False, hoverinfo="skip"))
     fig.update_layout(
         height=520, margin=dict(l=10,r=10,t=10,b=10),
-        xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %)",
+        xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %), log scale (100 = 0%)",
+        yaxis=dict(type="log"),
         hovermode="closest"
     )
     return fig
@@ -922,15 +934,19 @@ def make_motion_scatter(days):
         tail_traces.append(go.Scatter(x=[], y=[], mode="lines", line=dict(width=2, dash="dot"),
                                       showlegend=False, hoverinfo="skip", name=f"{c}-tail"))
 
-    # 초기 포인트
+    # 초기 포인트 (데이터가 있는 경우만)
     traces.extend(tail_traces)
-    traces.append(go.Scatter(
-        x=p0["Vol"]*100, y=p0["CAGR"]*100, mode="markers",
-        marker=dict(size=9),
-        text=[display_name(s) for s in p0.index],
-        hovertemplate="%{text}<br>%{x:.2f}% / %{y:.2f}%<extra></extra>",
-        name="Points", showlegend=False
-    ))
+    if not p0.empty and "CAGR" in p0.columns:
+        cagr_p0 = p0["CAGR"]*100
+        traces.append(go.Scatter(
+            x=p0["Vol"]*100, y=(cagr_p0 + 100).clip(lower=0.1), mode="markers+text",
+            marker=dict(size=9),
+            text=[display_name(s) for s in p0.index],
+            textposition="top center",
+            customdata=cagr_p0.values,
+            hovertemplate="%{text}<br>Vol: %{x:.2f}% | CAGR: %{customdata:.2f}%<extra></extra>",
+            name="Points", showlegend=False
+        ))
 
     # 프레임 생성
     for loc in range(start_loc, today_loc+1):
@@ -946,17 +962,22 @@ def make_motion_scatter(days):
                 if pk.empty or pk.isna().any().any(): 
                     continue
                 xs.append(float(pk.iloc[0,0])*100.0)
-                ys.append(float(pk.iloc[0,1])*100.0)
+                y_val = float(pk.iloc[0,1])*100.0 + 100.0
+                ys.append(max(y_val, 0.1))  # offset 적용 (최소값 0.1 보장)
             frame_data.append(go.Scatter(x=xs, y=ys, mode="lines", line=dict(width=2, dash="dot"),
                                          showlegend=False, hoverinfo="skip", name=f"{c}-tail"))
-        # 포인트
-        frame_data.append(go.Scatter(
-            x=p["Vol"]*100, y=p["CAGR"]*100, mode="markers",
-            marker=dict(size=9),
-            text=[display_name(s) for s in p.index],
-            hovertemplate="%{text}<br>%{x:.2f}% / %{y:.2f}%<extra></extra>",
-            name="Points", showlegend=False
-        ))
+        # 포인트 (데이터가 있는 경우만)
+        if not p.empty and "CAGR" in p.columns:
+            cagr_p = p["CAGR"]*100
+            frame_data.append(go.Scatter(
+                x=p["Vol"]*100, y=(cagr_p + 100).clip(lower=0.1), mode="markers+text",
+                marker=dict(size=9),
+                text=[display_name(s) for s in p.index],
+                textposition="top center",
+                customdata=cagr_p.values,
+                hovertemplate="%{text}<br>Vol: %{x:.2f}% | CAGR: %{customdata:.2f}%<extra></extra>",
+                name="Points", showlegend=False
+            ))
 
         frames.append(go.Frame(data=frame_data, name=str(prices_krw.index[loc].date())))
 
@@ -966,7 +987,8 @@ def make_motion_scatter(days):
     
     fig.update_layout(
         height=520, margin=dict(l=10,r=10,t=10,b=10),
-        xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %)",
+        xaxis_title="Volatility (ann, %)", yaxis_title="CAGR (ann, %), log scale (100 = 0%)",
+        yaxis=dict(type="log"),
         updatemenus=[{
             "type": "buttons", "showactive": False,
             "buttons": [
