@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.3.0
+# KRW Momentum Radar - v3.4.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -59,7 +59,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.1.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.4.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -301,230 +301,6 @@ def last_vol_annualized(df, window=20):
     if rets.empty: return pd.Series(index=df.columns, dtype=float)
     vol = rets.rolling(window).std().iloc[-1] * np.sqrt(252.0)
     return vol
-
-def calculate_tradeability_filters(ohlc_data, symbols):
-    """
-    거래 적합성 실격 필터를 계산합니다.
-    
-    Args:
-        ohlc_data (pd.DataFrame): OHLC 데이터 (MultiIndex columns)
-        symbols (list): 심볼 목록
-    
-    Returns:
-        tuple: (disqualification_dict, filter_reasons_dict)
-            - disqualification_dict: 각 심볼별 실격 여부 (True면 실격)
-            - filter_reasons_dict: 각 심볼별 실격 이유
-    """
-    disqualification = {}
-    filter_reasons = {}
-    
-    for symbol in symbols:
-        try:
-            # OHLC 데이터 추출
-            if isinstance(ohlc_data.columns, pd.MultiIndex):
-                if ((symbol, 'High') in ohlc_data.columns and 
-                    (symbol, 'Low') in ohlc_data.columns and 
-                    (symbol, 'Close') in ohlc_data.columns):
-                    high = ohlc_data[(symbol, 'High')].dropna()
-                    low = ohlc_data[(symbol, 'Low')].dropna()
-                    close = ohlc_data[(symbol, 'Close')].dropna()
-                else:
-                    disqualification[symbol] = True
-                    filter_reasons[symbol] = "OHLC 데이터 부족"
-                    continue
-            else:
-                # 단일 심볼인 경우
-                if 'High' in ohlc_data.columns and 'Low' in ohlc_data.columns and 'Close' in ohlc_data.columns:
-                    high = ohlc_data['High'].dropna()
-                    low = ohlc_data['Low'].dropna()
-                    close = ohlc_data['Close'].dropna()
-                else:
-                    disqualification[symbol] = True
-                    filter_reasons[symbol] = "OHLC 데이터 부족"
-                    continue
-            
-            if len(close) < 63:  # 최소 63거래일 데이터 필요
-                disqualification[symbol] = True
-                filter_reasons[symbol] = "데이터 기간 부족 (63일 미만)"
-                continue
-            
-            # --- 거래 적합성 필터 ---
-            prev_close = close.shift(1)
-            
-            # '트루 레인지'를 계산하여 가격 갭을 포함한 실제 변동폭을 측정
-            true_range_series = [
-                high - low,
-                abs(high - prev_close),
-                abs(low - prev_close)
-            ]
-            true_range = pd.concat(true_range_series, axis=1).max(axis=1, skipna=False)
-            
-            # 새로운 필터링 지표 '일일 트루 레인지 변동폭' 정의
-            daily_true_range_volatility = true_range / prev_close
-            
-            # 일일 하방 리스크 계산: (당일 저가 / 전일 종가) - 1 (기존 로직 유지)
-            daily_downside_risk = (low / prev_close) - 1
-            
-            # 필터 1: 치명적 변동성 필터 (63거래일 내 일일 트루 레인지 변동폭 30% 초과)
-            recent_63_days = daily_true_range_volatility.tail(63)
-            extreme_volatility_days = recent_63_days[recent_63_days > 0.30]  # 15% → 30%로 완화
-            
-            # 필터 2: 반복적 하방 리스크 필터 (20거래일 내 하방 리스크 -7% 미만 4일 이상)
-            recent_20_days = daily_downside_risk.tail(20)
-            severe_downside_days = recent_20_days[recent_20_days < -0.07]  # 원래 요청: -7%, 4일
-            
-            # 실격 조건 확인 및 이유 기록
-            reasons = []
-            
-            if len(extreme_volatility_days) > 0:
-                reasons.append(f"치명적 변동성 ({len(extreme_volatility_days)}일 30% 초과)")
-            
-            if len(severe_downside_days) >= 4:
-                reasons.append(f"반복적 하방리스크 ({len(severe_downside_days)}일 -7% 미만)")
-            
-            is_disqualified = len(reasons) > 0
-            
-            disqualification[symbol] = is_disqualified
-            filter_reasons[symbol] = "; ".join(reasons) if reasons else "정상"
-            
-        except Exception as e:
-            log(f"거래 적합성 필터 계산 오류 {symbol}: {str(e)}")
-            disqualification[symbol] = True
-            filter_reasons[symbol] = f"계산 오류: {str(e)}"
-    
-    return disqualification, filter_reasons
-
-def _mom_snapshot(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols=None):
-    """
-    모멘텀 스냅샷을 계산합니다.
-    
-    Args:
-        prices_krw (pd.DataFrame): KRW 환산 가격 데이터
-        reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
-        ohlc_data (pd.DataFrame, optional): OHLC 데이터 (거래 적합성 필터용)
-        symbols (list, optional): 심볼 목록 (거래 적합성 필터용)
-    
-    Returns:
-        pd.DataFrame: 모멘텀 지표들이 포함된 DataFrame
-    """
-    r_1m = returns_pct(prices_krw, 21)
-    r_3m = returns_pct(prices_krw, 63)  # 3개월 수익률
-    
-    above_ema50 = {}
-    
-    for c in prices_krw.columns:
-        s = prices_krw[c].dropna()
-        if s.empty:
-            above_ema50[c] = np.nan
-            continue
-            
-        e50 = ema(s, 50)
-        above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
-    
-    above_ema50 = pd.Series(above_ema50, name="AboveEMA50")
-    vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20(ann)")
-
-    # 거래 적합성 실격 필터 적용
-    disqualification_flags = {}
-    filter_reasons = {}
-    if ohlc_data is not None and symbols is not None:
-        disqualification_flags, filter_reasons = calculate_tradeability_filters(ohlc_data, symbols)
-    
-    # 실격 종목 추출 (prices_krw에 있는 종목만)
-    disqualified_symbols = set()
-    if disqualification_flags:
-        disqualified_symbols = {sym for sym, is_disq in disqualification_flags.items() 
-                               if is_disq and sym in prices_krw.columns}
-    
-    # 참조 데이터가 없는 경우(current 데이터만 있는 경우) 실격 종목 제외하고 Z-score 계산
-    # 참조 데이터가 있는 경우는 참조 데이터 기준으로만 normalize하므로 실격 종목 제외 불필요
-    
-    # Z-score 계산 기준 결정
-    if reference_prices_krw is not None:
-        # 참조 데이터가 있으면 참조 데이터로 Z-score 계산
-        ref_r_1m = returns_pct(reference_prices_krw, 21)
-        ref_r_3m = returns_pct(reference_prices_krw, 63)
-        
-        ref_above_ema50 = {}
-        
-        for c in reference_prices_krw.columns:
-            s = reference_prices_krw[c].dropna()
-            if s.empty:
-                ref_above_ema50[c] = np.nan
-                continue
-                
-            e50 = ema(s, 50)
-            ref_above_ema50[c] = (s.iloc[-1]/e50.iloc[-1]-1.0) if e50.iloc[-1] > 0 else np.nan
-        
-        ref_above_ema50 = pd.Series(ref_above_ema50, name="AboveEMA50")
-        ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename("Vol20(ann)")
-        
-        # 참조 데이터로 Z-score 계산
-        def z_with_reference(x, ref_x):
-            x = x.astype(float)
-            ref_x = ref_x.astype(float)
-            m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
-            return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
-        
-        FMS = (0.4*z_with_reference(r_1m, ref_r_1m) + 
-               0.3*z_with_reference(r_3m, ref_r_3m) + 
-               0.2*z_with_reference(above_ema50, ref_above_ema50) 
-               - 0.4*z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
-    else:
-        # 기존 방식: 현재 데이터로 Z-score 계산
-        def z(x, exclude_disq=False):
-            x = x.astype(float)
-            # 실격 종목 제외하고 평균/표준편차 계산
-            if exclude_disq and disqualified_symbols:
-                valid_idx = [idx for idx in x.index if idx not in disqualified_symbols]
-                valid_x = x.loc[valid_idx] if valid_idx else x
-            else:
-                valid_x = x
-            m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
-            return (x-m)/sd if sd and not np.isnan(sd) else x*0.0
-
-        FMS = (0.4*z(r_1m, exclude_disq=True) + 0.3*z(r_3m, exclude_disq=True) + 0.2*z(above_ema50, exclude_disq=True) 
-               - 0.4*z(vol20.fillna(vol20.median()), exclude_disq=True))
-    
-    # 거래 적합성 실격 필터 적용: 실격된 종목은 FMS를 -999로 설정
-    if disqualification_flags:
-        for symbol in FMS.index:
-            if symbol in disqualification_flags and disqualification_flags[symbol]:
-                FMS[symbol] = -999.0
-                log(f"거래 적합성 실격: {symbol} (FMS = -999)")
-    
-    # 필터링 이유 시리즈 생성
-    filter_reasons_series = pd.Series(filter_reasons, name="Filter_Status").reindex(FMS.index, fill_value="정상")
-    
-    # 결과 DataFrame 구성
-    snap = pd.concat([r_1m.rename("R_1M"), r_3m.rename("R_3M"), above_ema50, 
-                     vol20, FMS.rename("FMS"), filter_reasons_series], axis=1)
-    
-    return snap
-
-def momentum_now_and_delta(prices_krw, reference_prices_krw=None, ohlc_data=None, symbols=None):
-    """
-    모멘텀과 델타를 계산합니다.
-    
-    Args:
-        prices_krw (pd.DataFrame): KRW 환산 가격 데이터
-        reference_prices_krw (pd.DataFrame, optional): Z-score 계산 기준이 되는 참조 데이터
-        ohlc_data (pd.DataFrame, optional): OHLC 데이터 (거래 적합성 필터용)
-        symbols (list, optional): 심볼 목록 (거래 적합성 필터용)
-    
-    Returns:
-        pd.DataFrame: 모멘텀 지표와 델타가 포함된 DataFrame
-    """
-    now = _mom_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
-    d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw, ohlc_data, symbols) if len(prices_krw)>1 else now*np.nan
-    d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw, ohlc_data, symbols) if len(prices_krw)>5 else now*np.nan
-    df = now.copy()
-    df["ΔFMS_1D"] = df["FMS"] - d1["FMS"]
-    df["ΔFMS_5D"] = df["FMS"] - d5["FMS"]
-    df["R_1W"] = returns_pct(prices_krw, 5)
-    df["R_6M"] = returns_pct(prices_krw, 126)
-    df["R_YTD"] = ytd_return(prices_krw)
-    return df.sort_values("FMS", ascending=False)
 
 # ------------------------------
 # 중앙화된 FMS/필터 로직으로 오버라이드
@@ -944,7 +720,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.3.0")
+st.title("⚡ KRW Momentum Radar v3.4.0")
 
 
 
@@ -1262,9 +1038,62 @@ st.caption("설명: 각 점은 선택한 창(기본 21거래일)의 연율화 �
 st.subheader("세부 보기")
 ordered_options = list(mom_ranked.index)
 default_sym = (sel_syms[0] if sel_syms else ordered_options[0]) if ordered_options else prices_krw.columns[0]
-detail_sym = st.selectbox("티커 선택", options=ordered_options,
-                          index=ordered_options.index(default_sym) if default_sym in ordered_options else 0,
-                          format_func=lambda s: display_name(s))
+
+# 세부보기 종목 인덱스 초기화
+if 'detail_symbol_index' not in st.session_state:
+    default_idx = ordered_options.index(default_sym) if default_sym in ordered_options else 0
+    st.session_state.detail_symbol_index = default_idx
+
+# 현재 선택된 인덱스가 유효한 범위를 벗어났는지 확인
+if st.session_state.detail_symbol_index >= len(ordered_options):
+    st.session_state.detail_symbol_index = len(ordered_options) - 1
+if st.session_state.detail_symbol_index < 0:
+    st.session_state.detail_symbol_index = 0
+
+# selectbox와 네비게이션 버튼을 한 줄에 배치
+detail_col1, detail_col2, detail_col3, detail_col4 = st.columns([11, 1, 1, 1])
+
+# 버튼 클릭 처리
+with detail_col2:
+    # 이전 버튼 (▲)
+    prev_disabled = st.session_state.detail_symbol_index <= 0
+    if st.button("▲", disabled=prev_disabled, key="detail_prev", help="이전 종목", use_container_width=True):
+        if st.session_state.detail_symbol_index > 0:
+            st.session_state.detail_symbol_index -= 1
+            st.rerun()
+
+with detail_col3:
+    # 다음 버튼 (▼)
+    next_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+    if st.button("▼", disabled=next_disabled, key="detail_next", help="다음 종목", use_container_width=True):
+        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
+            st.session_state.detail_symbol_index += 1
+            st.rerun()
+
+with detail_col4:
+    # 맨 끝으로 가기 버튼 (⏬)
+    end_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+    if st.button("⏬", disabled=end_disabled, key="detail_end", help="맨 끝으로 이동", use_container_width=True):
+        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
+            st.session_state.detail_symbol_index = len(ordered_options) - 1
+            st.rerun()
+
+with detail_col1:
+    # selectbox의 key를 인덱스 기반으로 동적 생성하여 버튼 클릭 시 새로운 상태로 인식
+    selectbox_key = f"detail_selectbox_{st.session_state.detail_symbol_index}"
+    
+    detail_sym = st.selectbox("", options=ordered_options,
+                              index=st.session_state.detail_symbol_index,
+                              format_func=lambda s: display_name(s),
+                              key=selectbox_key,
+                              label_visibility="collapsed")
+    
+    # selectbox 변경 시 인덱스 업데이트 (사용자가 직접 선택한 경우)
+    if detail_sym in ordered_options:
+        new_index = ordered_options.index(detail_sym)
+        if new_index != st.session_state.detail_symbol_index:
+            st.session_state.detail_symbol_index = new_index
+            st.rerun()
 s = prices_krw[detail_sym].dropna()
 e20,e50,e200 = ema(s,20), ema(s,50), ema(s,200)
 fig_det = go.Figure()
