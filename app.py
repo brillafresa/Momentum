@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.5.0
+# KRW Momentum Radar - v3.6.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -15,6 +15,7 @@ os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시
 
 import warnings
 from datetime import datetime
+import json
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -59,7 +60,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.5.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.6.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -688,19 +689,125 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None):
     return prices_krw, miss_dict
 
 # ------------------------------
-# 이름 캐시
+# 이름 캐시 (영구 파일 기반)
 # ------------------------------
+SYMBOL_NAMES_CACHE_FILE = "symbol_names_cache.json"
+
+def load_symbol_names_cache():
+    """
+    종목명 캐시 파일을 로드합니다.
+    
+    Returns:
+        dict: {symbol: name} 형태의 딕셔너리
+    """
+    try:
+        if os.path.exists(SYMBOL_NAMES_CACHE_FILE):
+            with open(SYMBOL_NAMES_CACHE_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log(f"WARNING: Failed to load symbol names cache: {e}")
+    return {}
+
+def save_symbol_names_cache(cache_dict):
+    """
+    종목명 캐시를 파일에 저장합니다.
+    
+    Args:
+        cache_dict (dict): {symbol: name} 형태의 딕셔너리
+    """
+    try:
+        with open(SYMBOL_NAMES_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cache_dict, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log(f"WARNING: Failed to save symbol names cache: {e}")
+
+def load_korean_stock_names():
+    """
+    korean_universe.csv 파일에서 한국 종목명을 로드합니다.
+    
+    Returns:
+        dict: {symbol: name} 형태의 딕셔너리
+    """
+    korean_names = {}
+    try:
+        if os.path.exists('korean_universe.csv'):
+            df = pd.read_csv('korean_universe.csv')
+            if 'Symbol' in df.columns and 'Name' in df.columns:
+                for _, row in df.iterrows():
+                    symbol = str(row['Symbol']).strip()
+                    name = str(row['Name']).strip() if pd.notna(row['Name']) else None
+                    if symbol and name:
+                        korean_names[symbol] = name
+    except Exception as e:
+        log(f"WARNING: Failed to load Korean stock names: {e}")
+    return korean_names
+
 @st.cache_data(ttl=60*60*24, show_spinner=False)
 def fetch_long_names(symbols):
+    """
+    종목명을 가져옵니다. 한국 종목은 korean_universe.csv에서 읽고, 
+    다른 종목은 영구 캐시 파일 또는 yfinance를 사용합니다.
+    
+    Args:
+        symbols (list): 종목 심볼 목록
+    
+    Returns:
+        dict: {symbol: name} 형태의 딕셔너리
+    """
+    # 한국 종목명 파일에서 로드
+    korean_names = load_korean_stock_names()
+    
+    # 캐시 파일에서 기존 종목명 로드 (한국 종목 제외)
+    cache = load_symbol_names_cache()
+    
+    # 결과 딕셔너리 초기화
     out = {}
-    for s in symbols:
-        name = None
-        try:
-            info = yf.Ticker(s).get_info()
-            name = info.get("longName") or info.get("shortName")
-        except Exception as e:
-            log(f"INFO name fetch fail: {s} -> {e}")
-        out[s] = name if name else s
+    new_symbols = []
+    
+    # 종목별로 처리
+    for symbol in symbols:
+        # 한국 종목(.KS)은 korean_universe.csv에서 우선 확인
+        if symbol.endswith('.KS'):
+            if symbol in korean_names:
+                out[symbol] = korean_names[symbol]
+            else:
+                # 파일에 없으면 종목코드 사용
+                out[symbol] = symbol
+                log(f"WARNING: Korean stock name not found in korean_universe.csv: {symbol}")
+        else:
+            # 한국 종목이 아닌 경우 캐시 확인
+            if symbol in cache:
+                out[symbol] = cache[symbol]
+            else:
+                new_symbols.append(symbol)
+    
+    # 캐시에 없는 비한국 종목만 yfinance에서 가져오기
+    if new_symbols:
+        log(f"Fetching names for {len(new_symbols)} non-Korean symbols from yfinance...")
+        for symbol in new_symbols:
+            name = None
+            try:
+                ticker = yf.Ticker(symbol)
+                info = ticker.get_info()
+                raw_name = info.get("longName") or info.get("shortName")
+                
+                if raw_name:
+                    name = raw_name
+                else:
+                    name = symbol
+                    
+            except Exception as e:
+                log(f"INFO name fetch fail: {symbol} -> {e}")
+                name = symbol
+            
+            # 결과 저장
+            out[symbol] = name
+            # 캐시에도 저장
+            cache[symbol] = name
+        
+        # 캐시 파일 업데이트
+        save_symbol_names_cache(cache)
+    
     return out
 
 
@@ -720,7 +827,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.5.0")
+st.title("⚡ KRW Momentum Radar v3.6.0")
 
 
 

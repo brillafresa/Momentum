@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+## [3.6.0] - 2025-11-04
+
+### 추가
+
+- **한국 종목명 파일 기반 관리**: `korean_universe.csv`에 `Name` 컬럼 추가로 한국 종목명 직접 관리
+- **종목명 영구 캐시 시스템**: `symbol_names_cache.json` 파일 기반으로 비한국 종목명 캐시 저장
+
+### 개선
+
+- **한국 종목명 처리 효율화**: 한국 종목(.KS)은 yfinance API 호출 없이 `korean_universe.csv`에서 직접 읽어오도록 개선
+- **종목명 캐시 무효화**: `symbol_names_cache.json` 파일 삭제로 캐시 초기화 가능
+- **한국 종목명 정확도 향상**: yfinance의 이상한 문자열 대신 파일에 입력한 정확한 종목명 사용
+
+### 수정
+
+- **사용하지 않는 코드 제거**: 한국 종목명 파싱 함수(`parse_korean_stock_name`) 제거 (파일 기반으로 전환)
+- **한국 종목명 로딩 로직 변경**: `fetch_long_names()` 함수가 한국 종목은 파일에서, 비한국 종목은 캐시/yfinance에서 읽도록 개선
+
+### 변경
+
+- **korean_universe.csv 파일 구조**: `Symbol,Name` 컬럼 구조로 변경 (기존 Symbol만 있던 구조에서 확장)
+- **종목명 가져오기 우선순위**: 한국 종목 → korean_universe.csv 우선, 비한국 종목 → 캐시 파일 우선, 없으면 yfinance
+
 ## [3.5.0] - 2025-11-03
 
 ### 추가
