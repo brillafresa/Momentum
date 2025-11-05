@@ -29,7 +29,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 9. **진정한 전체 시장 탐색 엔진**: Finviz.com 기반 실시간 유니버스 스크리닝 (8,000+ 종목)
 10. **진부한 종목 자동 편출**: FMS 기반 저성과 종목 제거 제안
 11. **배치 스캔 시스템**: CLI 기반 오프라인 배치 스캔으로 정확도 향상 및 중앙화된 FMS 로직
-12. **다국가 통합 스캔**: 미국(Finviz) + 한국(KOSPI200/KOSDAQ150) 유니버스 병합 스캔
+12. **다국가 통합 스캔**: 미국(Finviz) + 한국(KOSPI200/KOSDAQ150/국내상장 ETF 전 종목) 유니버스 병합 스캔
 
 ## 파일 구조
 ```
@@ -42,7 +42,7 @@ Momentum/
 ├── analysis_utils.py         # 공통 분석 유틸(가격/FX/지표/FMS/필터)
 ├── watchlist.csv            # 사용자 관심종목 저장 파일 (버전 관리 포함)
 ├── screened_universe.csv     # 사전 필터링된 미국 유니버스 (Finviz)
-├── korean_universe.csv       # 한국 유니버스 (KOSPI 200 + KOSDAQ 150, Symbol,Name 컬럼)
+├── korean_universe.csv       # 한국 유니버스 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, Symbol,Name 컬럼)
 ├── requirements.txt          # Python 의존성
 ├── README.md                # 프로젝트 설명
 ├── LICENSE                  # MIT 라이선스
@@ -58,7 +58,7 @@ Momentum/
 ### 중요 파일 관리
 - **watchlist.csv**: 사용자 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
 - **screened_universe.csv**: 사전 필터링된 미국 유니버스 목록 (매일 업데이트 권장)
-- **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150, Symbol,Name 컬럼, 수동 관리)
+- **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, Symbol,Name 컬럼, 수동 관리)
   - **Name 컬럼**: 한국 종목명 직접 입력 (yfinance API 호출 없이 파일에서 읽어옴)
 - **symbol_names_cache.json**: 비한국 종목명 영구 캐시 파일 (자동 생성, 삭제 시 캐시 초기화)
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)

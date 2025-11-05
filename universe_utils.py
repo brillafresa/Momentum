@@ -225,7 +225,7 @@ def load_universe_file():
 def load_korean_universe():
     """
     korean_universe.csv 파일을 로드합니다.
-    KOSPI 200 + KOSDAQ 150 종목 리스트를 반환합니다.
+    KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목 리스트를 반환합니다.
     
     Returns:
         tuple: (success, symbols_list, message)
