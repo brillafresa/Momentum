@@ -884,8 +884,115 @@ fig_comp.update_layout(
 )
 st.plotly_chart(fig_comp, use_container_width=True)
 
+# ------------------------------
+# ③ 세부 보기
+# ------------------------------
+st.subheader("세부 보기")
+ordered_options = list(mom_ranked.index)
+default_sym = (sel_syms[0] if sel_syms else ordered_options[0]) if ordered_options else prices_krw.columns[0]
+
+if 'detail_symbol_index' not in st.session_state:
+    default_idx = ordered_options.index(default_sym) if default_sym in ordered_options else 0
+    st.session_state.detail_symbol_index = default_idx
+
+# 현재 선택된 인덱스가 유효한 범위를 벗어났는지 확인
+if st.session_state.detail_symbol_index >= len(ordered_options):
+    st.session_state.detail_symbol_index = len(ordered_options) - 1
+if st.session_state.detail_symbol_index < 0:
+    st.session_state.detail_symbol_index = 0
+
+option_count = max(1, len(ordered_options))
+index_width = max(2, len(str(option_count)))
+option_labels = {
+    sym: f"[{idx:0{index_width}d}] {display_name(sym)}"
+    for idx, sym in enumerate(ordered_options, 1)
+}
+
+# selectbox와 네비게이션 버튼을 한 줄에 배치
+detail_col1, detail_col2, detail_col3, detail_col4 = st.columns([11, 1, 1, 1])
+
+# 버튼 클릭 처리
+with detail_col2:
+    # 이전 버튼 (▲)
+    prev_disabled = st.session_state.detail_symbol_index <= 0
+    if st.button("▲", disabled=prev_disabled, key="detail_prev", help="이전 종목", use_container_width=True):
+        if st.session_state.detail_symbol_index > 0:
+            st.session_state.detail_symbol_index -= 1
+            st.rerun()
+
+with detail_col3:
+    # 다음 버튼 (▼)
+    next_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+    if st.button("▼", disabled=next_disabled, key="detail_next", help="다음 종목", use_container_width=True):
+        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
+            st.session_state.detail_symbol_index += 1
+            st.rerun()
+
+with detail_col4:
+    # 맨 끝으로 가기 버튼 (⏬)
+    end_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+    if st.button("⏬", disabled=end_disabled, key="detail_end", help="맨 끝으로 이동", use_container_width=True):
+        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
+            st.session_state.detail_symbol_index = len(ordered_options) - 1
+            st.rerun()
+
+with detail_col1:
+    # selectbox의 key를 인덱스 기반으로 동적 생성하여 버튼 클릭 시 새로운 상태로 인식
+    selectbox_key = f"detail_selectbox_{st.session_state.detail_symbol_index}"
+    
+    detail_sym = st.selectbox("", options=ordered_options,
+                              index=st.session_state.detail_symbol_index,
+                              format_func=lambda s: option_labels.get(s, display_name(s)),
+                              key=selectbox_key,
+                              label_visibility="collapsed")
+    
+    # selectbox 변경 시 인덱스 업데이트 (사용자가 직접 선택한 경우)
+    if detail_sym in ordered_options:
+        new_index = ordered_options.index(detail_sym)
+        if new_index != st.session_state.detail_symbol_index:
+            st.session_state.detail_symbol_index = new_index
+            st.rerun()
+s = prices_krw[detail_sym].dropna()
+e20,e50,e200 = ema(s,20), ema(s,50), ema(s,200)
+fig_det = go.Figure()
+fig_det.add_trace(go.Scatter(x=s.index, y=s.values, mode="lines", name="KRW"))
+fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
+fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
+fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
+fig_det.update_layout(
+    height=420, 
+    margin=dict(l=10,r=10,t=10,b=10), 
+    yaxis_title="KRW",
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=-0.15,
+        xanchor="center",
+        x=0.5
+    )
+)
+st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
+
+roll_max = s.cummax()
+dd = (s/roll_max - 1.0)*100.0
+fig_dd = go.Figure([go.Scatter(x=dd.index, y=dd.values, mode="lines", name="Drawdown(%)")])
+fig_dd.update_layout(height=180, margin=dict(l=10,r=10,t=10,b=10), yaxis_title="%")
+st.plotly_chart(fig_dd, use_container_width=True, config={"displayModeBar": False})
+
+row = mom.loc[detail_sym]
+badges=[]
+if row["R_1M"]>0: badges.append("1M +")
+if row["AboveEMA50"]>0: badges.append("EMA50 상회")
+
+# FMS 지표 표시
+if "R_3M" in row and row["R_3M"]>0: badges.append("3M +")
+
+if row["ΔFMS_1D"]>0: badges.append("가속(1D+)")
+if row["ΔFMS_5D"]>0: badges.append("가속(5D+)")
+st.markdown(" ".join([f"<span class='badge'>{b}</span>" for b in badges]) or "<span class='small'>상태 배지 없음</span>", unsafe_allow_html=True)
+
 # ==============================
-# ③ 수익률–변동성 이동맵
+# ④ 수익률–변동성 이동맵
 # ==============================
 st.subheader("수익률–변동성 이동맵 (최근 상태 → 어디서 왔는가)")
 
@@ -1160,107 +1267,6 @@ st.plotly_chart(fig_mv, use_container_width=True)
 st.caption("설명: 각 점은 선택한 창(기본 21거래일)의 연율화 수익률(CAGR)·연율화 변동성입니다. "
            "‘꼬리 길이’는 오늘 기준 과거 n거래일 동안 좌표의 이동 경로를 점선으로 표시합니다. "
            "애니메이션 모드에서는 날짜가 바뀜에 따라 현재 위치와 꼬리가 함께 갱신됩니다.")
-
-# ------------------------------
-# ④ 세부 보기
-# ------------------------------
-st.subheader("세부 보기")
-ordered_options = list(mom_ranked.index)
-default_sym = (sel_syms[0] if sel_syms else ordered_options[0]) if ordered_options else prices_krw.columns[0]
-
-# 세부보기 종목 인덱스 초기화
-if 'detail_symbol_index' not in st.session_state:
-    default_idx = ordered_options.index(default_sym) if default_sym in ordered_options else 0
-    st.session_state.detail_symbol_index = default_idx
-
-# 현재 선택된 인덱스가 유효한 범위를 벗어났는지 확인
-if st.session_state.detail_symbol_index >= len(ordered_options):
-    st.session_state.detail_symbol_index = len(ordered_options) - 1
-if st.session_state.detail_symbol_index < 0:
-    st.session_state.detail_symbol_index = 0
-
-# selectbox와 네비게이션 버튼을 한 줄에 배치
-detail_col1, detail_col2, detail_col3, detail_col4 = st.columns([11, 1, 1, 1])
-
-# 버튼 클릭 처리
-with detail_col2:
-    # 이전 버튼 (▲)
-    prev_disabled = st.session_state.detail_symbol_index <= 0
-    if st.button("▲", disabled=prev_disabled, key="detail_prev", help="이전 종목", use_container_width=True):
-        if st.session_state.detail_symbol_index > 0:
-            st.session_state.detail_symbol_index -= 1
-            st.rerun()
-
-with detail_col3:
-    # 다음 버튼 (▼)
-    next_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
-    if st.button("▼", disabled=next_disabled, key="detail_next", help="다음 종목", use_container_width=True):
-        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
-            st.session_state.detail_symbol_index += 1
-            st.rerun()
-
-with detail_col4:
-    # 맨 끝으로 가기 버튼 (⏬)
-    end_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
-    if st.button("⏬", disabled=end_disabled, key="detail_end", help="맨 끝으로 이동", use_container_width=True):
-        if st.session_state.detail_symbol_index < len(ordered_options) - 1:
-            st.session_state.detail_symbol_index = len(ordered_options) - 1
-            st.rerun()
-
-with detail_col1:
-    # selectbox의 key를 인덱스 기반으로 동적 생성하여 버튼 클릭 시 새로운 상태로 인식
-    selectbox_key = f"detail_selectbox_{st.session_state.detail_symbol_index}"
-    
-    detail_sym = st.selectbox("", options=ordered_options,
-                              index=st.session_state.detail_symbol_index,
-                              format_func=lambda s: display_name(s),
-                              key=selectbox_key,
-                              label_visibility="collapsed")
-    
-    # selectbox 변경 시 인덱스 업데이트 (사용자가 직접 선택한 경우)
-    if detail_sym in ordered_options:
-        new_index = ordered_options.index(detail_sym)
-        if new_index != st.session_state.detail_symbol_index:
-            st.session_state.detail_symbol_index = new_index
-            st.rerun()
-s = prices_krw[detail_sym].dropna()
-e20,e50,e200 = ema(s,20), ema(s,50), ema(s,200)
-fig_det = go.Figure()
-fig_det.add_trace(go.Scatter(x=s.index, y=s.values, mode="lines", name="KRW"))
-fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
-fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
-fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
-fig_det.update_layout(
-    height=420, 
-    margin=dict(l=10,r=10,t=10,b=10), 
-    yaxis_title="KRW",
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=-0.15,
-        xanchor="center",
-        x=0.5
-    )
-)
-st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
-
-roll_max = s.cummax()
-dd = (s/roll_max - 1.0)*100.0
-fig_dd = go.Figure([go.Scatter(x=dd.index, y=dd.values, mode="lines", name="Drawdown(%)")])
-fig_dd.update_layout(height=180, margin=dict(l=10,r=10,t=10,b=10), yaxis_title="%")
-st.plotly_chart(fig_dd, use_container_width=True, config={"displayModeBar": False})
-
-row = mom.loc[detail_sym]
-badges=[]
-if row["R_1M"]>0: badges.append("1M +")
-if row["AboveEMA50"]>0: badges.append("EMA50 상회")
-
-# FMS 지표 표시
-if "R_3M" in row and row["R_3M"]>0: badges.append("3M +")
-
-if row["ΔFMS_1D"]>0: badges.append("가속(1D+)")
-if row["ΔFMS_5D"]>0: badges.append("가속(5D+)")
-st.markdown(" ".join([f"<span class='badge'>{b}</span>" for b in badges]) or "<span class='small'>상태 배지 없음</span>", unsafe_allow_html=True)
 
 # ------------------------------
 # ⑤ 표 (컬럼 자동 재구성)
