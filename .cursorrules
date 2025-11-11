@@ -58,7 +58,7 @@ Momentum/
 ### 중요 파일 관리
 - **watchlist.csv**: 사용자 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
 - **screened_universe.csv**: 사전 필터링된 미국 유니버스 목록 (매일 업데이트 권장)
-- **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, Symbol,Name 컬럼, 수동 관리)
+- **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, 단 ETF는 국내 지수/국내 자산 및 국내 인버스만 포함, 해외/레버리지형 ETF 제외, Symbol,Name 컬럼, 수동 관리)
   - **Name 컬럼**: 한국 종목명 직접 입력 (yfinance API 호출 없이 파일에서 읽어옴)
 - **symbol_names_cache.json**: 비한국 종목명 영구 캐시 파일 (자동 생성, 삭제 시 캐시 초기화)
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)

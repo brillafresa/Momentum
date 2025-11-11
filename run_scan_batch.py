@@ -65,7 +65,7 @@ def main() -> int:
         print(f"[Batch] ⚠️ Failed to load USA universe: {msg}")
         usa_symbols = []
     
-    # 한국 유니버스 로드 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목)
+    # 한국 유니버스 로드 (KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF 1배/인버스)
     ok_kor, kor_symbols, msg_kor = load_korean_universe()
     if not ok_kor or not kor_symbols:
         print(f"[Batch] ⚠️ Failed to load Korean universe: {msg_kor}")

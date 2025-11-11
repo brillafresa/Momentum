@@ -112,7 +112,7 @@ streamlit run app.py --server.port 8501
 ### 🇰🇷 한국 (KRW)
 
 - 대형주: 삼성전자(005930.KS)
-- ETF: KODEX, TIGER, ARIRANG 시리즈
+- 국내 지수 ETF: KODEX, TIGER, ARIRANG 1배 지수 및 인버스 상품
 
 ### 🇯🇵 일본 (JPY)
 
@@ -143,7 +143,7 @@ streamlit run app.py --server.port 8501
 - Windows 작업 스케줄러 설정 방법은 `README_BATCH.md`를 참조하세요.
 - 앱/배치 모두 동일한 단일 FMS/필터 로직(`analysis_utils.py`)을 사용합니다.
 - yfinance 레이트리밋 발생 시 지수 백오프로 최대 10회 재시도하며, 상장폐지/데이터 없음은 건너뜁니다.
-- **다국가 스캔**: USA(Finviz 스크리닝) + Korea(KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목) 통합 스캔 지원
+- **다국가 스캔**: USA(Finviz 스크리닝) + Korea(KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF 1배/인버스) 통합 스캔 지원
 
 ## 📊 지표 설명
 

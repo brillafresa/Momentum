@@ -7,13 +7,9 @@
 
 ## [Unreleased]
 
-### 추가
-
-- **국내상장 ETF 전 종목 추가**: `korean_universe.csv`에 국내상장 ETF 전 종목 리스트 추가로 한국 유니버스 확대
-
 ### 변경
 
-- **한국 유니버스 확장**: KOSPI 200 + KOSDAQ 150에서 KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목으로 확장
+- **한국 유니버스 재정비**: `korean_universe.csv`를 최신화하여 KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF(1배 및 국내 인버스)만 유지하고, 해외 노출 ETF 및 레버리지·인버스레버리지 ETF를 제거
 - **문서 업데이트**: `.cursorrules`, `README.md`, `universe_utils.py`, `run_scan_batch.py` 등 관련 문서 및 코드 주석 업데이트
 
 ## [3.6.0] - 2025-11-04
