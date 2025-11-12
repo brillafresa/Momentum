@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.6.0
+# KRW Momentum Radar - v3.6.2
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -745,8 +745,10 @@ def load_korean_stock_names():
 @st.cache_data(ttl=60*60*24, show_spinner=False)
 def fetch_long_names(symbols):
     """
-    종목명을 가져옵니다. 한국 종목은 korean_universe.csv에서 읽고, 
-    다른 종목은 영구 캐시 파일 또는 yfinance를 사용합니다.
+    종목명을 가져옵니다. 우선 순위는 다음과 같습니다.
+    1) 영구 캐시(`symbol_names_cache.json`)
+    2) 한국 종목인 경우 `korean_universe.csv`
+    3) yfinance API (마지막 수단, 결과는 캐시에 저장)
     
     Args:
         symbols (list): 종목 심볼 목록
@@ -754,60 +756,58 @@ def fetch_long_names(symbols):
     Returns:
         dict: {symbol: name} 형태의 딕셔너리
     """
-    # 한국 종목명 파일에서 로드
-    korean_names = load_korean_stock_names()
-    
-    # 캐시 파일에서 기존 종목명 로드 (한국 종목 제외)
     cache = load_symbol_names_cache()
-    
-    # 결과 딕셔너리 초기화
+    korean_names = None  # 필요할 때만 로드
     out = {}
-    new_symbols = []
-    
-    # 종목별로 처리
+    missing_for_yfinance = []
+    cache_updated = False
+
     for symbol in symbols:
-        # 한국 종목(.KS)은 korean_universe.csv에서 우선 확인
+        cached_name = cache.get(symbol)
+        if cached_name:
+            out[symbol] = cached_name
+            continue
+
+        name = None
+
         if symbol.endswith('.KS'):
+            if korean_names is None:
+                korean_names = load_korean_stock_names()
             if symbol in korean_names:
-                out[symbol] = korean_names[symbol]
-            else:
-                # 파일에 없으면 종목코드 사용
-                out[symbol] = symbol
-                log(f"WARNING: Korean stock name not found in korean_universe.csv: {symbol}")
-        else:
-            # 한국 종목이 아닌 경우 캐시 확인
-            if symbol in cache:
-                out[symbol] = cache[symbol]
-            else:
-                new_symbols.append(symbol)
-    
-    # 캐시에 없는 비한국 종목만 yfinance에서 가져오기
-    if new_symbols:
-        log(f"Fetching names for {len(new_symbols)} non-Korean symbols from yfinance...")
-        for symbol in new_symbols:
-            name = None
+                name = korean_names[symbol]
+
+        if name is not None:
+            out[symbol] = name
+            cache[symbol] = name
+            cache_updated = True
+            continue
+
+        missing_for_yfinance.append(symbol)
+
+    if missing_for_yfinance:
+        log(f"Fetching names for {len(missing_for_yfinance)} symbols from yfinance...")
+        for symbol in missing_for_yfinance:
+            name = symbol
             try:
                 ticker = yf.Ticker(symbol)
                 info = ticker.get_info()
                 raw_name = info.get("longName") or info.get("shortName")
-                
                 if raw_name:
                     name = raw_name
-                else:
-                    name = symbol
-                    
             except Exception as e:
                 log(f"INFO name fetch fail: {symbol} -> {e}")
-                name = symbol
-            
-            # 결과 저장
             out[symbol] = name
-            # 캐시에도 저장
             cache[symbol] = name
-        
-        # 캐시 파일 업데이트
+            cache_updated = True
+
+    if cache_updated:
         save_symbol_names_cache(cache)
-    
+
+    # 캐시/유니버스/yfinance 어디에서도 찾지 못한 경우 심볼 자체를 반환
+    for symbol in symbols:
+        if symbol not in out:
+            out[symbol] = symbol
+
     return out
 
 

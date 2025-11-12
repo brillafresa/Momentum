@@ -12,6 +12,12 @@
 - **한국 유니버스 재정비**: `korean_universe.csv`를 최신화하여 KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF(1배 및 국내 인버스)만 유지하고, 해외 노출 ETF 및 레버리지·인버스레버리지 ETF를 제거
 - **문서 업데이트**: `.cursorrules`, `README.md`, `universe_utils.py`, `run_scan_batch.py` 등 관련 문서 및 코드 주석 업데이트
 
+## [3.6.2] - 2025-11-12
+
+### 개선
+
+- **한국 종목명 조회 보강**: 캐시 → `korean_universe.csv` → yfinance 순으로 이름을 탐색하도록 `fetch_long_names()`를 개선해, 유니버스에 없는 한국 상장 종목도 안정적으로 종목명을 표시하고 결과를 캐시에 저장하도록 변경
+
 ## [3.6.1] - 2025-11-11
 
 ### 개선
