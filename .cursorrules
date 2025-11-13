@@ -117,3 +117,9 @@ Momentum/
 - **Semantic Versioning** 준수
 - **Keep a Changelog** 형식 사용
 - 주요 변경사항은 CHANGELOG.md에 기록
+- **버전 일관성 필수**: 버전 변경 시 다음 파일들을 모두 동시에 업데이트해야 함
+  - `app.py`: 파일 헤더 주석 (예: `# KRW Momentum Radar - v3.6.2`)
+  - `app.py`: `st.set_page_config(page_title=...)`의 버전
+  - `app.py`: `st.title(...)`의 버전
+  - `README.md`: 첫 번째 줄의 버전 표시
+  - `CHANGELOG.md`: 최신 버전 섹션 추가

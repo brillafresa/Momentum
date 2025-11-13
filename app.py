@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.6.2
+# KRW Momentum Radar - v3.6.3
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -60,7 +60,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.6.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.6.3", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -348,7 +348,7 @@ def only_name(sym):
 
 # 1. 분석 설정
 with st.sidebar.expander("📊 분석 설정", expanded=True):
-    period = st.selectbox("차트 기간", ["3M","6M","1Y","2Y","5Y"], index=0)
+    period = st.selectbox("차트 기간", ["1M","3M","6M","1Y","2Y"], index=1)
     
     rank_by = st.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
@@ -637,7 +637,7 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
 
 @st.cache_data(ttl=60*60*6, show_spinner=True)
 def build_prices_krw(period_key="6M", watchlist_symbols=None):
-    period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
+    period_map = {"1M":"3mo","3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y"}
     yf_period = period_map.get(period_key, "1y")
     interval = "1d"
 
@@ -827,7 +827,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.6.0")
+st.title("⚡ KRW Momentum Radar v3.6.3")
 
 
 
@@ -837,7 +837,7 @@ st.title("⚡ KRW Momentum Radar v3.6.0")
 with st.spinner("모멘텀/가속 계산 중…"):
     # 관심종목의 OHLC 데이터 다운로드 (거래 적합성 필터용)
     watchlist_symbols = list(prices_krw.columns)
-    period_map = {"3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y","5Y":"10y"}
+    period_map = {"1M":"3mo","3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y"}
     ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, period_map.get(period, "1y"), "1d")
     if ohlc_data.empty:
         ohlc_data = None
@@ -865,7 +865,7 @@ st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False})
 st.subheader(f"비교 차트 — 상위 {TOP_N} (기준: {rank_col})")
 sel_syms = list(topN.index)
 df_view = prices_krw[sel_syms].dropna(how="all")
-win_map={"3M":63,"6M":126,"1Y":252,"2Y":504,"5Y":1260}
+win_map={"1M":21,"3M":63,"6M":126,"1Y":252,"2Y":504}
 win = win_map.get(period,126)
 if df_view.shape[0]>win: df_view = df_view.iloc[-win:]
 df_base = df_view/df_view.iloc[0]*100.0
@@ -1017,7 +1017,7 @@ cc1, cc2, cc3, cc4 = st.columns([1.2,1.2,1.2,1.6])
 with cc1:
     rv_window = st.selectbox("수익률/변동성 창(거래일)", [21, 42, 63], index=0, help="연율화: 252 기준")
 with cc2:
-    plot_n = st.selectbox("표시 종목 수", [10, 15, 20, 25, 30], index=2, help="상위 랭킹 기준으로 제한해 과밀도 완화")
+    plot_n = st.selectbox("표시 종목 수", [10, 20, 30, 40, 50, 60], index=1, help="상위 랭킹 기준으로 제한해 과밀도 완화")
 with cc4:
     motion_mode = st.selectbox("모션(애니메이션)", ["끄기", "최근 10일", "최근 20일"], index=0,
                                help="프레임마다 현재 위치와 꼬리를 동시에 갱신")
