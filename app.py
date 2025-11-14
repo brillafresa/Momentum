@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.6.3
+# KRW Momentum Radar - v3.7.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -60,7 +60,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.6.3", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.7.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -352,7 +352,11 @@ with st.sidebar.expander("📊 분석 설정", expanded=True):
     
     rank_by = st.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
-    use_log_scale = st.checkbox("비교차트 로그 스케일", True)
+    # 수익률-변동성 이동맵 설정 (데이터 로드 시점에 필요)
+    st.divider()
+    st.markdown("**수익률-변동성 이동맵 설정**")
+    rv_window = st.selectbox("수익률/변동성 창(거래일)", [21, 42, 63], index=0, help="연율화: 252 기준", key="sidebar_rv_window")
+    tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=0, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시", key="sidebar_tail_days")
 
 # 2. 관심종목 관리
 with st.sidebar.expander("📋 관심종목 관리", expanded=False):
@@ -635,10 +639,72 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
 
 
 
+def calculate_minimum_data_period(rv_window=63, tail_days=10):
+    """
+    모든 기능이 정상 작동하기 위한 최소 데이터 기간을 계산합니다.
+    
+    각 기능별 최소 거래일 요구사항:
+    - FMS 계산: R_3M(63일) + ΔFMS_5D(5일) = 68일
+    - 거래 적합성 필터: 63일
+    - R_6M: 126일
+    - 수익률-변동성 이동맵: rv_window + tail_days (최대 73일)
+    - YTD Return: 연초부터 (1년 데이터면 충분)
+    
+    Args:
+        rv_window (int): 수익률-변동성 이동맵 창 크기 (기본값: 최대값 63)
+        tail_days (int): 꼬리 길이 (기본값: 최대값 10)
+    
+    Returns:
+        str: yfinance period 문자열 ("3mo", "6mo", "1y", "2y", "5y")
+    """
+    # 각 기능별 최소 거래일 요구사항
+    requirements = []
+    
+    # 1. FMS 계산: R_3M(63일) + ΔFMS_5D(5일) = 68일
+    requirements.append(68)
+    
+    # 2. 거래 적합성 필터: 63일
+    requirements.append(63)
+    
+    # 3. R_6M: 126일
+    requirements.append(126)
+    
+    # 4. 수익률-변동성 이동맵: rv_window + tail_days
+    requirements.append(rv_window + tail_days)
+    
+    # 5. YTD Return: 연초부터 (1년 데이터면 충분)
+    # 실제로는 연초부터만 필요하지만, 안전하게 1년 데이터를 다운로드
+    requirements.append(252)
+    
+    # 최소 필요 거래일 계산 (여유분 10% 추가하여 휴일/데이터 누락 대비)
+    min_trading_days = int(max(requirements) * 1.1)
+    
+    # 거래일을 yfinance period로 변환 (1년 = 약 252거래일 기준)
+    # 안전하게 항상 최소 1년 데이터를 다운로드
+    if min_trading_days <= 252:  # 약 1년
+        return "1y"
+    elif min_trading_days <= 504:  # 약 2년
+        return "2y"
+    else:  # 2년 이상
+        return "5y"
+
 @st.cache_data(ttl=60*60*6, show_spinner=True)
-def build_prices_krw(period_key="6M", watchlist_symbols=None):
-    period_map = {"1M":"3mo","3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y"}
-    yf_period = period_map.get(period_key, "1y")
+def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=None):
+    """
+    KRW 환산 가격 데이터를 다운로드하고 구성합니다.
+    
+    Args:
+        period_key (str): 차트 표시 기간 ("1M", "3M", "6M", "1Y", "2Y") - 캐시 키의 일부로 사용됨
+        watchlist_symbols (list): 관심종목 목록
+        min_data_period (str): 계산에 필요한 최소 데이터 기간 (None이면 자동 계산)
+    
+    Note:
+        period_key는 캐시 키의 일부로 사용되지만, 실제 데이터 다운로드에는 min_data_period가 사용됩니다.
+    """
+    # 계산에 필요한 최소 데이터 기간 (기본값: 안전하게 1년)
+    if min_data_period is None:
+        min_data_period = "1y"
+    
     interval = "1d"
 
     # 관심종목 목록을 매개변수로 받아서 캐시 키에 포함
@@ -650,10 +716,11 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None):
     krw_symbols = [str(s) for s in watchlist_symbols if classify(s) == "KOR"]
     jpy_symbols = [str(s) for s in watchlist_symbols if classify(s) == "JPN"]
 
-    usdkrw, usdjpy, jpykrw, fx_missing = download_fx(yf_period, interval)
-    usd_df, miss_us = download_prices(usd_symbols, yf_period, interval)
-    krw_df, miss_kr = download_prices(krw_symbols, yf_period, interval)
-    jpy_df, miss_jp = download_prices(jpy_symbols, yf_period, interval)
+    # 계산에 필요한 최소 데이터 기간 사용 (차트 표시 기간이 아닌)
+    usdkrw, usdjpy, jpykrw, fx_missing = download_fx(min_data_period, interval)
+    usd_df, miss_us = download_prices(usd_symbols, min_data_period, interval)
+    krw_df, miss_kr = download_prices(krw_symbols, min_data_period, interval)
+    jpy_df, miss_jp = download_prices(jpy_symbols, min_data_period, interval)
 
     usd_df = align_bday_ffill(usd_df)
     krw_df = align_bday_ffill(krw_df)
@@ -817,8 +884,15 @@ def fetch_long_names(symbols):
 # ------------------------------
 # 데이터 로드 및 이름
 # ------------------------------
+# 최소 데이터 기간 계산 (사용자가 사이드바에서 선택한 값 사용)
+# rv_window와 tail_days는 사이드바에서 선택되므로 여기서 사용 가능
+min_data_period = calculate_minimum_data_period(
+    rv_window=rv_window,
+    tail_days=tail_days
+)
+
 with st.spinner("데이터 불러오는 중…"):
-    prices_krw, miss = build_prices_krw(period, st.session_state.watchlist)
+    prices_krw, miss = build_prices_krw(period, st.session_state.watchlist, min_data_period=min_data_period)
 if prices_krw.empty:
     st.error("가격 데이터를 불러오지 못했습니다.")
     st.stop()
@@ -827,7 +901,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.6.3")
+st.title("⚡ KRW Momentum Radar v3.7.0")
 
 
 
@@ -836,9 +910,10 @@ st.title("⚡ KRW Momentum Radar v3.6.3")
 # ------------------------------
 with st.spinner("모멘텀/가속 계산 중…"):
     # 관심종목의 OHLC 데이터 다운로드 (거래 적합성 필터용)
+    # 거래 적합성 필터는 63일이 필요하므로 최소 1년 데이터 다운로드
     watchlist_symbols = list(prices_krw.columns)
-    period_map = {"1M":"3mo","3M":"6mo","6M":"1y","1Y":"2y","2Y":"5y"}
-    ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, period_map.get(period, "1y"), "1d")
+    # 차트 기간과 무관하게 계산에 필요한 최소 기간 사용
+    ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, min_data_period, "1d")
     if ohlc_data.empty:
         ohlc_data = None
     
@@ -879,7 +954,7 @@ for c in df_base.columns:
     ))
 fig_comp.update_layout(
     height=420, margin=dict(l=10,r=10,t=10,b=10),
-    yaxis=dict(type="log" if use_log_scale else "linear", title="Rebased 100"),
+    yaxis=dict(type="log", title="Rebased 100"),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 st.plotly_chart(fig_comp, use_container_width=True)
@@ -946,7 +1021,7 @@ else:
         selectbox_key = f"detail_selectbox_{st.session_state.detail_symbol_index}"
 
         detail_sym = st.selectbox(
-            "",
+            "종목 선택",
             options=ordered_options,
             index=st.session_state.detail_symbol_index,
             format_func=lambda s: option_labels.get(s, display_name(s)),
@@ -961,7 +1036,15 @@ else:
                 st.session_state.detail_symbol_index = new_index
                 st.rerun()
 
-    s = prices_krw[detail_sym].dropna()
+    s_full = prices_krw[detail_sym].dropna()
+    # 선택된 차트 기간에 맞춰 데이터 필터링
+    win_map={"1M":21,"3M":63,"6M":126,"1Y":252,"2Y":504}
+    win = win_map.get(period, 126)
+    if s_full.shape[0] > win:
+        s = s_full.iloc[-win:]
+    else:
+        s = s_full
+    
     e20, e50, e200 = ema(s, 20), ema(s, 50), ema(s, 200)
     fig_det = go.Figure()
     fig_det.add_trace(go.Scatter(x=s.index, y=s.values, mode="lines", name="KRW"))
@@ -1013,20 +1096,12 @@ else:
 # ==============================
 st.subheader("수익률–변동성 이동맵 (최근 상태 → 어디서 왔는가)")
 
-cc1, cc2, cc3, cc4 = st.columns([1.2,1.2,1.2,1.6])
+cc1, cc2 = st.columns([1, 1])
 with cc1:
-    rv_window = st.selectbox("수익률/변동성 창(거래일)", [21, 42, 63], index=0, help="연율화: 252 기준")
-with cc2:
     plot_n = st.selectbox("표시 종목 수", [10, 20, 30, 40, 50, 60], index=1, help="상위 랭킹 기준으로 제한해 과밀도 완화")
-with cc4:
+with cc2:
     motion_mode = st.selectbox("모션(애니메이션)", ["끄기", "최근 10일", "최근 20일"], index=0,
                                help="프레임마다 현재 위치와 꼬리를 동시에 갱신")
-with cc3:
-    # 애니메이션 모드가 선택되면 꼬리 길이를 5로 자동 설정
-    if motion_mode != "끄기":
-        tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=2, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
-    else:
-        tail_days = st.selectbox("꼬리 길이(최근 n일 경로)", [0, 3, 5, 10], index=0, help="오늘 기준 과거 n거래일의 이동 경로를 점선으로 표시")
 
 def ann_vol(series, win):
     r = series.pct_change().dropna()
@@ -1281,9 +1356,6 @@ else:
         """, unsafe_allow_html=True)
 
 st.plotly_chart(fig_mv, use_container_width=True)
-st.caption("설명: 각 점은 선택한 창(기본 21거래일)의 연율화 수익률(CAGR)·연율화 변동성입니다. "
-           "‘꼬리 길이’는 오늘 기준 과거 n거래일 동안 좌표의 이동 경로를 점선으로 표시합니다. "
-           "애니메이션 모드에서는 날짜가 바뀜에 따라 현재 위치와 꼬리가 함께 갱신됩니다.")
 
 # ------------------------------
 # ⑤ 표 (컬럼 자동 재구성)
