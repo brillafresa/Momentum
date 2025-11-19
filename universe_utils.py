@@ -5,6 +5,7 @@ Finviz를 사용한 유니버스 스크리닝 및 파일 관리 기능
 """
 
 import os
+import re
 import time
 import pandas as pd
 from datetime import datetime
@@ -12,6 +13,70 @@ import pytz
 from typing import Tuple, Optional
 
 KST = pytz.timezone("Asia/Seoul")
+
+def is_leveraged_or_inverse_etf(ticker: str, name: str = "") -> bool:
+    """
+    레버리지 또는 인버스 ETF인지 판단합니다.
+    
+    일반적인 레버리지/인버스 ETF 패턴:
+    - 숫자 + X (2X, 3X, 2x, 3x 등)
+    - Leverage, Inverse, Short, Bear, Ultra 같은 키워드
+    - 특정 티커 패턴 (LLYX, SMST, GGLL, GOOX 등)
+    
+    Args:
+        ticker (str): 티커 심볼
+        name (str): 종목명 (선택사항, 티커만으로 판단 불가능할 경우 사용)
+    
+    Returns:
+        bool: 레버리지/인버스 ETF이면 True, 아니면 False
+    """
+    ticker_upper = str(ticker).upper().strip()
+    name_upper = str(name).upper().strip()
+    
+    # 레버리지/인버스 키워드 패턴
+    leverage_keywords = [
+        'LEVERAGE', 'LEVERAGED', 'LEV',
+        'INVERSE', 'INV', 'SHORT', 'BEAR',
+        'ULTRA', 'PRO', 'BULL'
+    ]
+    
+    # 숫자 + X 패턴 (2X, 3X, 2x, 3x 등)
+    numeric_leverage_pattern = r'\d+[Xx]'
+    
+    # 티커 패턴 체크
+    # 알려진 레버리지/인버스 ETF 티커 패턴들
+    known_leverage_patterns = [
+        'LLYX', 'SMST', 'GGLL', 'GOOX',  # 사용자가 보고한 패턴
+        'TQQQ', 'SQQQ', 'SOXL', 'SOXS',  # 일반적인 레버리지/인버스 ETF
+        'UPRO', 'SPXU', 'UDOW', 'SDOW',  # 주요 레버리지/인버스 ETF
+    ]
+    
+    # 1. 티커가 알려진 레버리지/인버스 ETF 패턴과 정확히 일치하는지 체크
+    if ticker_upper in known_leverage_patterns:
+        return True
+    
+    # 2. 숫자 + X 패턴 체크 (2X, 3X 등)
+    if re.search(numeric_leverage_pattern, ticker_upper) or re.search(numeric_leverage_pattern, name_upper):
+        return True
+    
+    # 3. 레버리지/인버스 키워드 체크
+    for keyword in leverage_keywords:
+        if keyword in ticker_upper or keyword in name_upper:
+            return True
+    
+    # 4. 특정 티커 패턴 체크 (4글자 티커가 특정 패턴을 포함하는 경우)
+    # 예: LLYX, SMST, GGLL, GOOX 같은 패턴
+    if len(ticker_upper) >= 4:
+        # 마지막 글자가 X로 끝나는 패턴 (LLYX 등)
+        if ticker_upper.endswith('X') and len(ticker_upper) == 4:
+            # 앞 3글자가 모두 대문자인 경우 (레버리지 ETF 가능성 높음)
+            if ticker_upper[:3].isalpha() and ticker_upper[:3].isupper():
+                # 일부 예외 처리 (예: 일반적인 ETF도 X로 끝날 수 있음)
+                # 더 정확한 판단을 위해 종목명도 체크
+                if name_upper and ('LEVERAGE' in name_upper or 'INVERSE' in name_upper or 'ULTRA' in name_upper):
+                    return True
+    
+    return False
 
 def check_universe_file_freshness():
     """
@@ -154,22 +219,24 @@ def update_universe_file(progress_callback=None, status_callback=None):
             if progress_callback:
                 progress_callback(0.85, f"📈 200일 이동평균 위 종목 필터링: {len(df)}개 종목")
         
-        # 4단계: 레버리지 ETF 제외 (완화: Inverse/Short 포함, 'Leverage' 키워드만 제외)
+        # 4단계: 레버리지/인버스 ETF 제외 (강화된 필터링)
         if not df.empty and 'Ticker' in df.columns:
             if progress_callback:
-                progress_callback(0.9, "🚫 레버리지 ETF 제외 필터링 중 ('Leverage' 키워드)")
+                progress_callback(0.9, "🚫 레버리지/인버스 ETF 제외 필터링 중...")
 
             excluded_tickers = []
-            for ticker in df['Ticker'].tolist():
-                ticker_upper = str(ticker).upper()
-                # 변경 요구사항: 'Leverage' 키워드만 제외
-                if 'LEVERAGE' in ticker_upper:
+            for _, row in df.iterrows():
+                ticker = str(row['Ticker'])
+                # 종목명이 있으면 함께 체크 (더 정확한 판단)
+                name = str(row.get('Company', '')) if 'Company' in row else ""
+                
+                if is_leveraged_or_inverse_etf(ticker, name):
                     excluded_tickers.append(ticker)
 
             if excluded_tickers:
                 df = df[~df['Ticker'].isin(excluded_tickers)]
                 if progress_callback:
-                    progress_callback(0.92, f"🚫 레버리지 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
+                    progress_callback(0.92, f"🚫 레버리지/인버스 ETF 제외: {len(excluded_tickers)}개, 남은 종목: {len(df)}개")
         
         # 5단계: 파일 저장
         if not df.empty and 'Ticker' in df.columns:

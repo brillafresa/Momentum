@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.7.0
+# KRW Momentum Radar - v3.7.1
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -30,6 +30,7 @@ from analysis_utils import (
     momentum_now_and_delta as _au_momentum_now_and_delta,
     calculate_fms_for_batch as _au_calculate_fms_for_batch,
 )
+from universe_utils import is_leveraged_or_inverse_etf
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -60,7 +61,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.7.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.7.1", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -573,7 +574,20 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                         st.write(f"**{symbol}** (FMS: {fms_score:.2f})")
                     with col2:
                         if st.button("➕", key=f"add_scan_{symbol}"):
-                            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                            # 이미 관심종목에 있는지 체크
+                            if symbol in st.session_state.watchlist:
+                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                            else:
+                                try:
+                                    # 관심종목에 추가
+                                    st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                                    # 추가 성공 확인
+                                    if symbol in st.session_state.watchlist:
+                                        st.success(f"'{symbol}' 추가됨")
+                                    else:
+                                        st.error(f"'{symbol}' 추가 실패: 알 수 없는 이유로 추가되지 않았습니다.")
+                                except Exception as e:
+                                    st.error(f"'{symbol}' 추가 실패: {str(e)}")
                             st.rerun()
             else:
                 st.info("조건에 맞는 종목이 없습니다.")
@@ -586,14 +600,17 @@ with st.sidebar.expander("✏️ 수동 관리", expanded=False):
     # 티커 추가
     new_ticker = st.text_input("티커 추가 (예: AAPL)", "").upper().strip()
     if st.button("➕ 추가"):
-        if new_ticker and new_ticker not in st.session_state.watchlist:
-            st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
-            st.success(f"'{new_ticker}' 추가됨")
-            st.rerun()
+        if not new_ticker:
+            st.error("유효한 티커를 입력하세요.")
         elif new_ticker in st.session_state.watchlist:
             st.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
         else:
-            st.error("유효한 티커를 입력하세요.")
+            try:
+                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
+                st.success(f"'{new_ticker}' 추가됨")
+                st.rerun()
+            except Exception as e:
+                st.error(f"'{new_ticker}' 추가 실패: {str(e)}")
 
     # 티커 삭제
     if st.session_state.watchlist:
@@ -901,7 +918,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.7.0")
+st.title("⚡ KRW Momentum Radar v3.7.1")
 
 
 
