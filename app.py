@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.7.2
+# KRW Momentum Radar - v3.7.3
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,7 +9,7 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 배치 스캔 결과 확인
 # - True Range 기반 거래 적합성 필터
-# - 거래 적합성 필터 디버그 로깅
+# - 거래 적합성 필터 디버그 로깅 (모든 국가 종목 지원)
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -63,7 +63,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.7.2", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.7.3", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -920,7 +920,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.7.2")
+st.title("⚡ KRW Momentum Radar v3.7.3")
 
 
 
@@ -1511,22 +1511,119 @@ with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)")
             "error": "OHLC 데이터 없음 또는 비어있음"
         }
     
-    # 실격된 한국 종목 상세 디버그 정보
+    # 실격된 종목 상세 디버그 정보 (모든 국가)
     if 'Filter_Status' in mom.columns:
-        disqualified_kor = mom[(mom.index.isin(kor_cols)) & (mom['Filter_Status'] != '정상')]
-        if len(disqualified_kor) > 0:
+        disqualified_all = mom[mom['Filter_Status'] != '정상']
+        if len(disqualified_all) > 0:
             filter_debug_details = {}
-            for symbol in disqualified_kor.index:
+            for symbol in disqualified_all.index:
                 if ohlc_data is not None:
                     debug_info = get_filter_debug_info(ohlc_data, symbol)
                     filter_debug_details[symbol] = debug_info
             
-            diag["disqualified_korean_stocks"] = {
-                "count": len(disqualified_kor),
-                "symbols": list(disqualified_kor.index),
-                "filter_status": {symbol: str(disqualified_kor.loc[symbol, 'Filter_Status']) for symbol in disqualified_kor.index},
+            diag["disqualified_stocks"] = {
+                "count": len(disqualified_all),
+                "symbols": list(disqualified_all.index),
+                "filter_status": {symbol: str(disqualified_all.loc[symbol, 'Filter_Status']) for symbol in disqualified_all.index},
                 "detailed_debug": filter_debug_details
             }
+            
+            # 실격된 종목 요약 표시 (읽기 쉽게)
+            st.markdown("### 🚫 실격된 종목 목록")
+            summary_data = []
+            for symbol in disqualified_all.index:
+                filter_status = str(disqualified_all.loc[symbol, 'Filter_Status'])
+                debug_info = filter_debug_details.get(symbol, {})
+                
+                # 국가 분류 추가
+                country = classify(symbol)
+                country_name = {"USA": "🇺🇸 미국", "KOR": "🇰🇷 한국", "JPN": "🇯🇵 일본"}.get(country, country)
+                
+                # 요약 정보 추출
+                summary_info = {
+                    "종목": symbol,
+                    "국가": country_name,
+                    "필터 상태": filter_status,
+                    "OHLC 데이터": "✅" if debug_info.get('has_ohlc') else "❌",
+                    "데이터 포인트": debug_info.get('data_points', 0),
+                    "마지막 날짜": debug_info.get('last_date', 'N/A'),
+                }
+                
+                # 30% 초과 날짜 수 추가
+                if 'extreme_days_count' in debug_info:
+                    summary_info["30% 초과 일수"] = debug_info.get('extreme_days_count', 0)
+                
+                # 최근 True Range 변동률 추가
+                if 'recent_data' in debug_info and debug_info['recent_data'].get('last_true_range_vol_pct') is not None:
+                    vol_pct = debug_info['recent_data']['last_true_range_vol_pct']
+                    summary_info["최근 변동률(%)"] = f"{vol_pct:.2f}"
+                
+                # 오류 정보 추가
+                if debug_info.get('error'):
+                    summary_info["오류"] = debug_info.get('error', '')
+                
+                summary_data.append(summary_info)
+            
+            if summary_data:
+                summary_df = pd.DataFrame(summary_data)
+                st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            # 각 종목별 상세 정보 (expander로 접기 가능)
+            st.markdown("### 📋 종목별 상세 디버그 정보")
+            for symbol in disqualified_all.index:
+                debug_info = filter_debug_details.get(symbol, {})
+                filter_status = str(disqualified_all.loc[symbol, 'Filter_Status'])
+                
+                # 국가 분류 추가
+                country = classify(symbol)
+                country_name = {"USA": "🇺🇸 미국", "KOR": "🇰🇷 한국", "JPN": "🇯🇵 일본"}.get(country, country)
+                
+                with st.expander(f"🔍 {symbol} ({country_name}) - {filter_status}", expanded=False):
+                    # 기본 정보
+                    st.markdown("#### 기본 정보")
+                    basic_info = {
+                        "종목": symbol,
+                        "국가": country_name,
+                        "필터 상태": filter_status,
+                        "OHLC 데이터": "✅" if debug_info.get('has_ohlc') else "❌",
+                        "데이터 포인트": debug_info.get('data_points', 0),
+                        "마지막 날짜": debug_info.get('last_date', 'N/A'),
+                    }
+                    if debug_info.get('error'):
+                        basic_info["오류"] = debug_info.get('error', '')
+                    st.json(basic_info)
+                    
+                    # 최근 데이터 정보
+                    if 'recent_data' in debug_info and debug_info['recent_data']:
+                        st.markdown("#### 최근 데이터 상세")
+                        recent = debug_info['recent_data']
+                        recent_display = {
+                            "날짜": recent.get('last_date', 'N/A'),
+                            "전일 종가": recent.get('prev_close'),
+                            "당일 종가": recent.get('last_close'),
+                            "당일 고가": recent.get('last_high'),
+                            "당일 저가": recent.get('last_low'),
+                            "True Range 변동률(%)": recent.get('last_true_range_vol_pct'),
+                        }
+                        if 'true_range_components' in recent:
+                            recent_display["True Range 구성 요소"] = recent['true_range_components']
+                        st.json(recent_display)
+                    
+                    # 30% 초과 날짜 상세
+                    if 'extreme_days_detail' in debug_info and debug_info['extreme_days_detail']:
+                        st.markdown(f"#### ⚠️ 치명적 변동성 (30% 초과) - 총 {debug_info.get('extreme_days_count', 0)}일")
+                        extreme_df = pd.DataFrame(debug_info['extreme_days_detail'])
+                        st.dataframe(extreme_df, use_container_width=True, hide_index=True)
+                    
+                    # 하방리스크 상세
+                    if 'severe_days_detail' in debug_info and debug_info['severe_days_detail']:
+                        st.markdown(f"#### ⚠️ 반복적 하방리스크 (-7% 미만) - 총 {debug_info.get('severe_days_count', 0)}일")
+                        severe_df = pd.DataFrame(debug_info['severe_days_detail'])
+                        st.dataframe(severe_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
     
+    # 전체 진단 정보 (JSON 형태로 복사 가능)
+    st.markdown("### 📊 전체 진단 정보 (JSON - 복사 가능)")
     st.json(diag)
     st.text_area("LOG", value="\n".join(st.session_state["LOG"][-400:]), height=200)
