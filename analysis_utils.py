@@ -264,15 +264,15 @@ def calculate_tradeability_filters(ohlc_data: pd.DataFrame, symbols: List[str]) 
             daily_downside_risk = (low / prev_close) - 1
 
             extreme_days = daily_true_range_vol.tail(63)
-            extreme_days = extreme_days[extreme_days > 0.30]
+            extreme_days_filtered = extreme_days[extreme_days > 0.30]
             severe_days = daily_downside_risk.tail(20)
-            severe_days = severe_days[severe_days < -0.07]
+            severe_days_filtered = severe_days[severe_days < -0.07]
 
             reasons = []
-            if len(extreme_days) > 0:
-                reasons.append(f'치명적 변동성 ({len(extreme_days)}일 30% 초과)')
-            if len(severe_days) >= 4:
-                reasons.append(f'반복적 하방리스크 ({len(severe_days)}일 -7% 미만)')
+            if len(extreme_days_filtered) > 0:
+                reasons.append(f'치명적 변동성 ({len(extreme_days_filtered)}일 30% 초과)')
+            if len(severe_days_filtered) >= 4:
+                reasons.append(f'반복적 하방리스크 ({len(severe_days_filtered)}일 -7% 미만)')
 
             disqualification[symbol] = len(reasons) > 0
             filter_reasons[symbol] = '; '.join(reasons) if reasons else '정상'
@@ -280,6 +280,126 @@ def calculate_tradeability_filters(ohlc_data: pd.DataFrame, symbols: List[str]) 
             disqualification[symbol] = True
             filter_reasons[symbol] = f'계산 오류: {e}'
     return disqualification, filter_reasons
+
+
+def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
+    """거래 적합성 필터 계산을 위한 디버그 정보 수집"""
+    debug_info = {'symbol': symbol, 'has_ohlc': False, 'data_points': 0, 'last_date': None, 'error': None}
+    
+    try:
+        if ohlc_data is None or ohlc_data.empty:
+            debug_info['error'] = 'OHLC 데이터 없음'
+            return debug_info
+            
+        if isinstance(ohlc_data.columns, pd.MultiIndex):
+            if ((symbol, 'High') in ohlc_data.columns and (symbol, 'Low') in ohlc_data.columns and (symbol, 'Close') in ohlc_data.columns):
+                high = ohlc_data[(symbol, 'High')].dropna()
+                low = ohlc_data[(symbol, 'Low')].dropna()
+                close = ohlc_data[(symbol, 'Close')].dropna()
+                debug_info['has_ohlc'] = True
+            else:
+                debug_info['error'] = 'OHLC 컬럼 없음 (MultiIndex)'
+                return debug_info
+        else:
+            if all(c in ohlc_data.columns for c in ['High', 'Low', 'Close']):
+                high = ohlc_data['High'].dropna()
+                low = ohlc_data['Low'].dropna()
+                close = ohlc_data['Close'].dropna()
+                debug_info['has_ohlc'] = True
+            else:
+                debug_info['error'] = 'OHLC 컬럼 없음'
+                return debug_info
+
+        debug_info['data_points'] = len(close)
+        if len(close) > 0:
+            debug_info['last_date'] = str(close.index[-1])
+
+        if len(close) < 63:
+            debug_info['error'] = f'데이터 부족: {len(close)}일 (63일 필요)'
+            return debug_info
+
+        prev_close = close.shift(1)
+        true_range = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs()
+        ], axis=1).max(axis=1, skipna=False)
+        daily_true_range_vol = true_range / prev_close
+        daily_downside_risk = (low / prev_close) - 1
+
+        extreme_days = daily_true_range_vol.tail(63)
+        extreme_days_filtered = extreme_days[extreme_days > 0.30]
+        severe_days = daily_downside_risk.tail(20)
+        severe_days_filtered = severe_days[severe_days < -0.07]
+
+        # 최근 데이터 상세 정보 수집
+        if len(close) >= 2:
+            last_date = close.index[-1]
+            prev_date = close.index[-2] if len(close) >= 2 else None
+            debug_info['recent_data'] = {
+                'last_date': str(last_date),
+                'prev_date': str(prev_date) if prev_date else None,
+                'last_close': float(close.iloc[-1]) if len(close) > 0 else None,
+                'prev_close': float(close.iloc[-2]) if len(close) >= 2 else None,
+                'last_high': float(high.iloc[-1]) if len(high) > 0 else None,
+                'last_low': float(low.iloc[-1]) if len(low) > 0 else None,
+                'last_true_range_vol_pct': float(daily_true_range_vol.iloc[-1] * 100) if len(daily_true_range_vol) > 0 and not pd.isna(daily_true_range_vol.iloc[-1]) else None,
+            }
+            
+            # 마지막 날짜의 True Range 구성 요소
+            if len(close) >= 2:
+                last_high_low = float(high.iloc[-1] - low.iloc[-1]) if len(high) > 0 and len(low) > 0 else None
+                last_high_gap = float(abs(high.iloc[-1] - close.iloc[-2])) if len(high) > 0 and len(close) >= 2 else None
+                last_low_gap = float(abs(low.iloc[-1] - close.iloc[-2])) if len(low) > 0 and len(close) >= 2 else None
+                debug_info['recent_data']['true_range_components'] = {
+                    'high_minus_low': last_high_low,
+                    'abs_high_minus_prev_close': last_high_gap,
+                    'abs_low_minus_prev_close': last_low_gap,
+                    'true_range': float(true_range.iloc[-1]) if len(true_range) > 0 and not pd.isna(true_range.iloc[-1]) else None,
+                }
+            
+            # 30% 초과인 날짜들 상세 정보
+            if len(extreme_days_filtered) > 0:
+                extreme_details = []
+                for date_idx in extreme_days_filtered.index:
+                    date_str = str(date_idx)
+                    vol_pct = float(extreme_days_filtered.loc[date_idx]) * 100
+                    if date_idx in close.index:
+                        date_pos = list(close.index).index(date_idx)
+                        if date_pos > 0:
+                            extreme_details.append({
+                                'date': date_str,
+                                'vol_pct': round(vol_pct, 2),
+                                'close': float(close.loc[date_idx]) if date_idx in close.index else None,
+                                'prev_close': float(close.iloc[date_pos-1]) if date_pos > 0 else None,
+                                'high': float(high.loc[date_idx]) if date_idx in high.index else None,
+                                'low': float(low.loc[date_idx]) if date_idx in low.index else None,
+                            })
+                debug_info['extreme_days_detail'] = extreme_details
+                debug_info['extreme_days_count'] = len(extreme_days_filtered)
+            
+            debug_info['severe_days_count'] = len(severe_days_filtered)
+            if len(severe_days_filtered) >= 4:
+                severe_details = []
+                for date_idx in severe_days_filtered.index:
+                    date_str = str(date_idx)
+                    downside_pct = float(severe_days_filtered.loc[date_idx]) * 100
+                    if date_idx in close.index:
+                        date_pos = list(close.index).index(date_idx)
+                        if date_pos > 0:
+                            severe_details.append({
+                                'date': date_str,
+                                'downside_pct': round(downside_pct, 2),
+                                'close': float(close.loc[date_idx]) if date_idx in close.index else None,
+                                'prev_close': float(close.iloc[date_pos-1]) if date_pos > 0 else None,
+                                'low': float(low.loc[date_idx]) if date_idx in low.index else None,
+                            })
+                debug_info['severe_days_detail'] = severe_details
+    except Exception as e:
+        debug_info['error'] = f'계산 오류: {str(e)}'
+        debug_info['exception_type'] = type(e).__name__
+    
+    return debug_info
 
 
 def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,

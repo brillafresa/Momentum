@@ -19,7 +19,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 
 ## 주요 기능
 1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수 (관심종목 기준 Z-score 정규화)
-2. **거래 적합성 필터**: True Range 기반 치명적 변동성 및 반복적 하방리스크 감지로 부적합 종목 자동 실격
+2. **거래 적합성 필터**: True Range 기반 치명적 변동성 및 반복적 하방리스크 감지로 부적합 종목 자동 실격 (디버그 로깅 지원)
 3. **동적 컬럼 재정렬**: FMS 전략에 맞춰 결과 테이블 컬럼 순서 자동 조정
 4. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
 5. **비교 차트**: 다국가 종목들의 KRW 환산 가격 비교
@@ -35,7 +35,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션 (v3.7.1)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v3.7.2)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── universe_utils.py         # 유니버스 관리 유틸리티 (NEW!)

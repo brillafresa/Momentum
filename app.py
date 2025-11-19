@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.7.1
+# KRW Momentum Radar - v3.7.2
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -9,6 +9,7 @@
 # - 실시간 데이터 업데이트 및 시각화
 # - 동적 관심종목 관리 및 배치 스캔 결과 확인
 # - True Range 기반 거래 적합성 필터
+# - 거래 적합성 필터 디버그 로깅
 
 import os
 os.environ.setdefault("CURL_CFFI_DISABLE_CACHE", "1")  # curl_cffi sqlite 캐시 비활성화
@@ -29,6 +30,7 @@ from analysis_utils import (
     calculate_tradeability_filters as _au_trade_filters,
     momentum_now_and_delta as _au_momentum_now_and_delta,
     calculate_fms_for_batch as _au_calculate_fms_for_batch,
+    get_filter_debug_info,
 )
 from universe_utils import is_leveraged_or_inverse_etf
 
@@ -61,7 +63,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.7.1", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.7.2", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -918,7 +920,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.7.1")
+st.title("⚡ KRW Momentum Radar v3.7.2")
 
 
 
@@ -1478,7 +1480,12 @@ with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)")
     usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
     kor_cols = [c for c in prices_krw.columns if classify(c)=="KOR"]
     jpn_cols = [c for c in prices_krw.columns if classify(c)=="JPN"]
+    
+    # 현재 시간 (KST)
+    current_time_kst = datetime.now(KST)
+    
     diag = {
+        "current_time_kst": current_time_kst.strftime("%Y-%m-%d %H:%M:%S %Z"),
         "last_date": str(prices_krw.index[-1].date()),
         "cols_total": prices_krw.shape[1],
         "last_notna_total": int(last_row.notna().sum()),
@@ -1487,5 +1494,39 @@ with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)")
         "last_notna_JPN": int(last_row[jpn_cols].notna().sum()),
         "env_CURL_CFFI_DISABLE_CACHE": os.environ.get("CURL_CFFI_DISABLE_CACHE")
     }
+    
+    # OHLC 데이터 상태
+    if ohlc_data is not None and not ohlc_data.empty:
+        diag["ohlc_status"] = {
+            "available": True,
+            "total_symbols": len(watchlist_symbols),
+            "ohlc_missing_count": len(ohlc_missing) if ohlc_missing else 0,
+            "ohlc_missing_symbols": list(ohlc_missing) if ohlc_missing else [],
+            "ohlc_shape": list(ohlc_data.shape) if ohlc_data is not None else None,
+            "ohlc_index_range": [str(ohlc_data.index[0]), str(ohlc_data.index[-1])] if ohlc_data is not None and len(ohlc_data) > 0 else None,
+        }
+    else:
+        diag["ohlc_status"] = {
+            "available": False,
+            "error": "OHLC 데이터 없음 또는 비어있음"
+        }
+    
+    # 실격된 한국 종목 상세 디버그 정보
+    if 'Filter_Status' in mom.columns:
+        disqualified_kor = mom[(mom.index.isin(kor_cols)) & (mom['Filter_Status'] != '정상')]
+        if len(disqualified_kor) > 0:
+            filter_debug_details = {}
+            for symbol in disqualified_kor.index:
+                if ohlc_data is not None:
+                    debug_info = get_filter_debug_info(ohlc_data, symbol)
+                    filter_debug_details[symbol] = debug_info
+            
+            diag["disqualified_korean_stocks"] = {
+                "count": len(disqualified_kor),
+                "symbols": list(disqualified_kor.index),
+                "filter_status": {symbol: str(disqualified_kor.loc[symbol, 'Filter_Status']) for symbol in disqualified_kor.index},
+                "detailed_debug": filter_debug_details
+            }
+    
     st.json(diag)
     st.text_area("LOG", value="\n".join(st.session_state["LOG"][-400:]), height=200)
