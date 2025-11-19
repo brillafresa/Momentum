@@ -30,11 +30,12 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 10. **진부한 종목 자동 편출**: FMS 기반 저성과 종목 제거 제안
 11. **배치 스캔 시스템**: CLI 기반 오프라인 배치 스캔으로 정확도 향상 및 중앙화된 FMS 로직
 12. **다국가 통합 스캔**: 미국(Finviz) + 한국(KOSPI200/KOSDAQ150/국내상장 ETF 전 종목) 유니버스 병합 스캔
+13. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
 
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션 (v3.7.0)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v3.7.1)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── universe_utils.py         # 유니버스 관리 유틸리티 (NEW!)
