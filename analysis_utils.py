@@ -255,13 +255,24 @@ def calculate_tradeability_filters(ohlc_data: pd.DataFrame, symbols: List[str]) 
                 continue
 
             prev_close = close.shift(1)
+            prev_high = high.shift(1)
+            prev_low = low.shift(1)
+            
+            # 당일 고가/저가가 0인 경우 전일 데이터로 대체
+            # 조건: 당일 고가=0 AND 당일 저가=0 AND 전일 종가>0 AND 전일 고가>0 AND 전일 저가>0
+            invalid_high_low = (high == 0) & (low == 0) & (prev_close > 0) & (prev_high > 0) & (prev_low > 0)
+            high_fixed = high.copy()
+            low_fixed = low.copy()
+            high_fixed[invalid_high_low] = prev_high[invalid_high_low]
+            low_fixed[invalid_high_low] = prev_low[invalid_high_low]
+            
             true_range = pd.concat([
-                high - low,
-                (high - prev_close).abs(),
-                (low - prev_close).abs()
+                high_fixed - low_fixed,
+                (high_fixed - prev_close).abs(),
+                (low_fixed - prev_close).abs()
             ], axis=1).max(axis=1, skipna=False)
             daily_true_range_vol = true_range / prev_close
-            daily_downside_risk = (low / prev_close) - 1
+            daily_downside_risk = (low_fixed / prev_close) - 1
 
             extreme_days = daily_true_range_vol.tail(63)
             extreme_days_filtered = extreme_days[extreme_days > 0.30]
@@ -319,13 +330,24 @@ def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
             return debug_info
 
         prev_close = close.shift(1)
+        prev_high = high.shift(1)
+        prev_low = low.shift(1)
+        
+        # 당일 고가/저가가 0인 경우 전일 데이터로 대체
+        # 조건: 당일 고가=0 AND 당일 저가=0 AND 전일 종가>0 AND 전일 고가>0 AND 전일 저가>0
+        invalid_high_low = (high == 0) & (low == 0) & (prev_close > 0) & (prev_high > 0) & (prev_low > 0)
+        high_fixed = high.copy()
+        low_fixed = low.copy()
+        high_fixed[invalid_high_low] = prev_high[invalid_high_low]
+        low_fixed[invalid_high_low] = prev_low[invalid_high_low]
+        
         true_range = pd.concat([
-            high - low,
-            (high - prev_close).abs(),
-            (low - prev_close).abs()
+            high_fixed - low_fixed,
+            (high_fixed - prev_close).abs(),
+            (low_fixed - prev_close).abs()
         ], axis=1).max(axis=1, skipna=False)
         daily_true_range_vol = true_range / prev_close
-        daily_downside_risk = (low / prev_close) - 1
+        daily_downside_risk = (low_fixed / prev_close) - 1
 
         extreme_days = daily_true_range_vol.tail(63)
         extreme_days_filtered = extreme_days[extreme_days > 0.30]
@@ -336,21 +358,25 @@ def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
         if len(close) >= 2:
             last_date = close.index[-1]
             prev_date = close.index[-2] if len(close) >= 2 else None
+            # 수정된 고가/저가 사용 (0인 경우 전일 데이터로 대체된 값)
             debug_info['recent_data'] = {
                 'last_date': str(last_date),
                 'prev_date': str(prev_date) if prev_date else None,
                 'last_close': float(close.iloc[-1]) if len(close) > 0 else None,
                 'prev_close': float(close.iloc[-2]) if len(close) >= 2 else None,
-                'last_high': float(high.iloc[-1]) if len(high) > 0 else None,
-                'last_low': float(low.iloc[-1]) if len(low) > 0 else None,
+                'last_high': float(high_fixed.iloc[-1]) if len(high_fixed) > 0 else None,
+                'last_low': float(low_fixed.iloc[-1]) if len(low_fixed) > 0 else None,
+                'last_high_original': float(high.iloc[-1]) if len(high) > 0 else None,  # 원본 값도 기록
+                'last_low_original': float(low.iloc[-1]) if len(low) > 0 else None,  # 원본 값도 기록
                 'last_true_range_vol_pct': float(daily_true_range_vol.iloc[-1] * 100) if len(daily_true_range_vol) > 0 and not pd.isna(daily_true_range_vol.iloc[-1]) else None,
+                'high_low_fixed': bool(invalid_high_low.iloc[-1]) if len(invalid_high_low) > 0 else False,  # 수정 여부 표시
             }
             
-            # 마지막 날짜의 True Range 구성 요소
+            # 마지막 날짜의 True Range 구성 요소 (수정된 값 사용)
             if len(close) >= 2:
-                last_high_low = float(high.iloc[-1] - low.iloc[-1]) if len(high) > 0 and len(low) > 0 else None
-                last_high_gap = float(abs(high.iloc[-1] - close.iloc[-2])) if len(high) > 0 and len(close) >= 2 else None
-                last_low_gap = float(abs(low.iloc[-1] - close.iloc[-2])) if len(low) > 0 and len(close) >= 2 else None
+                last_high_low = float(high_fixed.iloc[-1] - low_fixed.iloc[-1]) if len(high_fixed) > 0 and len(low_fixed) > 0 else None
+                last_high_gap = float(abs(high_fixed.iloc[-1] - close.iloc[-2])) if len(high_fixed) > 0 and len(close) >= 2 else None
+                last_low_gap = float(abs(low_fixed.iloc[-1] - close.iloc[-2])) if len(low_fixed) > 0 and len(close) >= 2 else None
                 debug_info['recent_data']['true_range_components'] = {
                     'high_minus_low': last_high_low,
                     'abs_high_minus_prev_close': last_high_gap,

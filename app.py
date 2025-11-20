@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.7.3
+# KRW Momentum Radar - v3.7.4
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -32,7 +32,6 @@ from analysis_utils import (
     calculate_fms_for_batch as _au_calculate_fms_for_batch,
     get_filter_debug_info,
 )
-from universe_utils import is_leveraged_or_inverse_etf
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
@@ -63,7 +62,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.7.3", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.7.4", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -254,6 +253,10 @@ def harmonize_calendar(df, coverage=0.9):
     # coverage 체크
     valid_ratio = df.count().div(len(df))
     keep_cols = valid_ratio[valid_ratio >= coverage].index
+    dropped_cols = valid_ratio[valid_ratio < coverage].index
+    if len(dropped_cols) > 0:
+        for col in dropped_cols:
+            log(f"DROP low coverage: {col} (coverage: {valid_ratio[col]:.2%} < {coverage:.0%})")
     return df[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
 
 def align_bday_ffill(df):
@@ -555,6 +558,22 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 end_idx = start_idx + items_per_page
                 page_results = filtered_results.iloc[start_idx:end_idx]
                 
+                # 메시지 표시 영역 (페이징 컨트롤 위에 표시)
+                # 모든 종목의 메시지를 확인하여 표시 (현재 페이지에 없어도 표시)
+                for symbol in scan_results_df.index:
+                    message_key = f"scan_message_{symbol}"
+                    if message_key in st.session_state and st.session_state[message_key] is not None:
+                        message_type = st.session_state[message_key]['type']
+                        message_text = st.session_state[message_key]['text']
+                        if message_type == 'warning':
+                            st.warning(message_text)
+                        elif message_type == 'success':
+                            st.success(message_text)
+                        elif message_type == 'error':
+                            st.error(message_text)
+                        # 메시지 표시 후 초기화 (다음 렌더링에서 사라지도록)
+                        st.session_state[message_key] = None
+                
                 # 페이징 컨트롤
                 prev_col, info_col, next_col = st.columns([0.5, 1, 0.5])
                 with prev_col:
@@ -571,25 +590,40 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 # 결과 표시
                 for symbol in page_results.index:
                     col1, col2 = st.columns([3, 1])
+                    message_key = f"scan_message_{symbol}"
+                    
                     with col1:
                         fms_score = page_results.loc[symbol, 'FMS']
                         st.write(f"**{symbol}** (FMS: {fms_score:.2f})")
+                    
                     with col2:
                         if st.button("➕", key=f"add_scan_{symbol}"):
                             # 이미 관심종목에 있는지 체크
                             if symbol in st.session_state.watchlist:
-                                st.warning(f"'{symbol}'는 이미 관심종목에 있습니다.")
+                                st.session_state[message_key] = {
+                                    'type': 'warning',
+                                    'text': f"'{symbol}'는 이미 관심종목에 있습니다."
+                                }
                             else:
                                 try:
                                     # 관심종목에 추가
                                     st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
                                     # 추가 성공 확인
                                     if symbol in st.session_state.watchlist:
-                                        st.success(f"'{symbol}' 추가됨")
+                                        st.session_state[message_key] = {
+                                            'type': 'success',
+                                            'text': f"'{symbol}' 추가됨"
+                                        }
                                     else:
-                                        st.error(f"'{symbol}' 추가 실패: 알 수 없는 이유로 추가되지 않았습니다.")
+                                        st.session_state[message_key] = {
+                                            'type': 'error',
+                                            'text': f"'{symbol}' 추가 실패: 알 수 없는 이유로 추가되지 않았습니다."
+                                        }
                                 except Exception as e:
-                                    st.error(f"'{symbol}' 추가 실패: {str(e)}")
+                                    st.session_state[message_key] = {
+                                        'type': 'error',
+                                        'text': f"'{symbol}' 추가 실패: {str(e)}"
+                                    }
                             st.rerun()
             else:
                 st.info("조건에 맞는 종목이 없습니다.")
@@ -762,16 +796,43 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=No
 
     prices_krw = pd.concat(frames, axis=1).sort_index()
     prices_krw = prices_krw.loc[:, ~prices_krw.columns.duplicated()]
-    prices_krw = harmonize_calendar(prices_krw, coverage=0.9)
+    
+    # harmonize_calendar 전에 원본 컬럼 수 기록
+    original_cols = set(prices_krw.columns)
+    # coverage 임계값을 0.5로 낮춰서 최소한의 데이터가 있으면 포함
+    # 0.9는 너무 엄격하여 신규 상장 종목이나 데이터가 부족한 종목이 제외될 수 있음
+    prices_krw = harmonize_calendar(prices_krw, coverage=0.5)
+    # harmonize_calendar 후 제외된 종목 확인
+    excluded_cols = original_cols - set(prices_krw.columns)
+    if excluded_cols:
+        log(f"Excluded from prices_krw (low coverage): {sorted(list(excluded_cols))}")
 
     miss_dict = {
         "fx_missing": fx_missing,
         "price_missing": sorted(list(set(miss_us+miss_kr+miss_jp)))
     }
+    
+    # 빈 DataFrame 체크 (harmonize_calendar가 모든 컬럼을 제외한 경우)
+    if prices_krw.empty:
+        log(f"Final DF shape: {prices_krw.shape}; all columns excluded by coverage threshold")
+        # 관심종목 중 prices_krw에 없는 종목 확인
+        watchlist_missing = set(watchlist_symbols) - set(prices_krw.columns)
+        if watchlist_missing:
+            miss_dict["watchlist_missing"] = sorted(list(watchlist_missing))
+        return prices_krw, miss_dict
+    
     last_row = prices_krw.iloc[-1]
     usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
     na_usa = last_row[usa_cols].isna().sum()
     log(f"Final DF shape: {prices_krw.shape}; last row USA NaNs: {na_usa}/{len(usa_cols)}")
+    
+    # 관심종목 중 prices_krw에 없는 종목 확인
+    watchlist_missing = set(watchlist_symbols) - set(prices_krw.columns)
+    if watchlist_missing:
+        log(f"Watchlist symbols missing from prices_krw: {sorted(list(watchlist_missing))}")
+        # 누락된 종목을 miss_dict에 추가
+        miss_dict["watchlist_missing"] = sorted(list(watchlist_missing))
+    
     return prices_krw, miss_dict
 
 # ------------------------------
@@ -916,11 +977,17 @@ if prices_krw.empty:
     st.error("가격 데이터를 불러오지 못했습니다.")
     st.stop()
 
+# 관심종목 중 데이터가 없는 종목 확인 및 경고
+watchlist_missing = miss.get("watchlist_missing", [])
+if watchlist_missing:
+    missing_symbols_str = ", ".join(watchlist_missing)
+    st.warning(f"⚠️ 다음 종목은 데이터 부족으로 표시되지 않습니다: {missing_symbols_str}")
+
 with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연)"):
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.7.3")
+st.title("⚡ KRW Momentum Radar v3.7.4")
 
 
 
@@ -1476,24 +1543,33 @@ st.dataframe(disp_reordered, use_container_width=True)
 # ⑥ 디버그/진단
 # ------------------------------
 with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)"):
-    last_row = prices_krw.iloc[-1]
-    usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
-    kor_cols = [c for c in prices_krw.columns if classify(c)=="KOR"]
-    jpn_cols = [c for c in prices_krw.columns if classify(c)=="JPN"]
-    
-    # 현재 시간 (KST)
-    current_time_kst = datetime.now(KST)
-    
-    diag = {
-        "current_time_kst": current_time_kst.strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "last_date": str(prices_krw.index[-1].date()),
-        "cols_total": prices_krw.shape[1],
-        "last_notna_total": int(last_row.notna().sum()),
-        "last_notna_USA": int(last_row[usa_cols].notna().sum()),
-        "last_notna_KOR": int(last_row[kor_cols].notna().sum()),
-        "last_notna_JPN": int(last_row[jpn_cols].notna().sum()),
-        "env_CURL_CFFI_DISABLE_CACHE": os.environ.get("CURL_CFFI_DISABLE_CACHE")
-    }
+    # 빈 DataFrame 체크
+    if prices_krw.empty:
+        diag = {
+            "current_time_kst": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S %Z"),
+            "error": "prices_krw is empty (all columns excluded by coverage threshold)",
+            "cols_total": 0,
+            "env_CURL_CFFI_DISABLE_CACHE": os.environ.get("CURL_CFFI_DISABLE_CACHE")
+        }
+    else:
+        last_row = prices_krw.iloc[-1]
+        usa_cols = [c for c in prices_krw.columns if classify(c)=="USA"]
+        kor_cols = [c for c in prices_krw.columns if classify(c)=="KOR"]
+        jpn_cols = [c for c in prices_krw.columns if classify(c)=="JPN"]
+        
+        # 현재 시간 (KST)
+        current_time_kst = datetime.now(KST)
+        
+        diag = {
+            "current_time_kst": current_time_kst.strftime("%Y-%m-%d %H:%M:%S %Z"),
+            "last_date": str(prices_krw.index[-1].date()),
+            "cols_total": prices_krw.shape[1],
+            "last_notna_total": int(last_row.notna().sum()),
+            "last_notna_USA": int(last_row[usa_cols].notna().sum()) if usa_cols else 0,
+            "last_notna_KOR": int(last_row[kor_cols].notna().sum()) if kor_cols else 0,
+            "last_notna_JPN": int(last_row[jpn_cols].notna().sum()) if jpn_cols else 0,
+            "env_CURL_CFFI_DISABLE_CACHE": os.environ.get("CURL_CFFI_DISABLE_CACHE")
+        }
     
     # OHLC 데이터 상태
     if ohlc_data is not None and not ohlc_data.empty:
