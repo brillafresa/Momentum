@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.7.4
+# KRW Momentum Radar - v3.8.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석
@@ -24,7 +24,10 @@ import pytz
 import re
 import streamlit as st
 import yfinance as yf
-from watchlist_utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, export_watchlist_to_csv, import_watchlist_from_csv
+from watchlist_utils import (
+    load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, 
+    export_watchlist_to_csv, import_watchlist_from_csv, MODE_FREE, MODE_IRP
+)
 from config import FMS_FORMULA
 from analysis_utils import (
     calculate_tradeability_filters as _au_trade_filters,
@@ -62,7 +65,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.7.4", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v3.8.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -73,11 +76,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------------------
-# 관심종목 초기화 (UI보다 먼저 실행)
+# 계좌 모드 초기화 (UI보다 먼저 실행)
+# ------------------------------
+if 'account_mode' not in st.session_state:
+    st.session_state.account_mode = MODE_FREE
+
+# ------------------------------
+# 관심종목 초기화 (모드별)
 # ------------------------------
 if 'watchlist' not in st.session_state:
     default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
-    st.session_state.watchlist = load_watchlist(default_symbols)
+    st.session_state.watchlist = load_watchlist(default_symbols, mode=st.session_state.account_mode)
     # 관심종목 초기화 완료
 
 # 현재 관심종목을 기존 변수명으로 매핑 (하위 호환성)
@@ -352,6 +361,32 @@ def only_name(sym):
 # 좌측 제어 - 깔끔하게 정리된 메뉴 구조
 # ------------------------------
 
+# 0. 계좌 모드 선택 (최상단)
+with st.sidebar.expander("🏦 계좌 모드 선택", expanded=True):
+    mode_options = {
+        "자유투자계좌": MODE_FREE,
+        "퇴직연금IRP": MODE_IRP
+    }
+    
+    selected_mode_label = st.radio(
+        "계좌 모드",
+        options=list(mode_options.keys()),
+        index=0 if st.session_state.account_mode == MODE_FREE else 1,
+        help="자유투자계좌: 미국+한국 주식 | 퇴직연금IRP: 국내상장 ETF 전 종목"
+    )
+    
+    selected_mode = mode_options[selected_mode_label]
+    
+    # 모드 변경 감지 및 처리
+    if selected_mode != st.session_state.account_mode:
+        st.session_state.account_mode = selected_mode
+        # 모드 변경 시 관심종목 재로드
+        default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
+        st.session_state.watchlist = load_watchlist(default_symbols, mode=selected_mode)
+        # 캐시 초기화
+        st.cache_data.clear()
+        st.rerun()
+
 # 1. 분석 설정
 with st.sidebar.expander("📊 분석 설정", expanded=True):
     period = st.selectbox("차트 기간", ["1M","3M","6M","1Y","2Y"], index=1)
@@ -401,7 +436,7 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
     if uploaded_watchlist is not None and not st.session_state.get('upload_processed', False):
         try:
             csv_data = uploaded_watchlist.read().decode('utf-8-sig')
-            new_symbols, message = import_watchlist_from_csv(csv_data)
+            new_symbols, message = import_watchlist_from_csv(csv_data, mode=st.session_state.account_mode)
             
             if new_symbols:
                 st.session_state.watchlist = new_symbols
@@ -464,7 +499,7 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
             with col2:
                 if st.button("🗑️", key=f"remove_{symbol}"):
                     # 관심종목에서 제거
-                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol])
+                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol], mode=st.session_state.account_mode)
                     
                     # 재평가 결과에서도 제거
                     if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
@@ -483,7 +518,11 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
     import os as _os
     from datetime import datetime as _dt
 
-    latest_scan_file = "scan_results/latest_scan_results.csv"
+    # 모드별 스캔 결과 파일 경로
+    from universe_utils import load_latest_scan_results
+    current_mode = st.session_state.account_mode
+    latest_scan_file = f"scan_results/latest_scan_results_{current_mode.lower()}.csv"
+    
     status_text = "배치 스캔 내역 없음"
     if _os.path.exists(latest_scan_file):
         last_mod_time = _dt.fromtimestamp(_os.path.getmtime(latest_scan_file))
@@ -520,19 +559,24 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 st.error(f"기존 스캔 중지 실패: {e}")
 
         try:
-            subprocess.Popen(["cmd", "/c", "start", "run_batch_manual.bat"], shell=True)
-            st.toast("새로운 배치 스캔을 시작합니다! (새 콘솔 창 확인)")
+            # 현재 모드를 배치 파일에 전달
+            current_mode_for_batch = st.session_state.account_mode
+            # start 명령어는 첫 번째 인자가 창 제목이므로 빈 문자열을 사용하고, 배치 파일과 인자를 전달
+            mode_label = "자유투자계좌" if current_mode_for_batch == MODE_FREE else "퇴직연금IRP"
+            subprocess.Popen(["cmd", "/c", "start", f"KRW Momentum Batch Scan ({mode_label})", "cmd", "/c", f"run_batch_manual.bat {current_mode_for_batch}"], shell=True)
+            st.toast(f"새로운 배치 스캔을 시작합니다! ({mode_label}, 새 콘솔 창 확인)")
             st.rerun()
         except Exception as e:
             st.error(f"배치 스캔 시작 실패: {e}")
     
-    # 배치 스캔 결과 표시
-    if _os.path.exists(latest_scan_file):
+    # 배치 스캔 결과 표시 (모드별)
+    success, scan_results_df, load_msg = load_latest_scan_results(fms_threshold=0.0, mode=current_mode)
+    if success and not scan_results_df.empty:
         st.divider()
-        st.markdown("**📋 배치 스캔 결과**")
+        mode_label = "자유투자계좌" if current_mode == MODE_FREE else "퇴직연금IRP"
+        st.markdown(f"**📋 배치 스캔 결과 ({mode_label})**")
         
         try:
-            scan_results_df = pd.read_csv(latest_scan_file, index_col=0)
             
             # FMS 임계값 필터링 및 이미 관심종목에 추가된 종목 제외
             fms_threshold_scan = st.slider("FMS 임계값", 0.0, 5.0, 0.0, 0.1, key="scan_fms_threshold")
@@ -607,7 +651,7 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                             else:
                                 try:
                                     # 관심종목에 추가
-                                    st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol])
+                                    st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [symbol], mode=st.session_state.account_mode)
                                     # 추가 성공 확인
                                     if symbol in st.session_state.watchlist:
                                         st.session_state[message_key] = {
@@ -630,6 +674,8 @@ with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
                 
         except Exception as e:
             st.error(f"스캔 결과 로드 실패: {str(e)}")
+    elif not success:
+        st.info(f"배치 스캔 결과가 없습니다. ({load_msg})")
 
 # 4. 수동 관리 (간단한 추가/삭제)
 with st.sidebar.expander("✏️ 수동 관리", expanded=False):
@@ -642,7 +688,7 @@ with st.sidebar.expander("✏️ 수동 관리", expanded=False):
             st.warning(f"'{new_ticker}'는 이미 관심종목에 있습니다.")
         else:
             try:
-                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker])
+                st.session_state.watchlist = add_to_watchlist(st.session_state.watchlist, [new_ticker], mode=st.session_state.account_mode)
                 st.success(f"'{new_ticker}' 추가됨")
                 st.rerun()
             except Exception as e:
@@ -653,7 +699,7 @@ with st.sidebar.expander("✏️ 수동 관리", expanded=False):
         ticker_to_remove = st.selectbox("삭제할 티커 선택", [""] + st.session_state.watchlist)
         if st.button("🗑️ 삭제"):
             if ticker_to_remove:
-                st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [ticker_to_remove])
+                st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [ticker_to_remove], mode=st.session_state.account_mode)
                 st.success(f"'{ticker_to_remove}' 삭제됨")
                 st.rerun()
             else:
@@ -686,7 +732,9 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     if st.button("🔄 관심종목 초기화", disabled=button_disabled):
         default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
         st.session_state.watchlist = default_symbols
-        save_watchlist(default_symbols)
+        save_success = save_watchlist(default_symbols, mode=st.session_state.account_mode)
+        if not save_success:
+            st.warning("⚠️ 관심종목 파일 저장에 실패했습니다.")
         st.success("관심종목이 기본값으로 초기화되었습니다!")
         st.rerun()
 
@@ -987,7 +1035,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.7.4")
+st.title("⚡ KRW Momentum Radar v3.8.0")
 
 
 

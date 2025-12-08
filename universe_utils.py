@@ -7,12 +7,17 @@ Finviz를 사용한 유니버스 스크리닝 및 파일 관리 기능
 import os
 import re
 import time
+import glob
 import pandas as pd
 from datetime import datetime
 import pytz
 from typing import Tuple, Optional
 
 KST = pytz.timezone("Asia/Seoul")
+
+# 모드 상수 정의
+MODE_FREE = "FREE"
+MODE_IRP = "IRP"
 
 def is_leveraged_or_inverse_etf(ticker: str, name: str = "") -> bool:
     """
@@ -78,15 +83,24 @@ def is_leveraged_or_inverse_etf(ticker: str, name: str = "") -> bool:
     
     return False
 
-def check_universe_file_freshness():
+def check_universe_file_freshness(mode: str = MODE_FREE):
     """
-    screened_universe.csv 파일의 실제 업데이트 시간을 확인합니다.
+    유니버스 파일의 실제 업데이트 시간을 확인합니다.
     파일 타임스탬프 대신 별도 저장된 업데이트 시간을 사용합니다.
+    
+    Args:
+        mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
+        - FREE: screened_universe.csv (Finviz 스크리닝 결과)
+        - IRP: korean_etf_univers.csv (수동 관리, 신선도 체크 불필요)
     
     Returns:
         tuple: (is_fresh, last_updated_time, hours_since_update)
     """
     try:
+        # IRP 모드는 수동 관리 파일이므로 신선도 체크 불필요
+        if mode == MODE_IRP:
+            return True, None, None
+        
         if not os.path.exists('screened_universe.csv'):
             return False, None, None
         
@@ -270,21 +284,49 @@ def update_universe_file(progress_callback=None, status_callback=None):
             progress_callback(1.0, f"❌ {error_msg}")
         return False, error_msg, 0
 
-def load_universe_file():
+def load_universe_file(mode: str = MODE_FREE):
     """
-    screened_universe.csv 파일을 로드합니다.
+    모드별 유니버스 파일을 로드합니다.
+    
+    Args:
+        mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
+        - FREE: screened_universe.csv (미국) + korean_universe.csv (한국)
+        - IRP: korean_etf_univers.csv (국내상장 ETF 전 종목)
     
     Returns:
         tuple: (success, symbols_list, message)
     """
     try:
-        if not os.path.exists('screened_universe.csv'):
-            return False, [], "유니버스 파일이 없습니다."
-        
-        universe_df = pd.read_csv('screened_universe.csv')
-        symbols = universe_df['Symbol'].tolist()
-        
-        return True, symbols, f"유니버스 로드 완료: {len(symbols)}개 종목"
+        if mode == MODE_IRP:
+            # IRP 모드: 국내상장 ETF 유니버스
+            if not os.path.exists('korean_etf_univers.csv'):
+                return False, [], "IRP 유니버스 파일이 없습니다."
+            
+            universe_df = pd.read_csv('korean_etf_univers.csv')
+            symbols = universe_df['Symbol'].tolist()
+            
+            return True, symbols, f"IRP 유니버스 로드 완료: {len(symbols)}개 종목"
+        else:
+            # FREE 모드: 미국 + 한국 유니버스 병합
+            usa_symbols = []
+            kor_symbols = []
+            
+            # 미국 유니버스 로드
+            if os.path.exists('screened_universe.csv'):
+                usa_df = pd.read_csv('screened_universe.csv')
+                usa_symbols = usa_df['Symbol'].tolist()
+            
+            # 한국 유니버스 로드
+            if os.path.exists('korean_universe.csv'):
+                kor_df = pd.read_csv('korean_universe.csv')
+                kor_symbols = kor_df['Symbol'].tolist()
+            
+            all_symbols = usa_symbols + kor_symbols
+            
+            if not all_symbols:
+                return False, [], "유니버스 파일이 없습니다."
+            
+            return True, all_symbols, f"유니버스 로드 완료: 미국 {len(usa_symbols)}개 + 한국 {len(kor_symbols)}개 = 총 {len(all_symbols)}개 종목"
         
     except Exception as e:
         return False, [], f"유니버스 파일 로드 중 오류: {str(e)}"
@@ -309,14 +351,15 @@ def load_korean_universe():
     except Exception as e:
         return False, [], f"한국 유니버스 파일 로드 중 오류: {str(e)}"
 
-def save_scan_results(scan_results_df, fms_threshold=2.0):
+def save_scan_results(scan_results_df, fms_threshold=2.0, mode: str = MODE_FREE):
     """
-    FMS 스캔 결과를 파일로 저장합니다.
+    FMS 스캔 결과를 모드별 파일로 저장합니다.
     FMS 임계값 이상인 종목만 저장합니다.
     
     Args:
         scan_results_df (pd.DataFrame): 스캔 결과 DataFrame
         fms_threshold (float): FMS 임계값 (기본값: 2.0)
+        mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
     
     Returns:
         tuple: (success, message, saved_count)
@@ -331,37 +374,60 @@ def save_scan_results(scan_results_df, fms_threshold=2.0):
         if filtered_results.empty:
             return False, f"FMS {fms_threshold} 이상인 종목이 없습니다.", 0
         
-        # 파일명에 타임스탬프 포함
-        timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
-        filename = f"scan_results_{timestamp}.csv"
+        # scan_results 디렉토리 확인 및 생성
+        scan_results_dir = "scan_results"
+        if not os.path.exists(scan_results_dir):
+            os.makedirs(scan_results_dir, exist_ok=True)
         
-        # 결과 저장
-        filtered_results.to_csv(filename, index=True)
+        # 파일명에 타임스탬프 및 모드 포함
+        timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
+        mode_suffix = mode.lower()
+        filename = f"scan_results_{mode_suffix}_{timestamp}.csv"
+        
+        # scan_results 디렉토리에 저장
+        filepath = os.path.join(scan_results_dir, filename)
+        filtered_results.to_csv(filepath, index=True)
+        
+        # 최신 결과 포인터 파일도 저장
+        latest_pointer = os.path.join(scan_results_dir, f"latest_scan_results_{mode_suffix}.csv")
+        filtered_results.to_csv(latest_pointer, index=True)
         
         return True, f"스캔 결과 저장 완료: {len(filtered_results)}개 종목 (FMS ≥ {fms_threshold})", len(filtered_results)
         
     except Exception as e:
         return False, f"스캔 결과 저장 중 오류: {str(e)}", 0
 
-def load_latest_scan_results(fms_threshold=2.0):
+def load_latest_scan_results(fms_threshold=2.0, mode: str = MODE_FREE):
     """
-    가장 최근의 스캔 결과 파일을 로드합니다.
+    모드별 가장 최근의 스캔 결과 파일을 로드합니다.
     
     Args:
         fms_threshold (float): FMS 임계값 (기본값: 2.0)
+        mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
     
     Returns:
         tuple: (success, results_df, message)
     """
     try:
-        # scan_results_*.csv 파일들 찾기
-        import glob
-        scan_files = glob.glob("scan_results_*.csv")
+        mode_suffix = mode.lower()
+        
+        # scan_results 디렉토리에서 모드별 스캔 결과 파일 찾기
+        scan_results_dir = "scan_results"
+        if not os.path.exists(scan_results_dir):
+            return False, pd.DataFrame(), f"{mode} 모드의 저장된 스캔 결과가 없습니다."
+        
+        # 모드별 스캔 결과 파일 찾기
+        pattern_new = os.path.join(scan_results_dir, f"scan_results_{mode_suffix}_*.csv")
+        
+        scan_files = glob.glob(pattern_new)
         
         if not scan_files:
-            return False, pd.DataFrame(), "저장된 스캔 결과가 없습니다."
+            return False, pd.DataFrame(), f"{mode} 모드의 저장된 스캔 결과가 없습니다."
         
-        # 가장 최근 파일 선택
+        # 가장 최근 파일 선택 (타임스탬프 기준)
+        if not scan_files:
+            return False, pd.DataFrame(), f"{mode} 모드의 저장된 스캔 결과가 없습니다."
+        
         latest_file = max(scan_files, key=os.path.getctime)
         
         # 파일 로드
@@ -382,16 +448,28 @@ def load_latest_scan_results(fms_threshold=2.0):
     except Exception as e:
         return False, pd.DataFrame(), f"스캔 결과 로드 중 오류: {str(e)}"
 
-def get_scan_results_info():
+def get_scan_results_info(mode: str = MODE_FREE):
     """
-    저장된 스캔 결과 파일들의 정보를 반환합니다.
+    모드별 저장된 스캔 결과 파일들의 정보를 반환합니다.
+    
+    Args:
+        mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
     
     Returns:
         list: 파일 정보 리스트
     """
     try:
-        import glob
-        scan_files = glob.glob("scan_results_*.csv")
+        mode_suffix = mode.lower()
+        scan_results_dir = "scan_results"
+        
+        # scan_results 디렉토리가 없으면 빈 리스트 반환
+        if not os.path.exists(scan_results_dir):
+            return []
+        
+        # 모드별 스캔 결과 파일 찾기 (scan_results 디렉토리 내)
+        pattern_new = os.path.join(scan_results_dir, f"scan_results_{mode_suffix}_*.csv")
+        
+        scan_files = glob.glob(pattern_new)
         
         if not scan_files:
             return []

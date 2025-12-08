@@ -31,19 +31,26 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 11. **배치 스캔 시스템**: CLI 기반 오프라인 배치 스캔으로 정확도 향상 및 중앙화된 FMS 로직
 12. **다국가 통합 스캔**: 미국(Finviz) + 한국(KOSPI200/KOSDAQ150/국내상장 ETF 전 종목) 유니버스 병합 스캔
 13. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
+14. **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
+    - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
+    - 모드별 유니버스 스캔 (FREE: 미국+한국 주식, IRP: 국내상장 ETF 전 종목)
+    - 모드별 배치 스캔 결과 저장 및 로드
 
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션 (v3.7.4)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v3.8.0)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── universe_utils.py         # 유니버스 관리 유틸리티 (NEW!)
 ├── watchlist_utils.py        # 관심종목 관리 유틸리티
 ├── analysis_utils.py         # 공통 분석 유틸(가격/FX/지표/FMS/필터)
-├── watchlist.csv            # 사용자 관심종목 저장 파일 (버전 관리 포함)
+├── watchlist_free.csv       # 자유투자계좌 관심종목 저장 파일
+├── watchlist_irp.csv        # 퇴직연금IRP 관심종목 저장 파일
+├── watchlist.csv            # [레거시] 기존 파일 (자동 마이그레이션됨)
 ├── screened_universe.csv     # 사전 필터링된 미국 유니버스 (Finviz)
 ├── korean_universe.csv       # 한국 유니버스 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, Symbol,Name 컬럼)
+├── korean_etf_univers.csv   # IRP 모드용 국내상장 ETF 유니버스 (Symbol,Name 컬럼)
 ├── requirements.txt          # Python 의존성
 ├── README.md                # 프로젝트 설명
 ├── LICENSE                  # MIT 라이선스
@@ -57,7 +64,9 @@ Momentum/
 ## 중요 파일 관리 규칙
 
 ### 중요 파일 관리
-- **watchlist.csv**: 사용자 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
+- **watchlist_free.csv**: 자유투자계좌 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
+- **watchlist_irp.csv**: 퇴직연금IRP 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
+- **watchlist.csv**: [레거시] 기존 파일 (자동으로 watchlist_free.csv로 마이그레이션됨)
 - **screened_universe.csv**: 사전 필터링된 미국 유니버스 목록 (매일 업데이트 권장)
 - **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, 단 ETF는 국내 지수/국내 자산 및 국내 인버스만 포함, 해외/레버리지형 ETF 제외, Symbol,Name 컬럼, 수동 관리)
   - **Name 컬럼**: 한국 종목명 직접 입력 (yfinance API 호출 없이 파일에서 읽어옴)
@@ -105,7 +114,7 @@ Momentum/
 - 메모리 사용량 최적화
 - 실시간 데이터 업데이트 처리
 - 다국가 시장의 시간대 차이 고려
-- **중요 파일 보존**: watchlist.csv, screened_universe.csv, korean_universe.csv 파일 항상 보존
+- **중요 파일 보존**: watchlist_free.csv, watchlist_irp.csv, screened_universe.csv, korean_universe.csv, korean_etf_univers.csv 파일 항상 보존
 
 ## Streamlit 실행 규칙
 - **기존 프로세스 중지**: Streamlit 실행 전에 기존 Python 프로세스를 중지

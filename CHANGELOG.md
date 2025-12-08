@@ -5,6 +5,40 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [3.8.0] - 2025-12-09
+
+### 추가
+
+- **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
+  - UI 사이드바 최상단에 계좌 모드 선택 라디오 버튼 추가
+  - 모드 전환 시 자동으로 해당 모드의 관심종목 및 스캔 결과 로드
+  - 모드별 독립적인 관심종목 파일 관리 (watchlist_free.csv, watchlist_irp.csv)
+  - 기존 watchlist.csv 파일 자동 마이그레이션 (watchlist_free.csv로)
+- **모드별 유니버스 스캔**:
+  - FREE 모드: 미국(Finviz) + 한국(KOSPI200/KOSDAQ150/국내상장 ETF 전 종목)
+  - IRP 모드: 국내상장 ETF 전 종목 (korean_etf_univers.csv)
+- **모드별 배치 스캔**:
+  - 배치 스캔 실행 시 현재 선택된 모드로 자동 실행
+  - 모드별 스캔 결과 파일 저장 (scan_results_free_*.csv, scan_results_irp_*.csv)
+  - 작업 스케줄러에서 파라미터 없이 실행 시 두 모드 모두 자동 실행
+- **모드별 스캔 결과 관리**:
+  - 모드별 최신 스캔 결과 파일 (latest_scan_results_free.csv, latest_scan_results_irp.csv)
+  - UI에서 현재 모드에 맞는 스캔 결과만 표시
+
+### 변경
+
+- **watchlist_utils.py**: 모든 함수에 `mode` 파라미터 추가 (기본값: MODE_FREE)
+- **universe_utils.py**: 유니버스 로드 및 스캔 결과 저장/로드 함수에 `mode` 파라미터 추가
+- **run_scan_batch.py**: CLI 인자 `--mode` 추가 (기본값: FREE)
+- **run_batch_manual.bat**: 모드 파라미터 전달 지원 및 파라미터 없이 실행 시 두 모드 모두 실행
+
+### 개선
+
+- **관심종목 자동 저장**: 추가/삭제 시 즉시 CSV 파일에 저장되도록 개선
+- **하위 호환성**: 기존 watchlist.csv 파일 자동 마이그레이션으로 기존 사용자 영향 최소화
+- **스캔 결과 파일 저장 위치 통일**: 모든 스캔 결과 파일이 `scan_results/` 디렉토리에만 저장되도록 개선 (루트 디렉토리 중복 저장 제거)
+- **레거시 파일 정리**: 사용하지 않는 `watchlist.csv`, `scan_results/latest_scan_results.csv` 파일 및 하위 호환성 코드 제거
+
 ## [3.7.4] - 2025-11-20
 
 ### 수정
