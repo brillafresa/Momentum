@@ -1,0 +1,16 @@
+# Line ending 설정
+# 모든 텍스트 파일은 LF로 통일 (Unix 스타일)
+* text=auto eol=lf
+
+# Windows 배치 파일은 CRLF 유지
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리 파일은 line ending 변환 제외
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+
