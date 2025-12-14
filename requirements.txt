@@ -7,3 +7,4 @@ pytz>=2023.3
 requests>=2.31.0
 finvizfinance>=1.1.1
 psutil>=5.9.0
+scipy>=1.10.0

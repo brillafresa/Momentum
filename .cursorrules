@@ -18,7 +18,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 - **문서화**: 모든 함수와 클래스에 docstring 추가
 
 ## 주요 기능
-1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수 (관심종목 기준 Z-score 정규화)
+1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수 (관심종목 기준 Z-score 정규화, R² 기반 급등주 필터링)
 2. **거래 적합성 필터**: True Range 기반 치명적 변동성 및 반복적 하방리스크 감지로 부적합 종목 자동 실격 (디버그 로깅 지원, 당일 고가/저가 0인 경우 전일 데이터로 대체)
 3. **동적 컬럼 재정렬**: FMS 전략에 맞춰 결과 테이블 컬럼 순서 자동 조정
 4. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
@@ -39,7 +39,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 ## 파일 구조
 ```
 Momentum/
-├── app.py                    # 메인 Streamlit 애플리케이션 (v3.8.0)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v3.9.0)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── universe_utils.py         # 유니버스 관리 유틸리티 (NEW!)
@@ -74,6 +74,8 @@ Momentum/
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
 
 ## FMS 계산 로직 (중요!)
+- **공식**: `FMS = 0.2×Z(1M수익률) + 0.3×Z(3M수익률) + 0.3×Z(3M_R²) + 0.2×Z(EMA50상대위치) - 0.2×Z(20일변동성)`
+- **R² 기반 급등주 필터링**: 3개월 로그 수익률의 결정계수(R²)로 횡보 후 급등/계단식 급등 패턴 감지 및 감점 처리
 - **Z-score 정규화 기준**: 관심종목 집합을 기준으로 통일
 - **참조 데이터 시스템**: `reference_prices_krw` 매개변수로 Z-score 계산 기준 지정
 - **일관성 보장**: 유니버스 스캔과 관심종목에서 동일한 FMS 값 계산

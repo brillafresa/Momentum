@@ -10,6 +10,7 @@ from typing import Tuple, List, Dict, Optional
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from scipy.stats import linregress
 
 
 def classify(sym: str) -> str:
@@ -225,6 +226,48 @@ def last_vol_annualized(df: pd.DataFrame, window: int = 20) -> pd.Series:
     return vol
 
 
+def r_squared_3m(prices_krw: pd.DataFrame) -> pd.Series:
+    """
+    3개월(63거래일) 로그 수익률 기반 결정계수(R²)를 계산합니다.
+    R²는 추세의 매끄러움을 평가하며, 높을수록 안정적인 우상향 추세를 의미합니다.
+    
+    Args:
+        prices_krw (pd.DataFrame): KRW 환산 가격 데이터 (컬럼: 종목, 인덱스: 날짜)
+    
+    Returns:
+        pd.Series: 각 종목별 R² 값 (0~1 사이, NaN 가능)
+    """
+    r2_dict = {}
+    for col in prices_krw.columns:
+        s = prices_krw[col].dropna()
+        if len(s) < 63:
+            r2_dict[col] = np.nan
+            continue
+        
+        # 최근 63거래일 데이터
+        recent = s.tail(63)
+        if len(recent) < 2:
+            r2_dict[col] = np.nan
+            continue
+        
+        # 로그 수익률 계산
+        log_returns = np.log(recent / recent.iloc[0])
+        
+        # 선형 회귀를 위한 인덱스 (0부터 시작하는 정수)
+        x = np.arange(len(log_returns))
+        y = log_returns.values
+        
+        try:
+            # 선형 회귀 수행
+            slope, intercept, r_value, p_value, std_err = linregress(x, y)
+            r2 = r_value ** 2
+            r2_dict[col] = r2
+        except Exception:
+            r2_dict[col] = np.nan
+    
+    return pd.Series(r2_dict, name='R2_3M')
+
+
 def calculate_tradeability_filters(ohlc_data: pd.DataFrame, symbols: List[str]) -> Tuple[Dict[str, bool], Dict[str, str]]:
     disqualification: Dict[str, bool] = {}
     filter_reasons: Dict[str, str] = {}
@@ -432,6 +475,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
                   ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
     r_1m = returns_pct(prices_krw, 21)
     r_3m = returns_pct(prices_krw, 63)
+    r2_3m = r_squared_3m(prices_krw).rename('R2_3M')
     above_ema50 = {}
     for c in prices_krw.columns:
         s = prices_krw[c].dropna()
@@ -461,6 +505,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     if reference_prices_krw is not None:
         ref_r_1m = returns_pct(reference_prices_krw, 21)
         ref_r_3m = returns_pct(reference_prices_krw, 63)
+        ref_r2_3m = r_squared_3m(reference_prices_krw).rename('R2_3M')
         ref_above_ema50 = {}
         for c in reference_prices_krw.columns:
             s = reference_prices_krw[c].dropna()
@@ -480,10 +525,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             # 실격 종목은 추후 -999 적용될 예정이므로, Z-score 계산 후에도 결과 반환
             return result
 
-        FMS = (0.4 * z_with_reference(r_1m, ref_r_1m)
+        FMS = (0.2 * z_with_reference(r_1m, ref_r_1m)
                + 0.3 * z_with_reference(r_3m, ref_r_3m)
+               + 0.3 * z_with_reference(r2_3m.fillna(0.0), ref_r2_3m.fillna(0.0))
                + 0.2 * z_with_reference(above_ema50, ref_above_ema50)
-               - 0.4 * z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
+               - 0.2 * z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
     else:
         def z(x: pd.Series, exclude_disq: bool = False) -> pd.Series:
             x = x.astype(float)
@@ -496,7 +542,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
             return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
-        FMS = (0.4 * z(r_1m, exclude_disq=True) + 0.3 * z(r_3m, exclude_disq=True) + 0.2 * z(above_ema50, exclude_disq=True) - 0.4 * z(vol20.fillna(vol20.median()), exclude_disq=True))
+        FMS = (0.2 * z(r_1m, exclude_disq=True) 
+               + 0.3 * z(r_3m, exclude_disq=True) 
+               + 0.3 * z(r2_3m.fillna(0.0), exclude_disq=True)
+               + 0.2 * z(above_ema50, exclude_disq=True) 
+               - 0.2 * z(vol20.fillna(vol20.median()), exclude_disq=True))
 
     # 실격 종목은 FMS = -999 적용
     if disqualification_flags:
@@ -505,7 +555,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
                 FMS[symbol] = -999.0
 
     filter_reasons_series = pd.Series(filter_reasons, name='Filter_Status').reindex(FMS.index, fill_value='정상')
-    snap = pd.concat([r_1m.rename('R_1M'), r_3m.rename('R_3M'), above_ema50, vol20, FMS.rename('FMS'), filter_reasons_series], axis=1)
+    snap = pd.concat([r_1m.rename('R_1M'), r_3m.rename('R_3M'), r2_3m, above_ema50, vol20, FMS.rename('FMS'), filter_reasons_series], axis=1)
     return snap
 
 
