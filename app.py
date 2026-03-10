@@ -1256,15 +1256,10 @@ else:
             return None
         mn = float(all_vals.min())
         mx = float(all_vals.max())
-        if mn == mx:
-            pad = 1.0 if mn == 0 else abs(mn) * 0.05
-            mn_p, mx_p = (mn - pad), (mx + pad)
-        else:
-            pad = (mx - mn) * 0.05
-            mn_p, mx_p = (mn - pad), (mx + pad)
-        mn_p = max(mn_p, 1e-6)
-        mx_p = max(mx_p, mn_p * 1.000001)
-        return (float(np.log10(mn_p)), float(np.log10(mx_p)))
+        # 패딩 없이, 실제 최소/최대 수익률 피크만을 사용해 y축 범위 결정
+        mn = max(mn, 1e-6)
+        mx = max(mx, mn * 1.000001)
+        return (float(np.log10(mn)), float(np.log10(mx)))
 
     y_global_log = _global_rebased_log_range(prices_krw[ordered_options], period)
 
