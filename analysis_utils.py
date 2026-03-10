@@ -487,24 +487,46 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     above_ema50 = pd.Series(above_ema50, name='AboveEMA50')
     vol20 = last_vol_annualized(prices_krw, 20).rename('Vol20(ann)')
 
+    # 최대 드로우다운(%)
+    mdict: Dict[str, float] = {}
+    for c in prices_krw.columns:
+        s = prices_krw[c].dropna()
+        if s.empty:
+            mdict[c] = np.nan
+            continue
+        roll_max = s.cummax()
+        dd = (s / roll_max - 1.0) * 100.0
+        mdict[c] = float(dd.min())
+    max_dd = pd.Series(mdict, name='MaxDD_Pct')
+
     # 거래 적합성 필터 먼저 확인
     disqualification_flags: Dict[str, bool] = {}
     filter_reasons: Dict[str, str] = {}
     if ohlc_data is not None and symbols is not None:
         disqualification_flags, filter_reasons = calculate_tradeability_filters(ohlc_data, symbols)
     
-    # 실격 종목 추출 (prices_krw에 있는 종목만)
     disqualified_symbols = set()
     if disqualification_flags:
-        disqualified_symbols = {sym for sym, is_disq in disqualification_flags.items() 
-                               if is_disq and sym in prices_krw.columns}
-    
-    # 참조 데이터가 없는 경우(current 데이터만 있는 경우) 실격 종목 제외하고 Z-score 계산
-    # 참조 데이터가 있는 경우는 참조 데이터 기준으로만 normalize하므로 실격 종목 제외 불필요
+        disqualified_symbols = {
+            sym for sym, is_disq in disqualification_flags.items()
+            if is_disq and sym in prices_krw.columns
+        }
+
+    def _z(x: pd.Series, mask_exclude: Optional[set] = None) -> pd.Series:
+        x = x.astype(float)
+        if mask_exclude:
+            valid_idx = [idx for idx in x.index if idx not in mask_exclude]
+            valid_x = x.loc[valid_idx] if valid_idx else x
+        else:
+            valid_x = x
+        m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
+        return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
     if reference_prices_krw is not None:
+        # 참조 데이터 기반 분포
         ref_r_1m = returns_pct(reference_prices_krw, 21)
         ref_r_3m = returns_pct(reference_prices_krw, 63)
+        ref_r_6m = returns_pct(reference_prices_krw, 126)
         ref_r2_3m = r_squared_3m(reference_prices_krw).rename('R2_3M')
         ref_above_ema50 = {}
         for c in reference_prices_krw.columns:
@@ -517,36 +539,132 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         ref_above_ema50 = pd.Series(ref_above_ema50, name='AboveEMA50')
         ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename('Vol20(ann)')
 
-        def z_with_reference(x: pd.Series, ref_x: pd.Series) -> pd.Series:
-            x = x.astype(float); ref_x = ref_x.astype(float)
-            # 평균/표준편차는 항상 ref_x 전체 기준
-            m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
-            result = (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
-            # 실격 종목은 추후 -999 적용될 예정이므로, Z-score 계산 후에도 결과 반환
-            return result
+        # 참조용 MaxDD
+        ref_md: Dict[str, float] = {}
+        for c in reference_prices_krw.columns:
+            s = reference_prices_krw[c].dropna()
+            if s.empty:
+                ref_md[c] = np.nan
+                continue
+            roll_max = s.cummax()
+            dd = (s / roll_max - 1.0) * 100.0
+            ref_md[c] = float(dd.min())
+        ref_max_dd = pd.Series(ref_md, name='MaxDD_Pct')
 
-        FMS = (0.2 * z_with_reference(r_1m, ref_r_1m)
-               + 0.3 * z_with_reference(r_3m, ref_r_3m)
-               + 0.3 * z_with_reference(r2_3m.fillna(0.0), ref_r2_3m.fillna(0.0))
-               + 0.2 * z_with_reference(above_ema50, ref_above_ema50)
-               - 0.2 * z_with_reference(vol20.fillna(vol20.median()), ref_vol20.fillna(ref_vol20.median())))
-    else:
-        def z(x: pd.Series, exclude_disq: bool = False) -> pd.Series:
-            x = x.astype(float)
-            # 실격 종목 제외하고 평균/표준편차 계산
-            if exclude_disq and disqualified_symbols:
-                valid_idx = [idx for idx in x.index if idx not in disqualified_symbols]
-                valid_x = x.loc[valid_idx] if valid_idx else x
-            else:
-                valid_x = x
-            m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
+        def z_ref(x: pd.Series, ref_x: pd.Series) -> pd.Series:
+            x = x.astype(float); ref_x = ref_x.astype(float)
+            m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
             return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
-        FMS = (0.2 * z(r_1m, exclude_disq=True) 
-               + 0.3 * z(r_3m, exclude_disq=True) 
-               + 0.3 * z(r2_3m.fillna(0.0), exclude_disq=True)
-               + 0.2 * z(above_ema50, exclude_disq=True) 
-               - 0.2 * z(vol20.fillna(vol20.median()), exclude_disq=True))
+        # R2 비선형 가중
+        r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
+        r2_eff = np.where(
+            r2_clip < 0.7,
+            0.2 * r2_clip,
+            np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
+        )
+        ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
+        ref_r2_eff = np.where(
+            ref_r2_clip < 0.7,
+            0.2 * ref_r2_clip,
+            np.where(ref_r2_clip < 0.9, 0.6 * ref_r2_clip, 1.2 * ref_r2_clip),
+        )
+        r2_term = z_ref(pd.Series(r2_eff, index=r2_3m.index),
+                        pd.Series(ref_r2_eff, index=ref_r2_3m.index))
+
+        # MaxDD 패널티 (참조 분포 기준)
+        dd_mag = (-max_dd).clip(lower=0.0)
+        ref_dd_mag = (-ref_max_dd).clip(lower=0.0)
+        dd_soft = dd_mag.clip(upper=30.0)
+        dd_hard = ((dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
+        dd_combined = dd_soft + dd_hard
+        ref_dd_soft = ref_dd_mag.clip(upper=30.0)
+        ref_dd_hard = ((ref_dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
+        ref_dd_combined = ref_dd_soft + ref_dd_hard
+        dd_penalty = z_ref(dd_combined, ref_dd_combined)
+
+        # Vol20 패널티 (참조 분포 기준)
+        v = vol20.clip(lower=0.0)
+        v_ref = ref_vol20.clip(lower=0.0)
+        q_ref = np.nanpercentile(v_ref, 60) if not v_ref.dropna().empty else np.nan
+        if np.isnan(q_ref):
+            q_ref = np.nanpercentile(v, 60) if not v.dropna().empty else 0.0
+        v_soft = v.clip(upper=q_ref)
+        v_hard = (v - q_ref).clip(lower=0.0) ** 2
+        v_combined = v_soft + v_hard
+        v_ref_soft = v_ref.clip(upper=q_ref)
+        v_ref_hard = (v_ref - q_ref).clip(lower=0.0) ** 2
+        v_ref_combined = v_ref_soft + v_ref_hard
+        vol_penalty = z_ref(v_combined, v_ref_combined)
+
+        # 주요 양의 축들
+        r3_term = z_ref(r_3m, ref_r_3m)
+        r6_term = z_ref(returns_pct(prices_krw, 126), ref_r_6m)
+        ema_term = z_ref(above_ema50, ref_above_ema50)
+
+        # R1 조건부 처리
+        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5)
+        r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
+        r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
+        # 참조 R1 분포
+        ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_6m > 0.5)
+        ref_r1_good = pd.Series(np.where(ref_quality, ref_r_1m, 0.0), index=ref_r_1m.index)
+        ref_r1_bad = pd.Series(np.where(~ref_quality & (ref_r_1m > 0.3), ref_r_1m, 0.0), index=ref_r_1m.index)
+        r1_pos = z_ref(r1_good, ref_r1_good)
+        r1_neg = z_ref(r1_bad, ref_r1_bad)
+
+        Pos = (
+            0.45 * r3_term
+            + 0.35 * r6_term
+            + 0.50 * r2_term
+            + 0.30 * ema_term
+            + 0.15 * r1_pos
+        )
+        Neg = 0.50 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
+        FMS = Pos - Neg
+
+    else:
+        # 참조 데이터가 없을 때: 현재 집합 분포 기준
+        r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
+        r2_eff = np.where(
+            r2_clip < 0.7,
+            0.2 * r2_clip,
+            np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
+        )
+        r2_term = _z(pd.Series(r2_eff, index=r2_3m.index), disqualified_symbols)
+
+        dd_mag = (-max_dd).clip(lower=0.0)
+        dd_soft = dd_mag.clip(upper=30.0)
+        dd_hard = ((dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
+        dd_combined = dd_soft + dd_hard
+        dd_penalty = _z(dd_combined, disqualified_symbols)
+
+        v = vol20.clip(lower=0.0)
+        q = np.nanpercentile(v, 60) if not v.dropna().empty else 0.0
+        v_soft = v.clip(upper=q)
+        v_hard = (v - q).clip(lower=0.0) ** 2
+        v_combined = v_soft + v_hard
+        vol_penalty = _z(v_combined, disqualified_symbols)
+
+        r3_term = _z(r_3m, disqualified_symbols)
+        r6_term = _z(returns_pct(prices_krw, 126), disqualified_symbols)
+        ema_term = _z(above_ema50, disqualified_symbols)
+
+        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5)
+        r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
+        r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
+        r1_pos = _z(r1_good, disqualified_symbols)
+        r1_neg = _z(r1_bad, disqualified_symbols)
+
+        Pos = (
+            0.45 * r3_term
+            + 0.35 * r6_term
+            + 0.50 * r2_term
+            + 0.30 * ema_term
+            + 0.15 * r1_pos
+        )
+        Neg = 0.50 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
+        FMS = Pos - Neg
 
     # 실격 종목은 FMS = -999 적용
     if disqualification_flags:
@@ -555,7 +673,19 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
                 FMS[symbol] = -999.0
 
     filter_reasons_series = pd.Series(filter_reasons, name='Filter_Status').reindex(FMS.index, fill_value='정상')
-    snap = pd.concat([r_1m.rename('R_1M'), r_3m.rename('R_3M'), r2_3m, above_ema50, vol20, FMS.rename('FMS'), filter_reasons_series], axis=1)
+    snap = pd.concat(
+        [
+            r_1m.rename('R_1M'),
+            r_3m.rename('R_3M'),
+            r2_3m,
+            above_ema50,
+            vol20,
+            max_dd,
+            FMS.rename('FMS'),
+            filter_reasons_series,
+        ],
+        axis=1,
+    )
     return snap
 
 

@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v3.9.0
+# KRW Momentum Radar - v4.0.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import pytz
 import re
 import streamlit as st
+from typing import Optional, Tuple
 import yfinance as yf
 from watchlist_utils import (
     load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, 
@@ -34,6 +35,20 @@ from analysis_utils import (
     momentum_now_and_delta as _au_momentum_now_and_delta,
     calculate_fms_for_batch as _au_calculate_fms_for_batch,
     get_filter_debug_info,
+)
+from calibration_utils import (
+    create_snapshot_id,
+    save_snapshot,
+    load_snapshot,
+    list_sessions,
+    save_session,
+    load_session,
+    init_sort_state,
+    get_next_comparison,
+    apply_sort_choice,
+    build_review_queue_from_final,
+    get_next_review_pair,
+    apply_review_choice,
 )
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
@@ -53,6 +68,18 @@ DEFAULT_KRW_SYMBOLS = [
 ]
 DEFAULT_JPY_SYMBOLS = ['7203.T']
 
+def _rebase_100(s: pd.Series) -> pd.Series:
+    """
+    시계열을 처음 값을 기준으로 100으로 리베이스합니다.
+    (Rebased 100 차트 및 고정 y-range 계산에 사용)
+    """
+    s = s.dropna()
+    if s.empty:
+        return s
+    base = float(s.iloc[0])
+    if base <= 0 or pd.isna(base):
+        return pd.Series(dtype=float, index=s.index)
+    return (s / base) * 100.0
 
 
 def classify(sym):
@@ -65,7 +92,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v3.9.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.0.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -710,21 +737,38 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     st.markdown("**📊 FMS (Fast Momentum Score)**")
     
     st.markdown(f"""
-    **FMS = {FMS_FORMULA}**
-    
-    • **추세 지속성**: 1M + 3M 수익률로 단기/중기 모멘텀 종합 평가
-    
-    • **추세 견고함(R²)**: 3개월 로그 수익률의 결정계수로 급등주 필터링 (높을수록 안정적 우상향)
-    
-    • **EMA 상대위치**: 50일 지수이동평균 대비 현재가 위치로 추세 강도 측정
-    
-    • **변동성 페널티**: 20일 변동성으로 급등락 종목 감점 처리
-    
-    • **거래 적합성 필터**: 
-      - 치명적 변동성: 63거래일 내 일일 변동폭 30% 초과 시 실격
-      - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
-    
-    • **목표**: 꾸준하고 지속 가능한 상승 추세 종목 발굴 (횡보 후 급등/계단식 급등 패턴 제외)
+    **개요:**  
+    - FMS는 **중·장기 우상향(3M/6M 수익률)**, **추세의 매끄러움(3M R²)**, **현재 위치(EMA50 대비)**,  
+      그리고 **건강한 추세에서의 최근 가속(조건부 1M 수익률)** 을 가산하고,  
+      **깊은 드로우다운**, **과도한 20일 변동성**, **추세가 나쁜데 1M만 튄 이벤트성 급등**을 감점하는 **비선형 점수**입니다.
+
+    **긍정 요인 (가산)**  
+    - **R_3M, R_6M**: 3개월/6개월 수익률이 높을수록 가산  
+    - **R2_3M (3M R²)**:  
+      - 0.7 미만: 거의 가산하지 않음  
+      - 0.7~0.9: 중간 수준 가산  
+      - 0.9 이상: 매우 매끄러운 우상향으로 강하게 가산  
+    - **AboveEMA50**: 현재가가 EMA50 위에 있고, 충분히 위에 있을수록 가산  
+    - **조건부 R_1M (좋은 경우)**: 이미 R2_3M, R_3M, R_6M 이 모두 좋은 “건강한 우상향”인 종목에서만,  
+      최근 1개월 수익률이 높으면 추가 가산 (견고한 추세의 가속으로 해석)
+
+    **부정 요인 (감점)**  
+    - **MaxDD_Pct (최대 드로우다운)**:  
+      - -30%까지는 완만한 패널티  
+      - -30% 이후(-50%~-80% 등)는 제곱 항으로 급격히 강한 패널티 (깊게 빠진 뒤 회복이 미진한 종목을 강하게 감점)  
+    - **Vol20_Ann (20일 변동성)**:  
+      - 중간 수준의 변동성까지는 완만한 패널티  
+      - 상위 변동성 구간에서 제곱 항으로 급격히 강한 패널티 (과도하게 요동치는 종목 기피)  
+    - **조건부 R_1M (나쁜 경우)**: R2_3M, R_3M, R_6M 이 받쳐주지 않는데 1M 수익률만 높은 경우,  
+      이벤트성 급등으로 보고 감점 요인으로 사용
+
+    **추가 필터 (거래 적합성)**  
+    - True Range 기반 **치명적 변동성 30% 초과** 또는  
+      **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
+
+    **한 줄 요약:**  
+    - **“일관된 중·장기 우상향 + 추세 상단 위치 + 건강한 가속”을 가진 종목을 선호하고,  
+      “깊은 손실/과도한 변동/이벤트성 급등” 패턴을 강하게 배제하는 비선형 모멘텀 점수입니다.**
     """)
     
     st.markdown("---")
@@ -1041,7 +1085,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v3.9.0")
+st.title("⚡ KRW Momentum Radar v4.0.0")
 
 
 
@@ -1178,23 +1222,65 @@ else:
 
     s_full = prices_krw[detail_sym].dropna()
     # 선택된 차트 기간에 맞춰 데이터 필터링
-    win_map={"1M":21,"3M":63,"6M":126,"1Y":252,"2Y":504}
+    win_map = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
     win = win_map.get(period, 126)
     if s_full.shape[0] > win:
         s = s_full.iloc[-win:]
     else:
         s = s_full
-    
-    e20, e50, e200 = ema(s, 20), ema(s, 50), ema(s, 200)
+
+    # 세부보기 그래프: Rebased 100 + 로그 스케일 + 관심종목 전체 기준 고정 y-range
+    def _global_rebased_log_range(prices: pd.DataFrame, period_key: str) -> Optional[Tuple[float, float]]:
+        # 전체 관심종목에 대해, 선택된 기간 구간만 잘라서 Rebased 100 후 최소/최대 값 계산
+        if prices.empty:
+            return None
+        win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+        win_local = win_map_local.get(period_key, 126)
+        if prices.shape[0] > win_local:
+            sub = prices.iloc[-win_local:]
+        else:
+            sub = prices
+        # 각 컬럼별로 개별 리베이스 후 합침
+        rebased_list = []
+        for col in sub.columns:
+            s_col = sub[col].dropna()
+            if s_col.empty:
+                continue
+            r = _rebase_100(s_col)
+            rebased_list.append(r)
+        if not rebased_list:
+            return None
+        all_vals = pd.concat(rebased_list, axis=0).dropna()
+        all_vals = all_vals[all_vals > 0]
+        if all_vals.empty:
+            return None
+        mn = float(all_vals.min())
+        mx = float(all_vals.max())
+        if mn == mx:
+            pad = 1.0 if mn == 0 else abs(mn) * 0.05
+            mn_p, mx_p = (mn - pad), (mx + pad)
+        else:
+            pad = (mx - mn) * 0.05
+            mn_p, mx_p = (mn - pad), (mx + pad)
+        mn_p = max(mn_p, 1e-6)
+        mx_p = max(mx_p, mn_p * 1.000001)
+        return (float(np.log10(mn_p)), float(np.log10(mx_p)))
+
+    y_global_log = _global_rebased_log_range(prices_krw[ordered_options], period)
+
+    # 선택된 종목에 대해서도 Rebased 100 + EMA
+    s100 = _rebase_100(s)
+    e20, e50, e200 = ema(s100, 20), ema(s100, 50), ema(s100, 200)
     fig_det = go.Figure()
-    fig_det.add_trace(go.Scatter(x=s.index, y=s.values, mode="lines", name="KRW"))
+    fig_det.add_trace(go.Scatter(x=s100.index, y=s100.values, mode="lines", name="Rebased(100)"))
     fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
     fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
     fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
     fig_det.update_layout(
         height=420,
         margin=dict(l=10, r=10, t=10, b=10),
-        yaxis_title="KRW",
+        yaxis_title="Rebased 100 (log)",
+        yaxis=dict(type="log"),
         legend=dict(
             orientation="h",
             yanchor="bottom",
@@ -1203,6 +1289,8 @@ else:
             x=0.5,
         ),
     )
+    if y_global_log is not None:
+        fig_det.update_yaxes(range=[y_global_log[0], y_global_log[1]])
     st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
 
     roll_max = s.cummax()
@@ -1226,11 +1314,6 @@ else:
         badges.append("가속(1D+)")
     if row["ΔFMS_5D"] > 0:
         badges.append("가속(5D+)")
-    st.markdown(
-        " ".join([f"<span class='badge'>{b}</span>" for b in badges]) or "<span class='small'>상태 배지 없음</span>",
-        unsafe_allow_html=True,
-    )
-
 # ==============================
 # ④ 수익률–변동성 이동맵
 # ==============================
@@ -1505,7 +1588,8 @@ disp = mom.copy()
 
 # FMS 컬럼 표시
 for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50"]:
-    if c in disp: disp[c] = (disp[c]*100).round(2)
+    if c in disp:
+        disp[c] = (disp[c]*100).round(2)
 
 # R2_3M 컬럼 표시 (0~1 사이 값이므로 100 곱하지 않음, 소수점 3자리)
 if "R2_3M" in disp:
@@ -1597,6 +1681,292 @@ disp_reordered = disp[final_column_order]
 disp_reordered = disp_reordered.sort_values(rank_col if rank_col in disp_reordered.columns else "FMS", ascending=False)
 
 st.dataframe(disp_reordered, use_container_width=True)
+
+# ==============================
+# ⑤-1 FMS 재보정 (A/B 그래프 비교, 스냅샷 고정)
+# ==============================
+st.subheader("FMS 재보정")
+
+def _slice_series_by_period(s_full: pd.Series, period_key: str) -> pd.Series:
+    win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+    win_local = win_map_local.get(period_key, 126)
+    if s_full.shape[0] > win_local:
+        return s_full.iloc[-win_local:]
+    return s_full
+
+def _make_detail_price_fig(
+    s: pd.Series,
+    *,
+    title: str,
+    y_range_log10: Optional[Tuple[float, float]] = None,
+) -> go.Figure:
+    """
+    A/B 비교용 가격 차트.
+    - 시작값을 100으로 리베이스
+    - 로그 스케일(yaxis.type='log')
+    - y축 범위는 log10 공간(range=[log10(min), log10(max)])에서 동일하게 고정
+    """
+    s100 = _rebase_100(s)
+    e20_, e50_, e200_ = ema(s100, 20), ema(s100, 50), ema(s100, 200)
+    fig_ = go.Figure()
+    fig_.add_trace(go.Scatter(x=s100.index, y=s100.values, mode="lines", name="Rebased(100)"))
+    fig_.add_trace(go.Scatter(x=e20_.index, y=e20_.values, mode="lines", name="EMA20"))
+    fig_.add_trace(go.Scatter(x=e50_.index, y=e50_.values, mode="lines", name="EMA50"))
+    fig_.add_trace(go.Scatter(x=e200_.index, y=e200_.values, mode="lines", name="EMA200"))
+    layout_kwargs = dict(
+        height=380,
+        margin=dict(l=10, r=10, t=30, b=10),
+        yaxis_title="Rebased 100 (log)",
+        title=dict(text=title, x=0.0, xanchor="left", y=0.98, yanchor="top"),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+    )
+    fig_.update_layout(**layout_kwargs)
+    fig_.update_yaxes(type="log")
+    if y_range_log10 is not None and all(v is not None for v in y_range_log10):
+        fig_.update_yaxes(range=[y_range_log10[0], y_range_log10[1]])
+    return fig_
+
+def _make_drawdown_fig(s: pd.Series, *, y_range: Optional[Tuple[float, float]] = None) -> go.Figure:
+    roll_max_ = s.cummax()
+    dd_ = (s / roll_max_ - 1.0) * 100.0
+    fig_ = go.Figure([go.Scatter(x=dd_.index, y=dd_.values, mode="lines", name="Drawdown(%)")])
+    fig_.update_layout(height=160, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="%")
+    if y_range is not None:
+        fig_.update_yaxes(range=[y_range[0], y_range[1]])
+    return fig_
+
+def _calc_shared_y_range_log10(series_a: pd.Series, series_b: pd.Series) -> Optional[Tuple[float, float]]:
+    a100 = _rebase_100(series_a)
+    b100 = _rebase_100(series_b)
+    vals = pd.concat([a100, b100], axis=0).dropna()
+    if vals.empty:
+        return None
+    # log axis는 양수만 허용
+    vals = vals[vals > 0]
+    if vals.empty:
+        return None
+    mn = float(vals.min())
+    mx = float(vals.max())
+    if mn == mx:
+        pad = 1.0 if mn == 0 else abs(mn) * 0.05
+        mn_p, mx_p = (mn - pad), (mx + pad)
+    else:
+        pad = (mx - mn) * 0.05
+        mn_p, mx_p = (mn - pad), (mx + pad)
+    # 안정적으로 양수 유지
+    mn_p = max(mn_p, 1e-6)
+    mx_p = max(mx_p, mn_p * 1.000001)
+    return (float(np.log10(mn_p)), float(np.log10(mx_p)))
+
+def _calc_shared_dd_range(series_a: pd.Series, series_b: pd.Series) -> Optional[Tuple[float, float]]:
+    def _dd(s_):
+        rm = s_.cummax()
+        return (s_ / rm - 1.0) * 100.0
+    dd_vals = pd.concat([_dd(series_a), _dd(series_b)], axis=0).dropna()
+    if dd_vals.empty:
+        return None
+    mn = float(dd_vals.min())
+    mx = float(dd_vals.max())
+    # Drawdown은 보통 0~음수 범위. 위아래 약간 패딩.
+    if mn == mx:
+        return (mn - 1.0, mx + 1.0)
+    pad = (mx - mn) * 0.05
+    return (mn - pad, mx + pad)
+
+if "fms_calibration" not in st.session_state:
+    st.session_state.fms_calibration = {"active_session_id": None, "state": None}
+
+cal = st.session_state.fms_calibration
+
+with st.expander("🧪 재보정 세션 관리 (시작/불러오기/저장)", expanded=False):
+    col_a, col_b = st.columns([1.2, 1])
+
+    with col_a:
+        st.markdown("**새 세션 시작 (현재 화면의 데이터로 스냅샷 고정)**")
+        session_name = st.text_input("세션 이름(선택)", value="", help="비워두면 자동 이름을 사용합니다.")
+        start_btn = st.button("✅ 새 세션 시작", use_container_width=True)
+
+    with col_b:
+        st.markdown("**기존 세션 불러오기**")
+        existing_sessions = list_sessions()
+        pick = st.selectbox("세션 선택", options=[""] + existing_sessions, index=0)
+        load_btn = st.button("📂 불러오기", disabled=(pick == ""), use_container_width=True)
+
+    if start_btn:
+        # 스냅샷 생성: 현재 prices_krw 기준(작업 중 갱신 금지)
+        snapshot_id = create_snapshot_id("fms")
+        # 비교 대상: 현재 관심종목 중 prices_krw에 존재하는 종목만
+        symbols_all = [str(s) for s in st.session_state.watchlist]
+        available = [s for s in symbols_all if s in prices_krw.columns]
+        snapshot_prices = prices_krw[available].copy()
+
+        meta = {
+            "account_mode": st.session_state.account_mode,
+            "chart_period": period,
+            "symbols": available,
+            "note": "FMS recalibration snapshot. Do not refresh during session.",
+        }
+        save_snapshot(snapshot_id, prices_krw=snapshot_prices, ohlc_data=None, meta=meta)
+
+        session_id = session_name.strip() or f"cal_{snapshot_id}"
+        state = init_sort_state(available, snapshot_id=snapshot_id, meta=meta)
+        save_session(session_id, state)
+
+        cal["active_session_id"] = session_id
+        cal["state"] = state
+        st.success(f"세션 시작됨: {session_id} (snapshot: {snapshot_id})")
+        st.rerun()
+
+    if load_btn and pick:
+        state = load_session(pick)
+        cal["active_session_id"] = pick
+        cal["state"] = state
+        st.success(f"세션 불러옴: {pick}")
+        st.rerun()
+
+active_session_id = cal.get("active_session_id")
+state = cal.get("state")
+
+if active_session_id and state:
+    # 항상 스냅샷에서 로드 (작업 중 최신 갱신 금지)
+    snap_id = state.get("snapshot_id")
+    try:
+        snap_prices, _, snap_meta = load_snapshot(snap_id)
+    except Exception as e:
+        st.error(f"스냅샷 로드 실패: {e}")
+        snap_prices, snap_meta = pd.DataFrame(), {}
+
+    # 저장 버튼 (수동)
+    top_col1, top_col2, top_col3 = st.columns([1, 1, 2])
+    with top_col1:
+        if st.button("💾 지금 저장", use_container_width=True):
+            save_session(active_session_id, state)
+            st.toast("저장 완료")
+    with top_col2:
+        if st.button("⛔ 세션 종료(메모리만)", use_container_width=True):
+            st.session_state.fms_calibration = {"active_session_id": None, "state": None}
+            st.rerun()
+    with top_col3:
+        st.caption(f"세션: {active_session_id} | snapshot: {snap_id} | phase: {state.get('phase')}")
+
+    # 진행률 표시 (정렬 단계에서만)
+    if state.get("phase") == "sorting":
+        done = int(state.get("comparisons_done", 0))
+        est = int(state.get("comparisons_est_max", 1)) or 1
+        st.progress(min(1.0, done / est), text=f"정렬 진행: 비교 {done}/{est} (최대치 기준)")
+
+        pair = get_next_comparison(state)
+        if pair is None:
+            # 내부 상태가 review로 넘어갔을 수 있음
+            save_session(active_session_id, state)
+            st.rerun()
+        sym_a, sym_b = pair
+
+        # 데이터 준비(기간 슬라이스는 스냅샷의 chart_period 사용)
+        chart_period = (state.get("meta") or {}).get("chart_period") or period
+        sA_full = snap_prices[sym_a].dropna() if sym_a in snap_prices.columns else pd.Series(dtype=float)
+        sB_full = snap_prices[sym_b].dropna() if sym_b in snap_prices.columns else pd.Series(dtype=float)
+        sA = _slice_series_by_period(sA_full, chart_period)
+        sB = _slice_series_by_period(sB_full, chart_period)
+
+        y_shared = _calc_shared_y_range_log10(sA, sB)
+        dd_shared = _calc_shared_dd_range(sA, sB)
+
+        left, right = st.columns(2)
+        with left:
+            st.plotly_chart(_make_detail_price_fig(sA, title=f"A: {display_name(sym_a)}", y_range_log10=y_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(_make_drawdown_fig(sA, y_range=dd_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+        with right:
+            st.plotly_chart(_make_detail_price_fig(sB, title=f"B: {display_name(sym_b)}", y_range_log10=y_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(_make_drawdown_fig(sB, y_range=dd_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+
+        btn1, btn2 = st.columns(2)
+        with btn1:
+            if st.button("⬅️ A가 더 우수함", use_container_width=True):
+                apply_sort_choice(state, sym_a, ts=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
+                save_session(active_session_id, state)
+                st.rerun()
+        with btn2:
+            if st.button("➡️ B가 더 우수함", use_container_width=True):
+                apply_sort_choice(state, sym_b, ts=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
+                save_session(active_session_id, state)
+                st.rerun()
+
+    elif state.get("phase") == "review":
+        if not state.get("review_queue"):
+            build_review_queue_from_final(state, fraction=0.10)
+            save_session(active_session_id, state)
+            st.rerun()
+
+        pair = get_next_review_pair(state)
+        if pair is None:
+            save_session(active_session_id, state)
+            st.rerun()
+        sym_a, sym_b = pair
+
+        st.info("최종 인접 등수 재검토(약 10%). 이전 선택과 다르면 불일치로 기록되고, 인접 순서를 조정합니다.")
+
+        chart_period = (state.get("meta") or {}).get("chart_period") or period
+        sA_full = snap_prices[sym_a].dropna() if sym_a in snap_prices.columns else pd.Series(dtype=float)
+        sB_full = snap_prices[sym_b].dropna() if sym_b in snap_prices.columns else pd.Series(dtype=float)
+        sA = _slice_series_by_period(sA_full, chart_period)
+        sB = _slice_series_by_period(sB_full, chart_period)
+
+        y_shared = _calc_shared_y_range_log10(sA, sB)
+        dd_shared = _calc_shared_dd_range(sA, sB)
+
+        left, right = st.columns(2)
+        with left:
+            st.plotly_chart(_make_detail_price_fig(sA, title=f"A: {display_name(sym_a)}", y_range_log10=y_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(_make_drawdown_fig(sA, y_range=dd_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+        with right:
+            st.plotly_chart(_make_detail_price_fig(sB, title=f"B: {display_name(sym_b)}", y_range_log10=y_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(_make_drawdown_fig(sB, y_range=dd_shared),
+                            use_container_width=True, config={"displayModeBar": False})
+
+        btn1, btn2 = st.columns(2)
+        with btn1:
+            if st.button("⬅️ (재검토) A가 더 우수함", use_container_width=True):
+                res = apply_review_choice(state, sym_a, ts=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
+                save_session(active_session_id, state)
+                if state.get("inconsistencies"):
+                    st.warning("불일치가 기록되었습니다. (세션 상단에서 저장 후 최종 결과를 확인하세요.)")
+                if res.get("status") == "done":
+                    st.success("재검토 완료")
+                st.rerun()
+        with btn2:
+            if st.button("➡️ (재검토) B가 더 우수함", use_container_width=True):
+                res = apply_review_choice(state, sym_b, ts=datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
+                save_session(active_session_id, state)
+                if state.get("inconsistencies"):
+                    st.warning("불일치가 기록되었습니다. (세션 상단에서 저장 후 최종 결과를 확인하세요.)")
+                if res.get("status") == "done":
+                    st.success("재검토 완료")
+                st.rerun()
+
+    elif state.get("phase") == "done":
+        ranking = state.get("final_ranking") or []
+        st.success("정렬/재검토가 완료되었습니다.")
+
+        if state.get("inconsistencies"):
+            st.warning(f"불일치 감지: {len(state.get('inconsistencies'))}건 (인접 재검토에서 초기 판단과 달랐음)")
+            with st.expander("불일치 상세 보기", expanded=False):
+                st.json(state.get("inconsistencies"))
+
+        if ranking:
+            df_rank = pd.DataFrame({"rank": range(1, len(ranking) + 1), "symbol": ranking})
+            st.dataframe(df_rank, use_container_width=True, hide_index=True)
+            csv = df_rank.to_csv(index=False, encoding="utf-8-sig")
+            st.download_button("📥 최종 순서 CSV 다운로드", data=csv, file_name=f"{active_session_id}_final_ranking.csv", mime="text/csv")
+
+        st.info("다음 단계(2단계): 이 정답 순서를 기준으로 설명 변수/수식을 구성하고 설명력을 평가하며 FMS를 재설계합니다.")
 
 # ------------------------------
 # ⑥ 디버그/진단

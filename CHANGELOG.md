@@ -5,6 +5,24 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.0.0] - 2026-03-10
+
+### 추가
+
+- **새 FMS 비선형 전략 도입**:
+  - 3M/6M 수익률, 3M R², EMA50 상대위치, 조건부 1M 수익률(건강한 추세에서의 가속)을 가산하고,
+  - 최대 드로우다운, 20일 변동성, 이벤트성 1M 급등을 비선형 패널티로 감산하는 새로운 FMS 수식을 적용
+- **FMS 재보정 기능 제품화**:
+  - UI에서 A/B 그래프 비교로 정답 순서를 수집하는 “FMS 재보정” 섹션 추가
+  - 스냅샷/세션/CLI 스크립트(`fms_recalib_build_features.py`, `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`) 기반 재보정 워크플로우 정식화
+
+### 변경
+
+- **FMS 설명력 개선**:
+  - 기존 FMS 대비 순서쌍 역전 비율, Spearman 랭크 상관계수, 쌍별 순위차 오차 기준으로 정답셋을 더 잘 설명하도록 개선
+- **세부 보기/비교 그래프 개선**:
+  - 세부보기 및 FMS 재보정 A/B 비교용 가격 그래프를 Rebased 100 + 로그 스케일 + 관심종목 전체 기준 전역 고정 y축 범위로 변경
+
 ## [3.9.0] - 2025-12-14
 
 ### 추가
