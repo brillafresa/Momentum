@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.0.1
+# KRW Momentum Radar - v4.1.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -92,7 +92,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.0.1", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.1.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -745,10 +745,8 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     **긍정 요인 (가산)**  
     - **R_3M, R_6M**: 3개월/6개월 수익률이 높을수록 가산  
     - **R2_3M (3M R²)**:  
-      - 0.7 미만: 거의 가산하지 않음  
-      - 0.7~0.9: 중간 수준 가산  
-      - 0.9 이상: 매우 매끄러운 우상향으로 강하게 가산  
-      - **추세상승 게이트**: R²는 R_3M>5%, R_6M>8%일 때만 가산. 추세상승 없으면 매끄러운 평평한 그래프는 가산하지 않음  
+      - 0.7/0.9 같은 임계값에서 **계단식으로 점수가 튀지 않도록**, 경계 주변을 **부드러운 곡선(smoothstep)** 으로 전이  
+      - **추세상승 게이트(연속형)**: R²는 R_3M≈5%, R_6M≈8%를 기준으로 가산되되, 경계에서 **부드럽게 켜지고/꺼지도록** 적용  
     - **AboveEMA50**: 현재가가 EMA50 위에 있고, 충분히 위에 있을수록 가산  
     - **조건부 R_1M (좋은 경우)**: 이미 R2_3M, R_3M, R_6M 이 모두 좋은 “건강한 우상향”인 종목에서만,  
       최근 1개월 수익률이 높으면 추가 가산 (견고한 추세의 가속으로 해석)
@@ -1086,7 +1084,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.0.1")
+st.title("⚡ KRW Momentum Radar v4.1.0")
 
 
 

@@ -522,6 +522,29 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         m = np.nanmean(valid_x); sd = np.nanstd(valid_x)
         return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
+    def _smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
+        """0..1로 부드럽게 전이 (C1 연속)."""
+        if edge1 == edge0:
+            return pd.Series(0.0, index=x.index)
+        t = ((x - edge0) / (edge1 - edge0)).clip(lower=0.0, upper=1.0)
+        return t * t * (3.0 - 2.0 * t)
+
+    # Iteration 5 (튜닝 결과): 가중치/전이폭 파라미터
+    P_W_R3 = 0.435991
+    P_W_R6 = 0.319466
+    P_W_R2 = 0.615106
+    P_W_EMA = 0.284587
+    P_W_R1_POS = 0.186529
+    P_W_DD = 0.363645
+    P_W_VOL = 0.377713
+    P_W_R1_NEG = 0.165261
+    P_R2_TRANSITION_W = 0.029645
+    P_GATE_R3_W = 0.028663
+    P_GATE_R6_W = 0.013226
+    P_LEVEL_R3_HI = 0.123071
+    P_LEVEL_R6_HI = 0.340733
+    P_R2_FLOOR = 0.631902
+
     if reference_prices_krw is not None:
         # 참조 데이터 기반 분포
         ref_r_1m = returns_pct(reference_prices_krw, 21)
@@ -557,26 +580,28 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
         # R2 비선형 가중 + 추세상승 게이트 (평평한 그래프 억제)
-        # R²는 R_3M>5%, R_6M>8%일 때만 가산. 추세상승 없으면 매끄러운 그래프도 쓸모없음
+        # 기존 임계값(0.7/0.9, 5%/8%)은 유지하되, 계단식 변화는 smoothstep으로 연속화
         r_6m = returns_pct(prices_krw, 126)
-        r2_gate = (r_3m > 0.05).astype(float) * (r_6m > 0.08).astype(float)
-        ref_r2_gate = (ref_r_3m > 0.05).astype(float) * (ref_r_6m > 0.08).astype(float)
+        r2_gate = _smoothstep(r_3m, 0.05 - P_GATE_R3_W, 0.05 + P_GATE_R3_W) * _smoothstep(r_6m, 0.08 - P_GATE_R6_W, 0.08 + P_GATE_R6_W)
+        ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - P_GATE_R3_W, 0.05 + P_GATE_R3_W) * _smoothstep(ref_r_6m, 0.08 - P_GATE_R6_W, 0.08 + P_GATE_R6_W)
+        # 수익률 레벨 램프(약하게): gate_on 이후에도 "매끈함만으로 과대평가"를 줄이기 위해,
+        # R² 가산을 3M/6M 수익률 수준에 따라 아주 완만히(0.8~1.0) 조정
+        r2_level = _smoothstep(r_3m, 0.05, P_LEVEL_R3_HI) * _smoothstep(r_6m, 0.08, P_LEVEL_R6_HI)
+        ref_r2_level = _smoothstep(ref_r_3m, 0.05, P_LEVEL_R3_HI) * _smoothstep(ref_r_6m, 0.08, P_LEVEL_R6_HI)
+        r2_strength = r2_gate * (P_R2_FLOOR + (1.0 - P_R2_FLOOR) * r2_level)
+        ref_r2_strength = ref_r2_gate * (P_R2_FLOOR + (1.0 - P_R2_FLOOR) * ref_r2_level)
 
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        r2_eff = np.where(
-            r2_clip < 0.7,
-            0.2 * r2_clip,
-            np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
-        )
-        r2_eff_gated = pd.Series(r2_eff * r2_gate, index=r2_3m.index)
+        w_mid = _smoothstep(r2_clip, 0.70 - P_R2_TRANSITION_W, 0.70 + P_R2_TRANSITION_W)
+        w_high = _smoothstep(r2_clip, 0.90 - P_R2_TRANSITION_W, 0.90 + P_R2_TRANSITION_W)
+        r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high  # 0.2 -> 0.6 -> 1.2
+        r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
 
         ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
-        ref_r2_eff = np.where(
-            ref_r2_clip < 0.7,
-            0.2 * ref_r2_clip,
-            np.where(ref_r2_clip < 0.9, 0.6 * ref_r2_clip, 1.2 * ref_r2_clip),
-        )
-        ref_r2_eff_gated = pd.Series(ref_r2_eff * ref_r2_gate, index=ref_r2_3m.index)
+        ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - P_R2_TRANSITION_W, 0.70 + P_R2_TRANSITION_W)
+        ref_w_high = _smoothstep(ref_r2_clip, 0.90 - P_R2_TRANSITION_W, 0.90 + P_R2_TRANSITION_W)
+        ref_r2_mult = 0.2 + 0.4 * ref_w_mid + 0.6 * ref_w_high
+        ref_r2_eff_gated = pd.Series((ref_r2_mult * ref_r2_clip) * ref_r2_strength, index=ref_r2_3m.index)
 
         r2_term = z_ref(r2_eff_gated, ref_r2_eff_gated)
 
@@ -594,14 +619,17 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         # Vol20 패널티 (참조 분포 기준)
         v = vol20.clip(lower=0.0)
         v_ref = ref_vol20.clip(lower=0.0)
-        q_ref = np.nanpercentile(v_ref, 60) if not v_ref.dropna().empty else np.nan
+        # Iteration 3: Vol20 tail 패널티 형태만 조정 (단일 변경)
+        # - q: 70% 분위수까지는 완만, 이후 tail은 power(1.5)로 가속
+        # - 목적: 초고변동 종목에 대한 과도/과소 페널티를 정답셋 기준으로 보정
+        q_ref = np.nanpercentile(v_ref, 70) if not v_ref.dropna().empty else np.nan
         if np.isnan(q_ref):
-            q_ref = np.nanpercentile(v, 60) if not v.dropna().empty else 0.0
+            q_ref = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
         v_soft = v.clip(upper=q_ref)
-        v_hard = (v - q_ref).clip(lower=0.0) ** 2
+        v_hard = (v - q_ref).clip(lower=0.0) ** 1.5
         v_combined = v_soft + v_hard
         v_ref_soft = v_ref.clip(upper=q_ref)
-        v_ref_hard = (v_ref - q_ref).clip(lower=0.0) ** 2
+        v_ref_hard = (v_ref - q_ref).clip(lower=0.0) ** 1.5
         v_ref_combined = v_ref_soft + v_ref_hard
         vol_penalty = z_ref(v_combined, v_ref_combined)
 
@@ -622,27 +650,27 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         r1_neg = z_ref(r1_bad, ref_r1_bad)
 
         Pos = (
-            0.45 * r3_term
-            + 0.35 * r6_term
-            + 0.50 * r2_term
-            + 0.30 * ema_term
-            + 0.15 * r1_pos
+            P_W_R3 * r3_term
+            + P_W_R6 * r6_term
+            + P_W_R2 * r2_term
+            + P_W_EMA * ema_term
+            + P_W_R1_POS * r1_pos
         )
-        Neg = 0.50 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
+        Neg = P_W_DD * dd_penalty + P_W_VOL * vol_penalty + P_W_R1_NEG * r1_neg
         FMS = Pos - Neg
 
     else:
         # 참조 데이터가 없을 때: 현재 집합 분포 기준
         # R2 추세상승 게이트 (평평한 그래프 억제)
         r_6m = returns_pct(prices_krw, 126)
-        r2_gate = (r_3m > 0.05).astype(float) * (r_6m > 0.08).astype(float)
+        r2_gate = _smoothstep(r_3m, 0.05 - P_GATE_R3_W, 0.05 + P_GATE_R3_W) * _smoothstep(r_6m, 0.08 - P_GATE_R6_W, 0.08 + P_GATE_R6_W)
+        r2_level = _smoothstep(r_3m, 0.05, P_LEVEL_R3_HI) * _smoothstep(r_6m, 0.08, P_LEVEL_R6_HI)
+        r2_strength = r2_gate * (P_R2_FLOOR + (1.0 - P_R2_FLOOR) * r2_level)
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        r2_eff = np.where(
-            r2_clip < 0.7,
-            0.2 * r2_clip,
-            np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
-        )
-        r2_eff_gated = pd.Series(r2_eff * r2_gate, index=r2_3m.index)
+        w_mid = _smoothstep(r2_clip, 0.70 - P_R2_TRANSITION_W, 0.70 + P_R2_TRANSITION_W)
+        w_high = _smoothstep(r2_clip, 0.90 - P_R2_TRANSITION_W, 0.90 + P_R2_TRANSITION_W)
+        r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
+        r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
         r2_term = _z(r2_eff_gated, disqualified_symbols)
 
         dd_mag = (-max_dd).clip(lower=0.0)
@@ -652,9 +680,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         dd_penalty = _z(dd_combined, disqualified_symbols)
 
         v = vol20.clip(lower=0.0)
-        q = np.nanpercentile(v, 60) if not v.dropna().empty else 0.0
+        q = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
         v_soft = v.clip(upper=q)
-        v_hard = (v - q).clip(lower=0.0) ** 2
+        v_hard = (v - q).clip(lower=0.0) ** 1.5
         v_combined = v_soft + v_hard
         vol_penalty = _z(v_combined, disqualified_symbols)
 
@@ -669,13 +697,13 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         r1_neg = _z(r1_bad, disqualified_symbols)
 
         Pos = (
-            0.45 * r3_term
-            + 0.35 * r6_term
-            + 0.50 * r2_term
-            + 0.30 * ema_term
-            + 0.15 * r1_pos
+            P_W_R3 * r3_term
+            + P_W_R6 * r6_term
+            + P_W_R2 * r2_term
+            + P_W_EMA * ema_term
+            + P_W_R1_POS * r1_pos
         )
-        Neg = 0.50 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
+        Neg = P_W_DD * dd_penalty + P_W_VOL * vol_penalty + P_W_R1_NEG * r1_neg
         FMS = Pos - Neg
 
     # 실격 종목은 FMS = -999 적용

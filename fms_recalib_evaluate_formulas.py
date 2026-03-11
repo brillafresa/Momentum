@@ -40,7 +40,7 @@ def pairwise_inversion_rate(true_rank: pd.Series, score: pd.Series) -> float:
 
 
 def f_current(df: pd.DataFrame) -> pd.Series:
-    """현재 적용된 FMS (analysis_utils._mom_snapshot와 동일 로직, R² 추세상승 게이트 포함)."""
+    """현재 적용된 FMS (analysis_utils._mom_snapshot와 동일 로직)."""
     r1 = df["R_1M"]
     r3 = df["R_3M"]
     r6 = df["R_6M"]
@@ -49,12 +49,37 @@ def f_current(df: pd.DataFrame) -> pd.Series:
     vol20 = df["Vol20_Ann"]
     maxdd = df["MaxDD_Pct"]
 
-    r2_effect = np.where(
-        r2 < 0.7, 0.2 * r2,
-        np.where(r2 < 0.9, 0.6 * r2, 1.2 * r2),
-    )
-    r2_gate = (r3 > 0.05).astype(float) * (r6 > 0.08).astype(float)
-    r2_effect_gated = pd.Series(r2_effect * r2_gate, index=df.index)
+    # Iteration 5 (튜닝 결과): 가중치/전이폭 파라미터
+    P_W_R3 = 0.435991
+    P_W_R6 = 0.319466
+    P_W_R2 = 0.615106
+    P_W_EMA = 0.284587
+    P_W_R1_POS = 0.186529
+    P_W_DD = 0.363645
+    P_W_VOL = 0.377713
+    P_W_R1_NEG = 0.165261
+    P_R2_TRANSITION_W = 0.029645
+    P_GATE_R3_W = 0.028663
+    P_GATE_R6_W = 0.013226
+    P_LEVEL_R3_HI = 0.123071
+    P_LEVEL_R6_HI = 0.340733
+    P_R2_FLOOR = 0.631902
+
+    def smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
+        if edge1 == edge0:
+            return pd.Series(0.0, index=x.index)
+        t = ((x - edge0) / (edge1 - edge0)).clip(lower=0.0, upper=1.0)
+        return t * t * (3.0 - 2.0 * t)
+
+    w_mid = smoothstep(r2, 0.70 - P_R2_TRANSITION_W, 0.70 + P_R2_TRANSITION_W)
+    w_high = smoothstep(r2, 0.90 - P_R2_TRANSITION_W, 0.90 + P_R2_TRANSITION_W)
+    r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
+    r2_effect = r2_mult * r2
+
+    r2_gate = smoothstep(r3, 0.05 - P_GATE_R3_W, 0.05 + P_GATE_R3_W) * smoothstep(r6, 0.08 - P_GATE_R6_W, 0.08 + P_GATE_R6_W)
+    r2_level = smoothstep(r3, 0.05, P_LEVEL_R3_HI) * smoothstep(r6, 0.08, P_LEVEL_R6_HI)
+    r2_strength = r2_gate * (P_R2_FLOOR + (1.0 - P_R2_FLOOR) * r2_level)
+    r2_effect_gated = pd.Series(r2_effect * r2_strength, index=df.index)
     r2_term = z(r2_effect_gated)
 
     dd_mag = (-maxdd).clip(lower=0.0)
@@ -64,9 +89,9 @@ def f_current(df: pd.DataFrame) -> pd.Series:
     dd_penalty = z(pd.Series(dd_combined, index=df.index))
 
     v = vol20.clip(lower=0.0)
-    q = np.nanpercentile(v, 60) if not v.dropna().empty else 0.0
+    q = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
     v_soft = v.clip(upper=q)
-    v_hard = (v - q).clip(lower=0.0) ** 2
+    v_hard = (v - q).clip(lower=0.0) ** 1.5
     v_combined = v_soft + v_hard
     vol_penalty = z(pd.Series(v_combined, index=df.index))
 
@@ -80,15 +105,17 @@ def f_current(df: pd.DataFrame) -> pd.Series:
     r1_pos = z(r1_good)
     r1_neg = z(r1_bad)
 
-    pos = 0.45 * r3_term + 0.35 * r6_term + 0.5 * r2_term + 0.3 * ema_term + 0.15 * r1_pos
-    neg = 0.5 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
+    pos = P_W_R3 * r3_term + P_W_R6 * r6_term + P_W_R2 * r2_term + P_W_EMA * ema_term + P_W_R1_POS * r1_pos
+    neg = P_W_DD * dd_penalty + P_W_VOL * vol_penalty + P_W_R1_NEG * r1_neg
     return pos - neg
 
 
 def f_proposed(df: pd.DataFrame) -> pd.Series:
     """
-    수정 제안: FMS 변경 시 여기에 새 로직 구현 후 검증.
-    현재는 f_current와 동일.
+    수정 제안:
+    - FMS 변경 실험을 이 함수에 구현한 뒤,
+      `fms_recalib_evaluate_formulas.py` / `fms_recalib_rank_metrics.py`로 current vs proposed를 비교합니다.
+    - 정답셋이 바뀌면 지표 절대값은 의미가 없으므로, **이번 정답셋 내부에서** 개선 여부만 판단합니다.
     """
     return f_current(df)
 

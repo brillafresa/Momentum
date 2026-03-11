@@ -5,6 +5,25 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.1.0] - 2026-03-11
+
+### 변경
+
+- **FMS 연속화 + 튜닝 고도화**:
+  - R² 가산(0.7/0.9) 및 추세상승 게이트(5%/8%)의 계단식 불연속을 **smoothstep 전이**로 완화
+  - “매끈함만으로 과대평가”를 줄이기 위해 R² 기여를 수익률 레벨에 **약하게 연동(연속형 램프)** 하도록 개선
+  - Vol20 패널티 형태 튜닝: q=70% 분위수 이후 tail을 power=1.5로 적용
+  - 가중치/전이폭을 정답셋 기준 **몬테카를로 튜닝**하여 설명력 지표 개선
+
+### 개선
+
+- **재보정 품질관리 강화**:
+  - `fms_recalib_build_features.py`가 세션별 `fms_calibration_sessions/<session_id>__baseline_metrics.json`을 자동 저장
+  - 정답셋이 바뀌면 지표 절대값은 의미가 없으므로, “이번 정답셋 내부”에서 current vs proposed 개선 여부만 판단하도록 워크플로우 문서 보강
+- **재보정 도구 추가**:
+  - `fms_recalib_tune_vol_penalty.py`, `fms_recalib_tune_weights_and_transitions.py` (튜닝용)
+  - `fms_check_relative_ranks.py` (관심종목 상대순위 점검용)
+
 ## [4.0.1] - 2026-03-11
 
 ### 변경

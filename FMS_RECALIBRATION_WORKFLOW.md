@@ -111,6 +111,13 @@
 - 이어서, 각 패턴이 **어떤 강도로 작동하는지**도 말로 정리합니다.
   - 예: “3M 수익률이 높더라도 드로우다운이 깊으면 강하게 감점된다”, “R²가 일정 임계값 이상일 때만 강하게 가산된다” 등.
 - 비선형 요소(임계값, 구간별 다른 행동, 제곱/제곱근, min/max 등)가 있다면, 먼저 **자연어로 행동을 설명**한 뒤 수식으로 옮깁니다.
+  - 단, 임계값을 조건문으로 “딱 끊어” 적용하면 경계에서 계단식 점프가 생겨 불합리해질 수 있으므로, 가능하면 **연속적인 전이(예: sigmoid/smoothstep/softplus)** 형태를 우선 고려합니다.
+
+#### 개선 반복(한 번에 하나씩)
+
+- 여러 요소를 동시에 바꾸면 무엇이 성능에 영향을 줬는지 분리하기 어렵습니다.  
+  따라서 **한 번의 Iteration에서는 하나의 변화만**(예: “R² 가산/게이트를 연속화”) 적용하고, 지표로 개선 여부를 확인한 뒤 다음으로 넘어갑니다.
+- 새 아이디어를 낼 때도 **현재 FMS가 반영하고 있는 교훈을 이해/존중**한 뒤(왜 이렇게 설계됐는지), 그 위에 작은 개선을 쌓는 방식이 기본입니다.
 
 #### 수식 형태에 대한 가이드
 
@@ -135,6 +142,13 @@
 - 평가지표 예시:
   - **순서쌍 오류율(pairwise inversion rate)**: 가능한 모든 (i, j) 쌍 중, 정답과 순서가 다른 쌍의 비율
   - 상위/하위 구간(예: 상위 20%, 하위 20%)에서의 오류율 또는 “완전히 뒤집힌 사례”가 있는지 여부
+
+#### 가중치/파라미터 미세조정(튜닝)
+
+- 수식 구조를 정한 뒤에는 “감으로 잡은 초기 가중치”에서 멈추지 않고, **가중치/임계값 주변 폭(전이 폭)** 같은 파라미터를 조금씩 바꿔보며 지표 개선 방향을 확인합니다.
+- 구현 방식 예시:
+  - **그리드/랜덤(몬테카를로) 탐색**: 합리적인 범위 내에서 파라미터를 샘플링해 inversion rate / Spearman / pair delta error를 함께 최적화
+  - **제약 포함 탐색**: “해석 가능성 유지”, “단조성(좋은 R²가 나쁜 R²보다 불리해지지 않음)” 같은 제약을 둔 채 탐색
 
 ---
 
@@ -257,6 +271,7 @@ python fms_recalib_rank_metrics.py
 >   - `fms_calibration_sessions/<session_id>.json` 안의 `final_ranking`은 내가 A/B 그래프 비교로 정한 “정답 순서”입니다.  
 >   - `fms_calibration_snapshots/<snapshot_id>/prices_krw.pkl`에는 그 시점의 KRW 환산 가격 데이터가 들어 있습니다.  
 >   - `fms_recalib_features.csv`에는 각 종목에 대해 `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 가 들어 있습니다.
+>   - `fms_calibration_sessions/<session_id>__baseline_metrics.json`에는 **해당 정답셋(features.csv) 기준**으로 계산된 current FMS의 baseline 지표/순위가 저장됩니다.
 > - 해야 할 일:  
 >   1. `fms_recalib_features.csv`를 기반으로, 정답 rank의 상위/중위/하위 구간에서 각각 어떤 패턴이 보이는지 **말로 정리**해 주세요.  
 >      - 예: 상위권은 어떤 수익률/변동성/R²/드로우다운/EMA50 특성을 공통으로 가지는지, 하위권은 어떤 패턴이 많은지.  
@@ -270,11 +285,29 @@ python fms_recalib_rank_metrics.py
 > - 작업 맥락:  
 >   - `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`에서  
 >     **current(현재 적용)** vs **proposed(수정 제안)** 의 역전 비율 / Spearman / 쌍별 순위차 오차를 비교합니다.  
+>   - **중요**: 정답셋이 바뀌면 지표의 **절대값은 당연히 달라집니다.**  
+>     따라서 과거 정답셋에서의 inversion/spearman/pair_delta_error 수치와 비교하지 말고, **이번 정답셋 내부에서** current vs proposed의 개선 여부만 판단하세요.
 > - 해야 할 일:  
 >   1. 제안한 새 FMS 수식을 `f_proposed` 함수에 작성해 주세요.  
 >   2. 실행 후 current vs proposed 결과를 비교하고,  
 >      **proposed가 이 세 지표 모두에서 개선되는지**를 확인해 주세요.  
 >   3. 개선되지 않는다면, 어떤 패턴에서 오차가 커지는지 설명하고, 수식을 어떻게 조정하면 좋을지 제안해 주세요.
+
+---
+
+### D. 재보정에 유용한 보조 스크립트(재사용 도구)
+
+- `fms_recalib_build_features.py`:
+  - 최신 세션/스냅샷으로 `fms_recalib_features.csv` 생성
+  - 동시에 `fms_calibration_sessions/<session_id>__baseline_metrics.json` 저장 (해당 정답셋 기준 baseline)
+- `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`:
+  - current vs proposed를 같은 정답셋에서 비교
+- `fms_recalib_tune_vol_penalty.py`:
+  - Vol20 패널티 mapping(q, tail power 등)만 단독 탐색
+- `fms_recalib_tune_weights_and_transitions.py`:
+  - 가중치/전이폭(smoothstep 폭, 게이트 폭, 램프 파라미터)만 단독 탐색(몬테카를로)
+- `fms_check_relative_ranks.py`:
+  - 관심종목 집합에서 특정 심볼들의 상대 순위/지표를 빠르게 점검
 
 ---
 

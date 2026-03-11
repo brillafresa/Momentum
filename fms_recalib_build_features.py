@@ -8,11 +8,13 @@ FMS 재보정을 위한 피처 테이블 생성 스크립트.
 """
 
 import os
+import json
+from datetime import datetime
 import numpy as np
 import pandas as pd
 
 from analysis_utils import r_squared_3m, returns_pct, last_vol_annualized, ema
-from calibration_utils import list_sessions, load_session, SNAPSHOT_ROOT_DIR
+from calibration_utils import list_sessions, load_session, SNAPSHOT_ROOT_DIR, SESSION_ROOT_DIR
 
 OUT_PATH = "fms_recalib_features.csv"
 
@@ -78,6 +80,53 @@ def main() -> None:
 
     features.to_csv(OUT_PATH, encoding="utf-8-sig")
     print("Wrote", OUT_PATH, "shape", features.shape)
+
+    # --- Baseline metrics snapshot (per-session) ---
+    # 새 정답셋을 만들 때마다, 해당 정답셋 기준으로 current FMS의 baseline 지표/순위를 저장합니다.
+    # 정답셋이 바뀌면 지표 절대값은 당연히 달라지므로, "세션 내부"에서 current vs proposed만 비교하면 됩니다.
+    try:
+        from fms_recalib_evaluate_formulas import f_current, pairwise_inversion_rate
+        from fms_recalib_rank_metrics import compute_pairwise_rank_delta_error, score_to_model_rank
+        from scipy.stats import spearmanr
+
+        true_rank = features["rank"]
+        score = f_current(features)
+        inv = float(pairwise_inversion_rate(true_rank, score))
+        model_rank = score_to_model_rank(score)
+        common = pd.concat([true_rank, model_rank], axis=1).dropna()
+        rho, _ = spearmanr(common.iloc[:, 0], common.iloc[:, 1])
+        rho = float(rho)
+        pair_err = float(compute_pairwise_rank_delta_error(true_rank, model_rank))
+
+        baseline = {
+            "session_id": session_id,
+            "snapshot_id": snapshot_id,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "features_csv": OUT_PATH,
+            "n_symbols": int(features.shape[0]),
+            "metrics": {
+                "inversion_rate": inv,
+                "spearman_rho": rho,
+                "pair_delta_error": pair_err,
+            },
+            # 추후 비교/디버깅을 위해 저장 (정답셋 내부에서만 의미 있음)
+            "ranks": {
+                sym: {
+                    "true_rank": int(true_rank.loc[sym]) if sym in true_rank.index else None,
+                    "model_rank": int(model_rank.loc[sym]) if sym in model_rank.index and not pd.isna(model_rank.loc[sym]) else None,
+                    "score": float(score.loc[sym]) if sym in score.index and not pd.isna(score.loc[sym]) else None,
+                }
+                for sym in features.index.astype(str).tolist()
+            },
+        }
+
+        os.makedirs(SESSION_ROOT_DIR, exist_ok=True)
+        out_json = os.path.join(SESSION_ROOT_DIR, f"{session_id}__baseline_metrics.json")
+        with open(out_json, "w", encoding="utf-8") as f:
+            json.dump(baseline, f, ensure_ascii=False, indent=2)
+        print("Wrote", out_json)
+    except Exception as e:
+        print(f"[warn] baseline_metrics 저장 실패: {e}")
 
 
 if __name__ == "__main__":
