@@ -308,6 +308,8 @@ python fms_recalib_rank_metrics.py
   - 가중치/전이폭(smoothstep 폭, 게이트 폭, 램프 파라미터)만 단독 탐색(몬테카를로)
 - `fms_check_relative_ranks.py`:
   - 관심종목 집합에서 특정 심볼들의 상대 순위/지표를 빠르게 점검
+- `fms_recalib_inspect_patterns.py`:
+  - 최신 정답셋(`fms_recalib_features.csv`)의 상/중/하위 그룹 평균과 rank 상관관계를 요약해 패턴 관찰을 돕는 도구
 
 ---
 

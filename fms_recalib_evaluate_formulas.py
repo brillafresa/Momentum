@@ -49,21 +49,21 @@ def f_current(df: pd.DataFrame) -> pd.Series:
     vol20 = df["Vol20_Ann"]
     maxdd = df["MaxDD_Pct"]
 
-    # Iteration 5 (튜닝 결과): 가중치/전이폭 파라미터
-    P_W_R3 = 0.435991
-    P_W_R6 = 0.319466
-    P_W_R2 = 0.615106
-    P_W_EMA = 0.284587
-    P_W_R1_POS = 0.186529
-    P_W_DD = 0.363645
-    P_W_VOL = 0.377713
-    P_W_R1_NEG = 0.165261
-    P_R2_TRANSITION_W = 0.029645
-    P_GATE_R3_W = 0.028663
-    P_GATE_R6_W = 0.013226
-    P_LEVEL_R3_HI = 0.123071
-    P_LEVEL_R6_HI = 0.340733
-    P_R2_FLOOR = 0.631902
+    # Iteration 5 (새 정답셋 기준 튜닝 결과): 가중치/전이폭 파라미터
+    P_W_R3 = 0.46869
+    P_W_R6 = 0.417409
+    P_W_R2 = 0.505669
+    P_W_EMA = 0.323264
+    P_W_R1_POS = 0.213603
+    P_W_DD = 0.28298
+    P_W_VOL = 0.291973
+    P_W_R1_NEG = 0.174149
+    P_R2_TRANSITION_W = 0.04552
+    P_GATE_R3_W = 0.019359
+    P_GATE_R6_W = 0.006355
+    P_LEVEL_R3_HI = 0.205305
+    P_LEVEL_R6_HI = 0.430268
+    P_R2_FLOOR = 0.734629
 
     def smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
         if edge1 == edge0:

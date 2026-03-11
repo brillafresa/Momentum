@@ -179,23 +179,23 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
 
 def baseline_params() -> Dict[str, float]:
     return {
-        # weights (current)
-        "w_r3": 0.45,
-        "w_r6": 0.35,
-        "w_r2": 0.50,
-        "w_ema": 0.30,
-        "w_r1_pos": 0.15,
-        "w_dd": 0.50,
-        "w_vol": 0.35,
-        "w_r1_neg": 0.15,
-        # transitions
-        "r2_transition_w": 0.02,
-        "gate_r3_w": 0.01,
-        "gate_r6_w": 0.01,
-        # level ramps (Iteration 2)
-        "level_r3_hi": 0.15,
-        "level_r6_hi": 0.25,
-        "r2_floor": 0.80,
+        # weights (current FMS 기준값: analysis_utils.py / f_current와 동일)
+        "w_r3": 0.435991,
+        "w_r6": 0.319466,
+        "w_r2": 0.615106,
+        "w_ema": 0.284587,
+        "w_r1_pos": 0.186529,
+        "w_dd": 0.363645,
+        "w_vol": 0.377713,
+        "w_r1_neg": 0.165261,
+        # transitions (current)
+        "r2_transition_w": 0.029645,
+        "gate_r3_w": 0.028663,
+        "gate_r6_w": 0.013226,
+        # level ramps (current)
+        "level_r3_hi": 0.123071,
+        "level_r6_hi": 0.340733,
+        "r2_floor": 0.631902,
     }
 
 
