@@ -192,26 +192,23 @@ cd Momentum
 python fms_recalib_build_features.py
 ```
 
-- 입력:
-  - 세션 JSON: `fms_calibration_sessions/cal_fms_YYYYMMDD_HHMMSS.json`
-  - 가격 스냅샷: `fms_calibration_snapshots/fms_YYYYMMDD_HHMMSS/prices_krw.pkl`
+- 입력: 최신 세션(`fms_calibration_sessions/`) 및 해당 스냅샷(`fms_calibration_snapshots/`) 자동 사용
 - 출력:
   - `fms_recalib_features.csv`  
     - 컬럼: `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
     - **rank**: 당신이 정렬한 최종 순서(정답셋)
 
-#### 2. FMS 후보 수식들의 설명력 비교
+#### 2. FMS 수정 전 vs 수정 후 비교
 
 ```bash
 python fms_recalib_evaluate_formulas.py
 ```
 
-- 현재 구현:
-  - `old_linear`: 기존 FMS 공식
-  - `linear_v1`: 단순 가중합형 후보
-  - `nonlinear_v1`: 현재 적용된 비선형 FMS
+- **수정 전(current) vs 수정 후(proposed)** 만 비교. 히스토리 누적 없음.
+- `f_proposed`에 수정 제안 로직을 구현하고 실행하면 역전 비율 비교 결과 출력.
 - 출력 예:
-  - `name: inversion_rate=0.2450`
+  - `current: inversion_rate=0.2450`
+  - `proposed: inversion_rate=0.2440`
 - **역전 비율(inversion_rate)**:
   - 분모: 전체 순서쌍 수 \(\binom{n}{2}\)  
   - 분자: 정답에서는 A가 B보다 상위인데, 점수 기준으로는 B가 A보다 상위가 되는 쌍의 개수  
@@ -223,7 +220,7 @@ python fms_recalib_evaluate_formulas.py
 python fms_recalib_rank_metrics.py
 ```
 
-- 각 FMS 후보에 대해:
+- current vs proposed에 대해:
   - **Spearman 상관계수(`spearman_rho`)**:
     - 정답 rank vs 모델 rank 의 랭크 상관
     - 1에 가까울수록 순서가 잘 맞음
@@ -271,12 +268,12 @@ python fms_recalib_rank_metrics.py
 #### 2. 수식 평가·비교 요청용 프롬프트
 
 > - 작업 맥락:  
->   - `fms_recalib_features.csv`를 사용해 이미 `old_linear`, `nonlinear_v1` 등에 대한  
->     역전 비율 / Spearman / 쌍별 순위차 오차를 계산하는 스크립트 (`_tmp_fms_eval.py`, `_tmp_fms_rank_error.py`)가 있습니다.  
+>   - `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`에서  
+>     **current(현재 적용)** vs **proposed(수정 제안)** 의 역전 비율 / Spearman / 쌍별 순위차 오차를 비교합니다.  
 > - 해야 할 일:  
->   1. 제안한 새 FMS 수식을 Python 함수로 작성해 `*_eval.py`와 유사한 스크립트에 추가해 주세요.  
->   2. 기존 FMS와 새 FMS에 대해 역전 비율 / Spearman / 쌍별 순위차 오차를 모두 계산하고,  
->      **새 FMS가 이 세 지표 모두에서 개선되는지**를 비교해 주세요.  
+>   1. 제안한 새 FMS 수식을 `f_proposed` 함수에 작성해 주세요.  
+>   2. 실행 후 current vs proposed 결과를 비교하고,  
+>      **proposed가 이 세 지표 모두에서 개선되는지**를 확인해 주세요.  
 >   3. 개선되지 않는다면, 어떤 패턴에서 오차가 커지는지 설명하고, 수식을 어떻게 조정하면 좋을지 제안해 주세요.
 
 ---

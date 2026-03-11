@@ -556,21 +556,29 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             m = np.nanmean(ref_x); sd = np.nanstd(ref_x)
             return (x - m) / sd if sd and not np.isnan(sd) else x * 0.0
 
-        # R2 비선형 가중
+        # R2 비선형 가중 + 추세상승 게이트 (평평한 그래프 억제)
+        # R²는 R_3M>5%, R_6M>8%일 때만 가산. 추세상승 없으면 매끄러운 그래프도 쓸모없음
+        r_6m = returns_pct(prices_krw, 126)
+        r2_gate = (r_3m > 0.05).astype(float) * (r_6m > 0.08).astype(float)
+        ref_r2_gate = (ref_r_3m > 0.05).astype(float) * (ref_r_6m > 0.08).astype(float)
+
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
         r2_eff = np.where(
             r2_clip < 0.7,
             0.2 * r2_clip,
             np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
         )
+        r2_eff_gated = pd.Series(r2_eff * r2_gate, index=r2_3m.index)
+
         ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
         ref_r2_eff = np.where(
             ref_r2_clip < 0.7,
             0.2 * ref_r2_clip,
             np.where(ref_r2_clip < 0.9, 0.6 * ref_r2_clip, 1.2 * ref_r2_clip),
         )
-        r2_term = z_ref(pd.Series(r2_eff, index=r2_3m.index),
-                        pd.Series(ref_r2_eff, index=ref_r2_3m.index))
+        ref_r2_eff_gated = pd.Series(ref_r2_eff * ref_r2_gate, index=ref_r2_3m.index)
+
+        r2_term = z_ref(r2_eff_gated, ref_r2_eff_gated)
 
         # MaxDD 패널티 (참조 분포 기준)
         dd_mag = (-max_dd).clip(lower=0.0)
@@ -625,13 +633,17 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
     else:
         # 참조 데이터가 없을 때: 현재 집합 분포 기준
+        # R2 추세상승 게이트 (평평한 그래프 억제)
+        r_6m = returns_pct(prices_krw, 126)
+        r2_gate = (r_3m > 0.05).astype(float) * (r_6m > 0.08).astype(float)
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
         r2_eff = np.where(
             r2_clip < 0.7,
             0.2 * r2_clip,
             np.where(r2_clip < 0.9, 0.6 * r2_clip, 1.2 * r2_clip),
         )
-        r2_term = _z(pd.Series(r2_eff, index=r2_3m.index), disqualified_symbols)
+        r2_eff_gated = pd.Series(r2_eff * r2_gate, index=r2_3m.index)
+        r2_term = _z(r2_eff_gated, disqualified_symbols)
 
         dd_mag = (-max_dd).clip(lower=0.0)
         dd_soft = dd_mag.clip(upper=30.0)

@@ -5,6 +5,19 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.0.1] - 2026-03-11
+
+### 변경
+
+- **FMS R² 추세상승 게이트**: 평평한 그래프(R_3M/R_6M 낮음)에서 R² 가산 억제
+  - R²는 R_3M>5%, R_6M>8%일 때만 가산. 추세상승 없으면 매끄러운 평평한 그래프는 쓸모없음으로 보고 가산하지 않음
+  - 검증: 역전 비율 0.2450→0.2440, Spearman ρ 0.6860→0.6891, pair_delta_error 22.63→22.50 개선
+
+### 개선
+
+- **FMS 검증 스크립트 단순화**: 수정 전(current) vs 수정 후(proposed)만 비교하도록 변경
+  - `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`: old_linear/linear_v1/nonlinear_v1 히스토리 제거
+
 ## [4.0.0] - 2026-03-10
 
 ### 추가

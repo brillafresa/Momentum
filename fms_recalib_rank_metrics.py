@@ -1,40 +1,28 @@
 """
-FMS 재보정 후보 수식의 랭크 품질 지표 계산 스크립트.
-
-- 입력: fms_recalib_features.csv
-- 출력: 각 FMS 후보에 대한 Spearman 상관계수와 쌍별 순위차 오차
+FMS 재보정: 수정 전 vs 수정 후만 비교.
+- Spearman ρ, 쌍별 순위차 오차
 """
 
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from fms_recalib_evaluate_formulas import build_candidates
+from fms_recalib_evaluate_formulas import f_current, f_proposed
 
 
 FEATURE_CSV = "fms_recalib_features.csv"
 
 
 def compute_pairwise_rank_delta_error(true_rank: pd.Series, model_rank: pd.Series) -> float:
-    """
-    쌍별 순위차 오차:
-    - 각 쌍 (i, j)에 대해, 정답 순위차: d_true = rank_j - rank_i
-      (rank는 낮을수록 상위라고 가정)
-    - 모델 순위차: d_model = model_rank_j - model_rank_i
-    - 오차: |d_true - d_model|
-    - 모든 쌍에 대해 평균을 취한 값을 반환
-    """
+    """쌍별 순위차 오차. 낮을수록 좋음."""
     df = pd.concat([true_rank, model_rank], axis=1).dropna()
     df.columns = ["true_rank", "model_rank"]
     n = len(df)
     if n <= 1:
         return 0.0
-
-    # 정답 순서대로 정렬 (1,2,3,...)
     df_sorted = df.sort_values("true_rank", ascending=True)
     r_true = df_sorted["true_rank"].to_numpy()
     r_model = df_sorted["model_rank"].to_numpy()
-
     total_err = 0.0
     pairs = 0
     for i in range(n):
@@ -46,34 +34,44 @@ def compute_pairwise_rank_delta_error(true_rank: pd.Series, model_rank: pd.Serie
     return total_err / pairs if pairs else 0.0
 
 
+def score_to_model_rank(score: pd.Series) -> pd.Series:
+    """점수 -> 모델 순위 (1=최상위)."""
+    order = score.sort_values(ascending=False).index.to_list()
+    rank_map = {sym: i + 1 for i, sym in enumerate(order)}
+    return pd.Series({sym: rank_map.get(sym, np.nan) for sym in score.index})
+
+
 def main() -> None:
+    import os
+    if not os.path.exists(FEATURE_CSV):
+        print(f"{FEATURE_CSV}가 없습니다. python fms_recalib_build_features.py 를 먼저 실행하세요.")
+        return
     df = pd.read_csv(FEATURE_CSV, index_col=0)
     true_rank = df["rank"]
 
-    cands = {c.name: c for c in build_candidates()}
-    names = ["old_linear", "nonlinear_v1"]
-
-    # 공통: 정답 순서대로 정렬한 인덱스
-    base = true_rank.dropna().sort_values(ascending=True)
-    idx = base.index.to_list()
-
-    for name in names:
-        score = cands[name].func(df)
-        # 점수가 높을수록 상위이므로, 내림차순 정렬 기준으로 rank 부여
-        order = score.sort_values(ascending=False).index.to_list()
-        rank_map = {sym: i + 1 for i, sym in enumerate(order)}
-        model_rank = pd.Series({sym: rank_map.get(sym, np.nan) for sym in df.index})
-
-        # Spearman 상관 (정답 rank vs 모델 rank)
+    for name, score_func in [("current", f_current), ("proposed", f_proposed)]:
+        score = score_func(df)
+        model_rank = score_to_model_rank(score)
         common = pd.concat([true_rank, model_rank], axis=1).dropna()
         rho, _ = spearmanr(common.iloc[:, 0], common.iloc[:, 1])
-
-        # 쌍별 순위차 오차
         pair_err = compute_pairwise_rank_delta_error(true_rank, model_rank)
-
         print(f"{name}: spearman_rho={rho:.4f}, pair_delta_error={pair_err:.4f}")
+
+    sc_current = f_current(df)
+    sc_proposed = f_proposed(df)
+    mr_c = score_to_model_rank(sc_current)
+    mr_p = score_to_model_rank(sc_proposed)
+    rho_c, _ = spearmanr(true_rank, mr_c)
+    rho_p, _ = spearmanr(true_rank, mr_p)
+    err_c = compute_pairwise_rank_delta_error(true_rank, mr_c)
+    err_p = compute_pairwise_rank_delta_error(true_rank, mr_p)
+
+    print("\n=== 개선 여부 ===")
+    if rho_p > rho_c and err_p < err_c:
+        print("proposed가 current보다 우수 (Spearman↑, pair_delta_error↓)")
+    else:
+        print("proposed가 일부 지표에서 current보다 나쁨. 로직 재검토 필요.")
 
 
 if __name__ == "__main__":
     main()
-

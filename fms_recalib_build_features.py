@@ -1,32 +1,37 @@
 """
 FMS 재보정을 위한 피처 테이블 생성 스크립트.
 
-- 입력:
-  - 세션 JSON: fms_calibration_sessions/cal_fms_YYYYMMDD_HHMMSS.json
-  - 가격 스냅샷: fms_calibration_snapshots/fms_YYYYMMDD_HHMMSS/prices_krw.pkl
-- 출력:
-  - fms_recalib_features.csv
-    - 컬럼: R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank
+- 입력: 최신 세션(fms_calibration_sessions/) 및 해당 스냅샷(fms_calibration_snapshots/)
+- 출력: fms_recalib_features.csv (R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank)
+
+실행 전 UI에서 FMS 재보정 A/B 비교를 완료해 세션을 저장해 두어야 합니다.
 """
 
-import json
+import os
 import numpy as np
 import pandas as pd
 
 from analysis_utils import r_squared_3m, returns_pct, last_vol_annualized, ema
+from calibration_utils import list_sessions, load_session, SNAPSHOT_ROOT_DIR
 
-
-SESSION_PATH = "fms_calibration_sessions/cal_fms_20260310_155123.json"
-SNAP_PATH = "fms_calibration_snapshots/fms_20260310_155123/prices_krw.pkl"
 OUT_PATH = "fms_recalib_features.csv"
 
 
 def main() -> None:
-    with open(SESSION_PATH, "r", encoding="utf-8") as f:
-        session = json.load(f)
+    sessions = list_sessions()
+    if not sessions:
+        print("세션이 없습니다. UI에서 FMS 재보정 A/B 비교를 완료해 세션을 저장한 뒤 다시 실행하세요.")
+        return
+    session_id = sessions[0]
+    session = load_session(session_id)
     ranking = session.get("final_ranking") or []
+    snapshot_id = session.get("snapshot_id") or session_id.replace("cal_", "")
+    snap_path = os.path.join(SNAPSHOT_ROOT_DIR, snapshot_id, "prices_krw.pkl")
+    if not os.path.exists(snap_path):
+        print(f"스냅샷이 없습니다: {snap_path}")
+        return
 
-    prices_krw = pd.read_pickle(SNAP_PATH)
+    prices_krw = pd.read_pickle(snap_path)
     # 관심 종목 순서대로 정렬, 누락 열은 건너뜀
     cols = [c for c in ranking if c in prices_krw.columns]
     prices_krw = prices_krw[cols].dropna(how="all")
