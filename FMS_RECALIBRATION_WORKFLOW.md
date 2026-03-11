@@ -270,7 +270,9 @@ python fms_recalib_rank_metrics.py
 > - 작업 맥락:  
 >   - `fms_calibration_sessions/<session_id>.json` 안의 `final_ranking`은 내가 A/B 그래프 비교로 정한 “정답 순서”입니다.  
 >   - `fms_calibration_snapshots/<snapshot_id>/prices_krw.pkl`에는 그 시점의 KRW 환산 가격 데이터가 들어 있습니다.  
->   - `fms_recalib_features.csv`에는 각 종목에 대해 `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 가 들어 있습니다.
+>   - `fms_recalib_features.csv`에는 각 종목에 대해  
+>     기본 피처 `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 와  
+>     확장 피처 `R_10D, R_5D, EMA20_SLOPE_10D, EMA20_CURV_20D, UNDER_EMA20_DEPTH, UNDER_EMA20_DAYS, DOWN_STREAK_5D` 가 들어 있습니다.
 >   - `fms_calibration_sessions/<session_id>__baseline_metrics.json`에는 **해당 정답셋(features.csv) 기준**으로 계산된 current FMS의 baseline 지표/순위가 저장됩니다.
 > - 해야 할 일:  
 >   1. `fms_recalib_features.csv`를 기반으로, 정답 rank의 상위/중위/하위 구간에서 각각 어떤 패턴이 보이는지 **말로 정리**해 주세요.  

@@ -473,19 +473,107 @@ def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
 
 def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                   ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
+    # 기본 수익률/지표
     r_1m = returns_pct(prices_krw, 21)
     r_3m = returns_pct(prices_krw, 63)
     r2_3m = r_squared_3m(prices_krw).rename('R2_3M')
-    above_ema50 = {}
+    vol20 = last_vol_annualized(prices_krw, 20).rename('Vol20(ann)')
+
+    # 단기/EMA 기반 파생 변수들 (재보정 피처와 동일 구조)
+    r_10d = returns_pct(prices_krw, 10)
+    r_5d = returns_pct(prices_krw, 5)
+
+    above_ema50: Dict[str, float] = {}
+    ema20_slope_10d: Dict[str, float] = {}
+    ema20_curv_20d: Dict[str, float] = {}
+    under_ema20_depth: Dict[str, float] = {}
+    under_ema20_days: Dict[str, int] = {}
+    down_streak_5d: Dict[str, float] = {}
+
     for c in prices_krw.columns:
         s = prices_krw[c].dropna()
         if s.empty:
             above_ema50[c] = np.nan
+            ema20_slope_10d[c] = np.nan
+            ema20_curv_20d[c] = np.nan
+            under_ema20_depth[c] = np.nan
+            under_ema20_days[c] = np.nan
+            down_streak_5d[c] = np.nan
             continue
+
         e50 = ema(s, 50)
         above_ema50[c] = (s.iloc[-1] / e50.iloc[-1] - 1.0) if e50.iloc[-1] > 0 else np.nan
-    above_ema50 = pd.Series(above_ema50, name='AboveEMA50')
-    vol20 = last_vol_annualized(prices_krw, 20).rename('Vol20(ann)')
+
+        e20 = ema(s, 20)
+
+        # EMA20 기울기 (최근 10일, 로그 회귀)
+        if len(e20) >= 10:
+            last10 = e20.iloc[-10:]
+            x10 = np.arange(len(last10), dtype=float)
+            y10 = np.log(last10.replace(0, np.nan)).dropna()
+            if len(y10) == len(x10):
+                ema20_slope_10d[c] = float(np.polyfit(x10, y10, 1)[0])
+            else:
+                ema20_slope_10d[c] = np.nan
+        else:
+            ema20_slope_10d[c] = np.nan
+
+        # EMA20 곡률 (최근 20일 앞/뒤 10일 기울기 차이)
+        if len(e20) >= 20:
+            first10 = e20.iloc[-20:-10]
+            last10 = e20.iloc[-10:]
+            x_seg = np.arange(10, dtype=float)
+
+            def _slope(seg: pd.Series) -> float:
+                y = np.log(seg.replace(0, np.nan)).dropna()
+                if len(y) != len(x_seg):
+                    return np.nan
+                return float(np.polyfit(x_seg, y, 1)[0])
+
+            s_first = _slope(first10)
+            s_last = _slope(last10)
+            if np.isnan(s_first) or np.isnan(s_last):
+                ema20_curv_20d[c] = np.nan
+            else:
+                ema20_curv_20d[c] = s_last - s_first
+        else:
+            ema20_curv_20d[c] = np.nan
+
+        # 최근 60일 EMA20 아래 이탈 깊이/일수
+        tail60 = s.iloc[-60:] if len(s) >= 60 else s
+        e20_60 = e20.reindex(tail60.index)
+        mask_under = tail60 < e20_60
+        if not mask_under.any():
+            under_ema20_depth[c] = 0.0
+            under_ema20_days[c] = 0
+        else:
+            rel = tail60[mask_under] / e20_60[mask_under] - 1.0
+            under_ema20_depth[c] = float(rel.min())
+            under_ema20_days[c] = int(mask_under.sum())
+
+        # 최근 5일 연속 하락 최대 길이
+        if len(s) >= 5:
+            last5 = s.iloc[-5:]
+            diff = last5.diff()
+            is_down = diff < 0
+            max_run = 0
+            cur = 0
+            for v in is_down.iloc[1:]:
+                if bool(v):
+                    cur += 1
+                    max_run = max(max_run, cur)
+                else:
+                    cur = 0
+            down_streak_5d[c] = int(max_run)
+        else:
+            down_streak_5d[c] = np.nan
+
+    above_ema50_ser = pd.Series(above_ema50, name='AboveEMA50')
+    ema20_slope_10d_ser = pd.Series(ema20_slope_10d, name='EMA20_SLOPE_10D')
+    ema20_curv_20d_ser = pd.Series(ema20_curv_20d, name='EMA20_CURV_20D')
+    under_ema20_depth_ser = pd.Series(under_ema20_depth, name='UNDER_EMA20_DEPTH')
+    under_ema20_days_ser = pd.Series(under_ema20_days, name='UNDER_EMA20_DAYS')
+    down_streak_5d_ser = pd.Series(down_streak_5d, name='DOWN_STREAK_5D')
 
     # 최대 드로우다운(%)
     mdict: Dict[str, float] = {}
@@ -636,7 +724,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         # 주요 양의 축들
         r3_term = z_ref(r_3m, ref_r_3m)
         r6_term = z_ref(returns_pct(prices_krw, 126), ref_r_6m)
-        ema_term = z_ref(above_ema50, ref_above_ema50)
+        ema_term = z_ref(above_ema50_ser, ref_above_ema50)
 
         # R1 조건부 처리
         quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5)
@@ -649,14 +737,42 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         r1_pos = z_ref(r1_good, ref_r1_good)
         r1_neg = z_ref(r1_bad, ref_r1_bad)
 
+        # EMA20 shape + 단기/이탈 변수는 참조 분포 없이 현재 집합 기준으로만 정규화
+        slope_term = _z(ema20_slope_10d_ser, disqualified_symbols)
+        curv_penalty_raw = ema20_curv_20d_ser.clip(lower=0.0)
+        curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
+        curv_penalty = _z(curv_penalty_raw, disqualified_symbols)
+        curv_reward = _z(curv_reward_raw, disqualified_symbols)
+        ema_shape_term = 0.7 * slope_term + 0.3 * curv_reward - 0.3 * curv_penalty
+
+        recent_accel_term = _z(r_10d + 0.5 * r_5d, disqualified_symbols)
+        recent_break_raw = pd.Series(
+            np.where((r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5) & (r_10d < 0.0), -r_10d, 0.0),
+            index=r_10d.index,
+        )
+        recent_break_term = _z(recent_break_raw, disqualified_symbols)
+        depth_term = _z(under_ema20_depth_ser, disqualified_symbols)
+        days_term = _z(under_ema20_days_ser.astype(float), disqualified_symbols)
+        down5_term = _z(down_streak_5d_ser.astype(float), disqualified_symbols)
+
         Pos = (
             P_W_R3 * r3_term
             + P_W_R6 * r6_term
             + P_W_R2 * r2_term
             + P_W_EMA * ema_term
-            + P_W_R1_POS * r1_pos
+            + 0.387801 * ema_shape_term
+            + 0.183015 * recent_accel_term
+            + 0.270777 * r1_pos
         )
-        Neg = P_W_DD * dd_penalty + P_W_VOL * vol_penalty + P_W_R1_NEG * r1_neg
+        Neg = (
+            P_W_DD * dd_penalty
+            + P_W_VOL * vol_penalty
+            + 0.212139 * r1_neg
+            + 0.228832 * recent_break_term
+            + 0.186758 * down5_term
+            + 0.19622 * depth_term
+            + 0.097883 * days_term
+        )
         FMS = Pos - Neg
 
     else:
@@ -686,24 +802,52 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         v_combined = v_soft + v_hard
         vol_penalty = _z(v_combined, disqualified_symbols)
 
+        r6_full = returns_pct(prices_krw, 126)
         r3_term = _z(r_3m, disqualified_symbols)
-        r6_term = _z(returns_pct(prices_krw, 126), disqualified_symbols)
-        ema_term = _z(above_ema50, disqualified_symbols)
+        r6_term = _z(r6_full, disqualified_symbols)
+        ema_term = _z(above_ema50_ser, disqualified_symbols)
 
-        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5)
+        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r6_full > 0.5)
         r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
         r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
         r1_pos = _z(r1_good, disqualified_symbols)
         r1_neg = _z(r1_bad, disqualified_symbols)
 
-        Pos = (
-            P_W_R3 * r3_term
-            + P_W_R6 * r6_term
-            + P_W_R2 * r2_term
-            + P_W_EMA * ema_term
-            + P_W_R1_POS * r1_pos
+        slope_term = _z(ema20_slope_10d_ser, disqualified_symbols)
+        curv_penalty_raw = ema20_curv_20d_ser.clip(lower=0.0)
+        curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
+        curv_penalty = _z(curv_penalty_raw, disqualified_symbols)
+        curv_reward = _z(curv_reward_raw, disqualified_symbols)
+        ema_shape_term = 0.7 * slope_term + 0.3 * curv_reward - 0.3 * curv_penalty
+
+        recent_accel_term = _z(r_10d + 0.5 * r_5d, disqualified_symbols)
+        recent_break_raw = pd.Series(
+            np.where(quality_mask & (r_10d < 0.0), -r_10d, 0.0),
+            index=r_10d.index,
         )
-        Neg = P_W_DD * dd_penalty + P_W_VOL * vol_penalty + P_W_R1_NEG * r1_neg
+        recent_break_term = _z(recent_break_raw, disqualified_symbols)
+        depth_term = _z(under_ema20_depth_ser, disqualified_symbols)
+        days_term = _z(under_ema20_days_ser.astype(float), disqualified_symbols)
+        down5_term = _z(down_streak_5d_ser.astype(float), disqualified_symbols)
+
+        Pos = (
+            0.519348 * r3_term
+            + 0.430148 * r6_term
+            + 0.519626 * r2_term
+            + 0.398466 * ema_term
+            + 0.387801 * ema_shape_term
+            + 0.183015 * recent_accel_term
+            + 0.270777 * r1_pos
+        )
+        Neg = (
+            0.265056 * dd_penalty
+            + 0.218807 * vol_penalty
+            + 0.212139 * r1_neg
+            + 0.228832 * recent_break_term
+            + 0.186758 * down5_term
+            + 0.19622 * depth_term
+            + 0.097883 * days_term
+        )
         FMS = Pos - Neg
 
     # 실격 종목은 FMS = -999 적용
@@ -718,9 +862,16 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             r_1m.rename('R_1M'),
             r_3m.rename('R_3M'),
             r2_3m,
-            above_ema50,
+            above_ema50_ser,
             vol20,
             max_dd,
+            r_10d.rename('R_10D'),
+            r_5d.rename('R_5D'),
+            ema20_slope_10d_ser,
+            ema20_curv_20d_ser,
+            under_ema20_depth_ser,
+            under_ema20_days_ser,
+            down_streak_5d_ser,
             FMS.rename('FMS'),
             filter_reasons_series,
         ],

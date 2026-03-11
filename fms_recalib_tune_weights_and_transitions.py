@@ -107,7 +107,7 @@ def dominates(a: Metrics, b: Metrics) -> bool:
 
 
 def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
-    # Inputs
+    # Inputs (기존 축)
     r1 = df["R_1M"]
     r3 = df["R_3M"]
     r6 = df["R_6M"]
@@ -115,6 +115,14 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
     ema50 = df["AboveEMA50"].clip(lower=-0.5, upper=1.5)
     vol20 = df["Vol20_Ann"]
     maxdd = df["MaxDD_Pct"]
+    # 확장 축
+    r10 = df["R_10D"]
+    r5 = df["R_5D"]
+    e20_slope10 = df["EMA20_SLOPE_10D"]
+    e20_curv20 = df["EMA20_CURV_20D"]
+    under_depth = df["UNDER_EMA20_DEPTH"]
+    under_days = df["UNDER_EMA20_DAYS"]
+    down5 = df["DOWN_STREAK_5D"]
 
     # --- R² piecewise multiplier (smooth) ---
     r2_w = float(p["r2_transition_w"])  # half-width around 0.70/0.90
@@ -126,12 +134,16 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
     # --- trend gate (smooth) ---
     g3_w = float(p["gate_r3_w"])
     g6_w = float(p["gate_r6_w"])
-    gate_on = smoothstep(r3, 0.05 - g3_w, 0.05 + g3_w) * smoothstep(r6, 0.08 - g6_w, 0.08 + g6_w)
+    gate_on = smoothstep(r3, 0.05 - g3_w, 0.05 + g3_w) * smoothstep(
+        r6, 0.08 - g6_w, 0.08 + g6_w
+    )
 
     # --- return-level ramp (weak) ---
     level_r3_hi = float(p["level_r3_hi"])
     level_r6_hi = float(p["level_r6_hi"])
-    level = smoothstep(r3, 0.05, level_r3_hi) * smoothstep(r6, 0.08, level_r6_hi)
+    level = smoothstep(r3, 0.05, level_r3_hi) * smoothstep(
+        r6, 0.08, level_r6_hi
+    )
     floor = float(p["r2_floor"])  # 0..1
     r2_strength = gate_on * (floor + (1.0 - floor) * level)
 
@@ -143,7 +155,7 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
     dd_hard = ((dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
     dd_penalty = z(pd.Series(dd_soft + dd_hard, index=df.index))
 
-    # --- Vol penalty (fixed mapping chosen in Iteration 3) ---
+    # --- Vol penalty (fixed mapping chosen에 기반) ---
     v = vol20.clip(lower=0.0)
     q = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
     v_soft = v.clip(upper=q)
@@ -155,8 +167,38 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
     r6_term = z(r6)
     ema_term = z(ema50)
 
-    # --- conditional R1 ---
+    # EMA20 shape (slope + curvature)
+    slope_term = z(e20_slope10)
+    curv_penalty_raw = e20_curv20.clip(lower=0.0)
+    curv_reward_raw = (-e20_curv20).clip(lower=0.0)
+    curv_penalty = z(curv_penalty_raw)
+    curv_reward = z(curv_reward_raw)
+    ema_shape_term = (
+        float(p["w_ema_slope_base"]) * slope_term
+        + float(p["w_ema_curv_reward_base"]) * curv_reward
+        - float(p["w_ema_curv_penalty_base"]) * curv_penalty
+    )
+
+    # 최근 추세 유지/붕괴
     quality_mask = (r2 > 0.85) & (r3 > 0.3) & (r6 > 0.5)
+    r10_good_raw = pd.Series(
+        np.where(quality_mask & (r10 > 0.0), r10, 0.0), index=df.index
+    )
+    r10_break_raw = pd.Series(
+        np.where(quality_mask & (r10 < 0.0), -r10, 0.0), index=df.index
+    )
+    r5_good_raw = pd.Series(
+        np.where(quality_mask & (r5 > 0.0), r5, 0.0), index=df.index
+    )
+    recent_accel_term = z(r10_good_raw + 0.5 * r5_good_raw)
+    recent_break_term = z(r10_break_raw)
+
+    # EMA20 아래 이탈 / 최근 연속 하락
+    depth_term = z(under_depth)
+    days_term = z(under_days.astype(float))
+    down5_term = z(down5.astype(float))
+
+    # --- conditional R1 ---
     r1_good = pd.Series(np.where(quality_mask, r1, 0.0), index=df.index)
     r1_bad = pd.Series(np.where(~quality_mask & (r1 > 0.3), r1, 0.0), index=df.index)
     r1_pos = z(r1_good)
@@ -167,35 +209,51 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
         + float(p["w_r6"]) * r6_term
         + float(p["w_r2"]) * r2_term
         + float(p["w_ema"]) * ema_term
+        + float(p["w_ema_shape"]) * ema_shape_term
+        + float(p["w_recent"]) * recent_accel_term
         + float(p["w_r1_pos"]) * r1_pos
     )
     neg = (
         float(p["w_dd"]) * dd_penalty
         + float(p["w_vol"]) * vol_penalty
         + float(p["w_r1_neg"]) * r1_neg
+        + float(p["w_break"]) * recent_break_term
+        + float(p["w_down5"]) * down5_term
+        + float(p["w_under_depth"]) * depth_term
+        + float(p["w_under_days"]) * days_term
     )
     return pos - neg
 
 
 def baseline_params() -> Dict[str, float]:
     return {
-        # weights (current FMS 기준값: analysis_utils.py / f_current와 동일)
-        "w_r3": 0.435991,
-        "w_r6": 0.319466,
-        "w_r2": 0.615106,
-        "w_ema": 0.284587,
-        "w_r1_pos": 0.186529,
-        "w_dd": 0.363645,
-        "w_vol": 0.377713,
-        "w_r1_neg": 0.165261,
+        # weights (초기값: f_proposed 초기 설계와 일치)
+        "w_r3": 0.45,
+        "w_r6": 0.40,
+        "w_r2": 0.55,
+        "w_ema": 0.30,
+        "w_ema_shape": 0.25,
+        "w_recent": 0.25,
+        "w_r1_pos": 0.20,
+        "w_dd": 0.30,
+        "w_vol": 0.30,
+        "w_r1_neg": 0.18,
+        "w_break": 0.22,
+        "w_down5": 0.18,
+        "w_under_depth": 0.20,
+        "w_under_days": 0.10,
         # transitions (current)
-        "r2_transition_w": 0.029645,
-        "gate_r3_w": 0.028663,
-        "gate_r6_w": 0.013226,
+        "r2_transition_w": 0.03,
+        "gate_r3_w": 0.02,
+        "gate_r6_w": 0.02,
         # level ramps (current)
-        "level_r3_hi": 0.123071,
-        "level_r6_hi": 0.340733,
-        "r2_floor": 0.631902,
+        "level_r3_hi": 0.20,
+        "level_r6_hi": 0.40,
+        "r2_floor": 0.75,
+        # EMA20 shape 내부 조합용 base 비율 (양/음은 상단 weight에서 조정)
+        "w_ema_slope_base": 0.7,
+        "w_ema_curv_reward_base": 0.3,
+        "w_ema_curv_penalty_base": 0.3,
     }
 
 
@@ -213,10 +271,16 @@ def sample_params(rng: np.random.Generator, base: Dict[str, float]) -> Dict[str,
     jitter("w_r6", 0.15, 0.10, 0.70)
     jitter("w_r2", 0.15, 0.10, 0.90)
     jitter("w_ema", 0.20, 0.05, 0.60)
+    jitter("w_ema_shape", 0.20, 0.05, 0.60)
+    jitter("w_recent", 0.20, 0.00, 0.60)
     jitter("w_r1_pos", 0.25, 0.00, 0.40)
     jitter("w_dd", 0.15, 0.10, 0.80)
     jitter("w_vol", 0.15, 0.05, 0.70)
     jitter("w_r1_neg", 0.25, 0.00, 0.40)
+    jitter("w_break", 0.20, 0.00, 0.60)
+    jitter("w_down5", 0.20, 0.00, 0.60)
+    jitter("w_under_depth", 0.20, 0.00, 0.60)
+    jitter("w_under_days", 0.20, 0.00, 0.60)
 
     # Transition widths: sample in small continuous ranges
     p["r2_transition_w"] = float(rng.uniform(0.005, 0.05))
