@@ -1260,7 +1260,13 @@ else:
         mx = max(mx, mn * 1.000001)
         return (float(np.log10(mn)), float(np.log10(mx)))
 
-    y_global_log = _global_rebased_log_range(prices_krw[ordered_options], period)
+    # FMS=-999(거래 부적합) 종목은 y축 스케일 계산에서 제외
+    valid_for_scale = [
+        sym for sym in ordered_options
+        if sym in mom.index and not pd.isna(mom.loc[sym, "FMS"]) and mom.loc[sym, "FMS"] != -999.0
+    ]
+    base_prices = prices_krw[valid_for_scale] if valid_for_scale else prices_krw[ordered_options]
+    y_global_log = _global_rebased_log_range(base_prices, period)
 
     # 선택된 종목에 대해서도 Rebased 100 + EMA
     s100 = _rebase_100(s)
