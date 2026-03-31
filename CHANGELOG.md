@@ -5,6 +5,25 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.2.1] - 2026-03-31
+
+### 수정
+
+- **한국 종목 분류 확장**:
+  - `.KQ`(코스닥) 심볼을 한국 종목(`KOR`)으로 분류하도록 앱/배치 공통 로직 정렬
+- **한국 종목명 조회 우선순위 정리**:
+  - 종목명 조회를 `symbol_names_cache.json`(캐시) 우선으로 적용
+  - 캐시에 없고 한국 종목인 경우 `korean_universe.csv`, `korean_etf_univers.csv`에서 종목명 조회
+  - 마지막 수단으로만 yfinance 호출 후 캐시에 저장
+- **로컬 실행 동작 복원**:
+  - `.streamlit/config.toml`에서 `server.headless=false`로 명시
+  - `start.bat`의 백그라운드 실행/포트 대기/브라우저 강제 오픈 로직 제거, 포그라운드 `streamlit run` 방식으로 단순화
+
+### 개선
+
+- **한국 종목명 호환성 강화**:
+  - CSV에 `.KS`만 있는 6자리 종목코드도 `.KQ` 별칭으로 함께 매핑해 코스닥 심볼 표시 누락을 완화
+
 ## [4.1.0] - 2026-03-11
 
 ### 변경
