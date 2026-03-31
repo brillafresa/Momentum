@@ -4,7 +4,9 @@ developmentMode = false
 
 [server]
 # 서버 설정
-headless = true
+# headless=false: 로컬에서 `streamlit run` / start.bat 실행 시 기본 브라우저가 자동으로 열립니다.
+# headless=true: 서버/CI용(브라우저 자동 오픈 없음). 로컬 개발 시에는 false 권장.
+headless = false
 port = 8501
 enableCORS = false
 enableXsrfProtection = true

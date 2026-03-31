@@ -15,7 +15,10 @@ from scipy.stats import linregress
 
 def classify(sym: str) -> str:
     s = str(sym)
-    if s.endswith('.KS'):
+    # 코스피/코스닥은 Yahoo Finance에서 suffix가 다를 수 있음
+    # - KOSPI: .KS
+    # - KOSDAQ: .KQ
+    if s.endswith('.KS') or s.endswith('.KQ'):
         return 'KOR'
     if s.endswith('.T'):
         return 'JPN'

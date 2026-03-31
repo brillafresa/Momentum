@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.2.0
+# KRW Momentum Radar - v4.2.1
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -85,14 +85,18 @@ def _rebase_100(s: pd.Series) -> pd.Series:
 def classify(sym):
     # sym이 float이나 다른 타입일 경우를 대비해 str로 변환
     sym_str = str(sym)
-    if sym_str.endswith(".KS"): return "KOR"
+    # 코스피/코스닥은 Yahoo Finance에서 suffix가 다를 수 있음
+    # - KOSPI: .KS
+    # - KOSDAQ: .KQ
+    if sym_str.endswith(".KS") or sym_str.endswith(".KQ"):
+        return "KOR"
     if sym_str.endswith(".T"):  return "JPN"
     return "USA"
 
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.2.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.2.1", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -967,21 +971,35 @@ def save_symbol_names_cache(cache_dict):
 
 def load_korean_stock_names():
     """
-    korean_universe.csv 파일에서 한국 종목명을 로드합니다.
+    한국 종목명(한글 표시용)을 csv에서 로드합니다.
     
     Returns:
         dict: {symbol: name} 형태의 딕셔너리
     """
     korean_names = {}
     try:
-        if os.path.exists('korean_universe.csv'):
-            df = pd.read_csv('korean_universe.csv')
-            if 'Symbol' in df.columns and 'Name' in df.columns:
-                for _, row in df.iterrows():
-                    symbol = str(row['Symbol']).strip()
-                    name = str(row['Name']).strip() if pd.notna(row['Name']) else None
-                    if symbol and name:
-                        korean_names[symbol] = name
+        def _load_one(path: str) -> None:
+            if not os.path.exists(path):
+                return
+            df = pd.read_csv(path)
+            if 'Symbol' not in df.columns or 'Name' not in df.columns:
+                return
+            for _, row in df.iterrows():
+                symbol = str(row['Symbol']).strip()
+                name = str(row['Name']).strip() if pd.notna(row['Name']) else None
+                if not symbol or not name:
+                    continue
+                korean_names[symbol] = name
+
+                # csv에는 대개 `.KS`가 들어있지만 실제 표시는 `.KQ`를 쓸 수 있음
+                # 6자리 코드 기반으로 `.KQ` 별칭을 함께 등록
+                if symbol.endswith('.KS') or symbol.endswith('.KQ'):
+                    base = symbol.split('.', 1)[0].strip()
+                    if base.isdigit() and len(base) == 6:
+                        korean_names[f'{base}.KQ'] = name
+
+        _load_one('korean_universe.csv')
+        _load_one('korean_etf_univers.csv')
     except Exception as e:
         log(f"WARNING: Failed to load Korean stock names: {e}")
     return korean_names
@@ -991,7 +1009,7 @@ def fetch_long_names(symbols):
     """
     종목명을 가져옵니다. 우선 순위는 다음과 같습니다.
     1) 영구 캐시(`symbol_names_cache.json`)
-    2) 한국 종목인 경우 `korean_universe.csv`
+    2) 한국 종목인 경우 csv(`korean_universe.csv` + `korean_etf_univers.csv`)
     3) yfinance API (마지막 수단, 결과는 캐시에 저장)
     
     Args:
@@ -1007,18 +1025,17 @@ def fetch_long_names(symbols):
     cache_updated = False
 
     for symbol in symbols:
+        name = None
+        symbol_str = str(symbol)
+        is_korean = symbol_str.endswith('.KS') or symbol_str.endswith('.KQ')
+
         cached_name = cache.get(symbol)
         if cached_name:
-            out[symbol] = cached_name
-            continue
-
-        name = None
-
-        if symbol.endswith('.KS'):
+            name = cached_name
+        elif is_korean:
             if korean_names is None:
                 korean_names = load_korean_stock_names()
-            if symbol in korean_names:
-                name = korean_names[symbol]
+            name = korean_names.get(symbol_str)
 
         if name is not None:
             out[symbol] = name
@@ -1084,7 +1101,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.2.0")
+st.title("⚡ KRW Momentum Radar v4.2.1")
 
 
 
