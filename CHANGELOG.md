@@ -5,6 +5,12 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.2.2] - 2026-04-05
+
+### 추가
+
+- **세부 보기 시계열**: Rebased(100) 기준 **5거래일 단순이동평균**선 표시(연한 회색 실선, 기존 EMA 색상 유지)
+
 ## [4.2.1] - 2026-03-31
 
 ### 수정
