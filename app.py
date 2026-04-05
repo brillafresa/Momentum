@@ -1287,9 +1287,20 @@ else:
 
     # 선택된 종목에 대해서도 Rebased 100 + EMA
     s100 = _rebase_100(s)
+    ma5 = s100.rolling(window=5, min_periods=5).mean()
     e20, e50, e200 = ema(s100, 20), ema(s100, 50), ema(s100, 200)
     fig_det = go.Figure()
     fig_det.add_trace(go.Scatter(x=s100.index, y=s100.values, mode="lines", name="Rebased(100)"))
+    fig_det.add_trace(
+        go.Scatter(
+            x=ma5.index,
+            y=ma5.values,
+            mode="lines",
+            name="5일 MA",
+            line=dict(color="#c8c8c8", width=1),
+            hovertemplate="5일 MA<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+        )
+    )
     fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
     fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
     fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
