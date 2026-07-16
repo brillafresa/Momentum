@@ -1,7 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 공통 분석 유틸리티: 데이터 다운로드/전처리, FMS 계산, 거래 적합성 필터
+
 app.py 및 run_scan_batch.py가 이 모듈만 참조하도록 표준화합니다.
+
+Harness note: ``compute_fms_snapshot`` / ``momentum_now_and_delta`` are pure given
+DataFrames (inject fixtures; do not call download_* inside unit tests). Logic will
+migrate to ``core/`` gradually; this module remains the transitional facade.
 """
 
 from datetime import datetime
@@ -883,9 +888,21 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     return snap
 
 
+def compute_fms_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
+                         ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
+    """Public FMS snapshot entrypoint for harness / calibration (no network I/O).
+
+    Thin public wrapper around ``_mom_snapshot``. Accepts pre-loaded KRW price
+    (and optional OHLC / reference) DataFrames so tests can inject fixtures
+    without calling yfinance.
+    """
+    return _mom_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
+
+
 def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                            ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
-    now = _mom_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
+    """Compute FMS plus 1D/5D deltas from injected KRW price panels (no network I/O)."""
+    now = compute_fms_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
     d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw, ohlc_data, symbols) if len(prices_krw) > 1 else now * np.nan
     d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw, ohlc_data, symbols) if len(prices_krw) > 5 else now * np.nan
     df = now.copy()

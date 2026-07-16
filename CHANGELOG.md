@@ -5,6 +5,31 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.3.0] - 2026-07-16
+
+### 추가
+
+- **Harness Engineering 기반 검증 체계**
+  - `HARNESS_RULES.md`: 관심사 분리·Mock 주입·TDD·FMS 단일 소스 원칙 (세션 시작 SSOT)
+  - `TODO.md`, `docs/`(워크플로·배포·기여·배치·work-plans), `scripts/fixtures/`
+  - `compute_fms_snapshot()`: DataFrame 주입형 공개 FMS 스냅샷 API (`analysis_utils`)
+  - `tests/`: pytest 하네스 — 합성 KRW/OHLC fixture, 골든 순위, 거래적합성 `-999`, NaN, yfinance 미호출, `core/` 네트워크 계약
+  - `harness/run_fms_snapshot.py`: fixture 기반 수동 FMS 테이블 러너
+  - `scripts/fixtures/generate_synthetic_panel.py`: seed=42 합성 패널 재생성기
+  - `core/` · `adapters/` · `calibration/` 패키지 스캐폴딩 (점진 마이그레이션용, 네트워크 re-export 없음)
+
+### 변경
+
+- 설명 문서 이동: `FMS_RECALIBRATION_WORKFLOW.md`, `DEPLOYMENT.md`, `CONTRIBUTING.md`, `README_BATCH.md` → `docs/`
+- `.cursorrules`: 세션 시작 프로토콜 및 하네스 원칙·디렉터리 트리 갱신
+- `requirements.txt`: `pytest>=7.4.0` 추가
+
+### 정리
+
+- 프로덕션(`app.py` / `run_scan_batch.py`)에 하네스 Mock·테스트 경로 비노출 유지
+- `watchlist_utils` 주석 처리된 디버그 print 잔여물 제거
+- `core/__init__.py`가 `analysis_utils`(yfinance)를 끌어오지 않도록 경계 분리
+
 ## [4.2.2] - 2026-04-05
 
 ### 추가

@@ -96,12 +96,8 @@ def save_watchlist(symbols: List[str], mode: str = MODE_FREE) -> bool:
         df.to_csv(watchlist_file, index=False, encoding='utf-8-sig')
         return True
         
-    except Exception as e:
-        # 관심종목 저장 중 오류는 조용히 처리
-        # 디버깅 필요 시 아래 주석을 해제하여 예외 정보 확인 가능
-        # import traceback
-        # print(f"[watchlist_utils] save_watchlist 오류 (mode={mode}): {e}")
-        # traceback.print_exc()
+    except Exception:
+        # 관심종목 저장 실패 시 조용히 False 반환 (호출측에서 세션 상태 유지)
         return False
 
 def add_to_watchlist(symbols: List[str], new_symbols: List[str], mode: str = MODE_FREE) -> List[str]:
@@ -123,12 +119,8 @@ def add_to_watchlist(symbols: List[str], new_symbols: List[str], mode: str = MOD
             # 저장 실패 시에도 세션 상태는 업데이트 (사용자 경험 유지)
             pass
         return updated_symbols
-    except Exception as e:
-        # 오류 발생 시에도 업데이트된 목록은 반환 (세션 상태 유지)
-        # 디버깅 필요 시 아래 주석을 해제하여 예외 정보 확인 가능
-        # import traceback
-        # print(f"[watchlist_utils] add_to_watchlist 오류 (mode={mode}): {e}")
-        # traceback.print_exc()
+    except Exception:
+        # 저장 실패 시에도 세션용 목록은 반환
         return list(set(symbols + new_symbols))
 
 def remove_from_watchlist(symbols: List[str], symbols_to_remove: List[str], mode: str = MODE_FREE) -> List[str]:
@@ -150,12 +142,8 @@ def remove_from_watchlist(symbols: List[str], symbols_to_remove: List[str], mode
             # 저장 실패 시에도 세션 상태는 업데이트 (사용자 경험 유지)
             pass
         return updated_symbols
-    except Exception as e:
-        # 오류 발생 시에도 업데이트된 목록은 반환 (세션 상태 유지)
-        # 디버깅 필요 시 아래 주석을 해제하여 예외 정보 확인 가능
-        # import traceback
-        # print(f"[watchlist_utils] remove_from_watchlist 오류 (mode={mode}): {e}")
-        # traceback.print_exc()
+    except Exception:
+        # 저장 실패 시에도 세션용 목록은 반환
         return [s for s in symbols if s not in symbols_to_remove]
 
 def get_watchlist_stats(mode: str = MODE_FREE) -> dict:

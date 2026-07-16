@@ -1,0 +1,142 @@
+# HARNESS_RULES.md — Harness Engineering 원칙
+
+> **세션 시작 시 최우선 참조 문서.**  
+> 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
+> 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
+
+최종 갱신: 2026-07-16 (KST) · 제품 버전 v4.3.0
+
+---
+
+## 0. 현재 구축된 FMS 검증 하네스 (v4.3.0)
+
+| 자산 | 역할 |
+|------|------|
+| `compute_fms_snapshot` / `momentum_now_and_delta` | DataFrame 주입형 production 스코어 API (`analysis_utils`) |
+| `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) |
+| `tests/unit/test_fms_scoring.py` | 순위·실격(-999)·결측·no-network 자동 검증 |
+| `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 |
+| `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI |
+| `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 |
+
+검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.  
+운영 코드(`app.py`, `run_scan_batch.py`)는 이 fixture 경로를 import하지 않는다.
+
+## 1. 목적
+
+KRW Momentum Radar는 FMS(모멘텀 스코어)·거래 적합성 필터·배치 스캔·리캘리브레이션을 다룬다.  
+시장 API·UI에 의존하지 않고도 **알고리즘 무결성**을 반복 검증할 수 있어야 한다.  
+이를 위해 UI / I/O / 순수 로직을 분리하고, Mock·fixture로 격리 테스트하는 **Harness Engineering**을 표준으로 한다.
+
+---
+
+## 2. 핵심 원칙
+
+### 2.1 관심사 분리 (Decoupling)
+
+| 계층 | 역할 | 허용 | 금지 |
+|------|------|------|------|
+| `core/` | FMS·지표·필터 등 순수 로직 | pandas/numpy/scipy | yfinance, finviz, requests, streamlit, 네트워크 |
+| `adapters/` | 시장 데이터·유니버스·파일 I/O | API 클라이언트, CSV/픽클 | FMS 공식 복제 |
+| `app.py` / `run_scan_batch.py` | orchestration만 | core + adapters 조합 | 비즈니스 수식 인라인 복제 |
+| `calibration/` | 재보정·튜닝 | **core FMS 단일 API** 호출 | `f_current` 등 독립 공식 포크 |
+| `harness/` | 수동 시나리오 러너 | fixture 주입 | 라이브 API 기본 경로 |
+| `tests/` | 자동 검증 | fixture + pytest | 네트워크 필수 단위 테스트 |
+
+과도기에는 `analysis_utils.py` 등이 **re-export 셔임**으로 남을 수 있다.  
+물리 이동은 파일 단위로 점진 진행한다 (big-bang 금지).  
+Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 유지**한다.
+
+### 2.2 UI / 라이브 API 배제 (테스트 경로)
+
+- 단위·회귀 테스트에서 **yfinance / Finviz / 실시간 HTTP를 호출하지 않는다.**
+- 스코어링 진입점은 DataFrame 주입형이어야 한다:
+  - `compute_fms_snapshot(prices_krw, reference_prices_krw=..., ohlc_data=..., symbols=...)`
+  - `momentum_now_and_delta(...)` (위 스냅샷 + ΔFMS)
+- `calculate_fms_for_batch`처럼 **다운로드+스코어가 결합된 함수**는 단위 테스트 타깃으로 쓰지 않는다.  
+  다운로드와 스코어를 분리한 뒤 스코어만 하네스한다.
+
+### 2.3 Mock 데이터 주입 (Stubs & Adapters)
+
+- 시장 데이터는 **Port / Adapter**로만 주입한다.
+  - 프로덕션: `YFinanceAdapter` (예정 / `adapters/`)
+  - 테스트: CSV·픽클 `FixtureAdapter` (`tests/fixtures/`, `scripts/fixtures/`)
+- 체크인 fixture는 **gitignore 스냅샷에만 의존하지 않는다.**  
+  (`fms_calibration_snapshots/`는 로컬 자산일 수 있음)
+- Z-score 재현을 위해 **타깃 패널과 `reference_prices_krw`를 함께 고정**한다.
+
+### 2.4 격리된 자동 테스트 하네스
+
+- 위치: `tests/` (pytest), 수동 실험: `harness/`, 보조 스크립트: `scripts/`
+- 필수 엣지 케이스 예시:
+  - 극단 변동성 / True Range 실격 → FMS = `-999`
+  - 결측·전 구간 NaN 컬럼
+  - OHLC 없음(필터 스킵) vs OHLC 있음
+  - 참조 분포 변경 시 점수 변동
+- `core/` 네트워크 import 금지는 `tests/contract/`로 강제한다.
+- **TDD 순서:** (1) 순수 I/O 인터페이스 정의 → (2) fixture·테스트 작성 → (3) 구현 → (4) 엔트리포인트 연결
+
+### 2.5 FMS 단일 소스 오브 트루스
+
+- Production 공식의 유일한 구현: `compute_fms_snapshot` / 내부 `_mom_snapshot`  
+  (현재 `analysis_utils.py`, 목표 위치 `core/fms.py`)
+- 리캘리브레이션·튜닝·백테스트는 **동일 API** 또는 공유 feature→score 경로만 사용한다.
+- `fms_recalib_evaluate_formulas.f_current` / tune 스크립트 내 `fms_score`처럼  
+  **공식 복제는 금지**한다. 발견 시 통합·삭제 대상으로 기록한다 (`TODO.md`).
+
+---
+
+## 3. FMS 산출 검증 룰
+
+1. **입력은 항상 주입 가능해야 한다.** 라이브 다운로드는 adapter 레이어에서만.
+2. **골든 테스트:** `tests/fixtures/golden_fms_ranks.json` 등 고정 기댓값과 순위·실격을 비교한다.
+3. **공식 변경 시:**
+   - 먼저 하네스에서 전/후 점수·순위·inversion 지표를 비교한다.
+   - 의도된 변경이면 골든 fixture를 **명시적으로** 갱신하고 `CHANGELOG.md` / `TODO.md`에 사유를 남긴다.
+   - “테스트만 맞추기” 위한 silent golden 변경 금지.
+4. **필터(`-999`)와 스코어를 혼동하지 않는다.** OHLC fixture 유무를 테스트 이름·문서에 명시한다.
+5. **재현성:** RNG·시드·날짜 인덱스·컬럼 순서를 fixture에 고정한다.
+
+---
+
+## 4. 백테스트 / 리캘리브레이션 검증 룰
+
+1. 피처 테이블·세션 JSON·스냅샷은 **읽기 전용 입력**으로 취급하고, 스코어는 core API로 계산한다.
+2. 워크플로 문서: [`docs/FMS_RECALIBRATION_WORKFLOW.md`](docs/FMS_RECALIBRATION_WORKFLOW.md)
+3. 튜닝 결과가 라이브 FMS와 어긋나면 **튜닝 쪽 복제 공식을 폐기**하고 production 경로에 맞춘다.
+4. 오프라인 실험 스크립트는 `scripts/` 또는 `harness/`에 두고, 프로덕션 엔트리포인트에 실험 코드를 남기지 않는다.
+5. 사람 랭킹(mergesort 세션)과 알고리즘 점수를 비교할 때도 **동일 reference 패널**을 사용한다.
+
+---
+
+## 5. 세션 운영 프로토콜
+
+새 Cursor 세션을 열면 에이전트는 다음을 수행한다:
+
+1. **본 문서(`HARNESS_RULES.md`) 숙지**
+2. **컨텍스트 동기화:** 소스코드 → `.cursorrules` → `docs/*.md` 우선순위로 진실 파악
+3. **하네스 자산 파악:** `tests/`, `harness/`, `scripts/`, fixtures 현황과 보호/취약 영역 식별
+4. **히스토리:** `CHANGELOG.md`, `TODO.md`, `docs/work-plans/`로 직전 완료점·다음 과제 확인
+5. **시간 동기화:** 시스템 날짜·시각(KST) 확인 후 문서·로그·백업에 사용
+6. **브리핑:** “준비됐습니다” 대신 아래 3항목을 짧게 보고
+   - 주요 하네스/테스트 자산 현황
+   - 직전 완료 지점과 현재 병목
+   - 오늘의 첫 액션 플랜 (코드 전에 어떤 검증부터 실행할지)
+
+---
+
+## 6. 디렉터리 역할 요약
+
+```
+HARNESS_RULES.md     # 본 원칙 (세션 시작 1순위)
+TODO.md              # 진행 체크리스트
+docs/                # 설계·워크플로·배포·작업 일지
+tests/               # pytest 자동 하네스 + fixtures
+harness/             # 수동 CLI 시나리오 러너
+scripts/             # 일회성/보조 스크립트·fixture 생성기
+core/                # 순수 로직 (목표)
+adapters/            # 외부 I/O (목표)
+calibration/         # 재보정 패키지 (목표)
+```
+
+상세 작업 상태는 [`TODO.md`](TODO.md), 문서 인덱스는 [`docs/README.md`](docs/README.md)를 본다.

@@ -1,0 +1,8 @@
+{
+  "description": "Expected FMS rank order for synthetic_prices_krw.csv + synthetic_ohlc.csv (seed=42).",
+  "symbols_desc_fms": ["TREND_UP", "MILD_UP", "FLAT", "CRASHY"],
+  "disqualified": {
+    "CRASHY": -999.0
+  },
+  "notes": "CRASHY is disqualified by tradeability filter (extreme TR + repeated downside)."
+}

@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.2.2**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.3.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
 
 ## 🌟 주요 기능
 
@@ -142,7 +142,7 @@ streamlit run app.py --server.port 8501
 ## 🧰 배치 스캔 사용 (요약)
 
 - 배치 스캔은 정확도 중심의 오프라인 계산입니다. 실행/상태 확인은 앱 사이드바의 "📦 배치 스캔 관리"에서 가능합니다.
-- Windows 작업 스케줄러 설정 방법은 `README_BATCH.md`를 참조하세요.
+- Windows 작업 스케줄러 설정 방법은 [`docs/README_BATCH.md`](docs/README_BATCH.md)를 참조하세요.
 - 앱/배치 모두 동일한 단일 FMS/필터 로직(`analysis_utils.py`)을 사용합니다.
 - yfinance 레이트리밋 발생 시 지수 백오프로 최대 10회 재시도하며, 상장폐지/데이터 없음은 건너뜁니다.
 - **다국가 스캔**: USA(Finviz 스크리닝) + Korea(KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF 1배/인버스) 통합 스캔 지원
@@ -308,7 +308,14 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.2.2 (현재)
+### v4.3.0 (현재)
+
+- **Harness Engineering 도입**: FMS 스코어링을 라이브 API 없이 검증하는 테스트 하네스·문서 체계 구축
+  - `compute_fms_snapshot` 공개 API, `tests/` pytest (순위·`-999`·NaN·no-network), `harness/run_fms_snapshot`
+  - `HARNESS_RULES.md` / `TODO.md` / `docs/` 세션 부트스트랩, `core/`·`adapters/`·`scripts/` 스캐폴딩
+  - 운영 경로(`app.py`, `run_scan_batch.py`)와 검증 자산 경계 분리 (Mock은 `tests/fixtures/`만)
+
+### v4.2.2
 
 - **세부 보기 차트**: Rebased(100) 시계열에 5거래일 단순이동평균선 추가(연한 회색 실선, EMA 색상 유지)
 
