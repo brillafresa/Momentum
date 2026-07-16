@@ -4,23 +4,39 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-16 (KST) · 제품 버전 v4.3.0
+최종 갱신: 2026-07-16 (KST) · 제품 버전 v4.3.1
 
 ---
 
-## 0. 현재 구축된 FMS 검증 하네스 (v4.3.0)
+## 0. 현재 구축된 검증 하네스 (v4.3.1)
 
-| 자산 | 역할 |
-|------|------|
-| `compute_fms_snapshot` / `momentum_now_and_delta` | DataFrame 주입형 production 스코어 API (`analysis_utils`) |
-| `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) |
-| `tests/unit/test_fms_scoring.py` | 순위·실격(-999)·결측·no-network 자동 검증 |
-| `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 |
-| `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI |
-| `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 |
+### FMS / 퀀트 스코어 (오프라인)
+
+| 자산 | 역할 | 검증 방법 |
+|------|------|-----------|
+| `compute_fms_snapshot` / `momentum_now_and_delta` | DataFrame 주입형 production 스코어 API (`analysis_utils`) | fixture 주입 |
+| `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
+| `tests/unit/test_fms_scoring.py` | 순위 / `-999` / 결측 / yfinance 미호출 | `python -m pytest` |
+| `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
+| `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
+| `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 | 필요 시만 |
+
+### 배치 I/O · 유니버스 (네트워크 없이 단위 검증)
+
+| 자산 | 역할 | 검증 방법 |
+|------|------|-----------|
+| `tests/unit/test_yf_rate_limit_retry.py` | yfinance `shared._ERRORS` 레이트리밋 감지·재시도 | mock `yf.download` |
+| `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫 글자 중복 보정 | 순수 함수 assert |
 
 검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.  
-운영 코드(`app.py`, `run_scan_batch.py`)는 이 fixture 경로를 import하지 않는다.
+운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.
+
+### 가격 / 배당 정책 (확정)
+
+- **수익·FMS:** `auto_adjust=False` + **Adj Close** (배당 조정 총수익)
+- **거래적합성 OHLC:** raw High/Low/Close (실제 거래 변동성)
+- UI 배당 분해 표시는 중기 선택 과제 (`TODO.md`)
+
 
 ## 1. 목적
 

@@ -46,14 +46,20 @@
 - 모든 스캔 결과 파일은 `scan_results/` 디렉토리에만 저장됩니다
 
 ## 동작 참고
-- 배치 실행 시 유니버스를 강제로 재스크린합니다.
+- 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리).
+- Finviz Overview가 티커 첫 글자를 중복하는 경우(예: `AAPL`→`AAAPL`) 자동 보정합니다.
 - 앱과 동일한 FMS/거래 적합성 필터 로직(`analysis_utils.py`)을 사용합니다.
-- yfinance 레이트리밋이 발생하면 지수 백오프로 최대 10회 재시도하고, 상장폐지/데이터 없음은 건너뜁니다.
+- **가격은 Adj Close(배당 조정) 기준**입니다. OHLC 거래적합성 필터는 원시 High/Low/Close를 사용합니다.
+- yfinance 레이트리밋(`Too Many Requests` / `shared._ERRORS`)은 지수 백오프(최대 ~40회, 대기 상한 120초)로 재시도합니다.
+- 청크 간 대기·outer batch로 전체 유니버스 커버리지를 우선합니다(속도보다 완료).
+- **`no data` / `possibly delisted` 메시지는 정상 스킵**입니다. 해당 심볼만 제외하고 배치는 계속됩니다.
 
 ## 문제 해결
 - **프로세스 종료 안 됨**: 작업 스케줄러 실행 시 `--no-pause` 인수를 추가하지 않아서 발생하는 문제입니다. [동작] 탭의 "인수 추가"에 `--no-pause`를 입력하세요.
 - Python 경로 문제: 가상환경 사용 시 `run_batch_manual.bat`에서 `call venv\Scripts\activate.bat` 주석 해제
-- 네트워크/Rate limit: 자동 재시도는 스크립트에서 처리하지 않으므로, 스케줄 재시도 옵션을 활성화하세요
+- **UnicodeEncodeError (cp949)**: `run_batch_manual.bat`이 UTF-8(`PYTHONUTF8=1`)을 설정합니다. 직접 `python` 실행 시에도 동일 환경변수를 권장합니다.
+- 네트워크/Rate limit: 스크립트가 재시도합니다. 그래도 실패하면 스케줄러 재시도(30분×3회)를 유지하세요.
 - 권한 문제: 관리자 권한으로 작업 스케줄러 실행
+- 로그: `scan_results/batch_{free|irp}_YYYY-MM-DD.log` (수동 실행 시 리다이렉트 권장)
 
 

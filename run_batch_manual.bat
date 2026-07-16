@@ -2,6 +2,11 @@
 REM 스크립트가 위치한 디렉토리로 이동
 cd /d "%~dp0"
 
+REM Windows 콘솔에서 이모지/UTF-8 로그가 깨지거나 UnicodeEncodeError 나지 않도록
+chcp 65001 >nul
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
+
 echo Starting KRW Momentum Radar Batch Scan...
 
 REM 1) venv 없으면 생성 시도

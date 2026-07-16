@@ -95,12 +95,13 @@ def main() -> int:
         return 0
 
     print(f"[Batch] 🚀 Calculating FMS for {len(scan_targets)} symbols (with tradeability filters)...")
+    print("[Batch] ℹ️ 'no data / delisted' messages are normal skips; rate limits are retried with backoff.")
     results = calculate_fms_for_batch(scan_targets, reference_prices_krw=ref_prices)
     if results.empty:
         print("[Batch] ❌ No results were produced.")
         return 1
 
-    print(f"[Batch] 💾 Saving results (FMS ≥ 0.0) to timestamped file and latest pointer ({mode_label})...")
+    print(f"[Batch] ✅ Scored {len(results)} symbols; saving FMS ≥ 0.0 ({mode_label})...")
     save_success, save_msg, saved_count = save_scan_results(results, fms_threshold=0.0, mode=mode)
     print(f"[Batch] {save_msg}")
     

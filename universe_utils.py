@@ -19,6 +19,40 @@ KST = pytz.timezone("Asia/Seoul")
 MODE_FREE = "FREE"
 MODE_IRP = "IRP"
 
+
+def normalize_finviz_tickers(tickers) -> list:
+    """
+    Repair Finviz Overview ticker strings when the first character is duplicated.
+
+    As of 2026-07 (finvizfinance 1.2.x / Finviz HTML), Overview often returns
+    Agilent as ``AA`` (should be ``A``), Apple as ``AAAPL`` (should be ``AAPL``),
+    OKTA as ``OOKTA``, MSFT as ``MMSFT``. Detect via known anchors, then strip
+    one duplicated leading character from each ticker.
+    """
+    cleaned = [str(t).strip() for t in list(tickers) if str(t).strip()]
+    if not cleaned:
+        return cleaned
+
+    ticker_set = set(cleaned)
+    # Strong signal: Apple appears as AAAPL while AAPL is absent
+    apple_corrupted = ('AAAPL' in ticker_set) and ('AAPL' not in ticker_set)
+    # Broad corruption: doubled-prefix aliases for mega-caps without the real tickers
+    mega_aliases = {'AAAPL', 'MMSFT', 'TTSLA', 'NNVDA', 'AAMZN', 'GGOOG', 'MMETA', 'OOKTA'}
+    mega_real = {'AAPL', 'MSFT', 'TSLA', 'NVDA', 'AMZN', 'GOOG', 'META', 'OKTA'}
+    mega_corrupted = bool(ticker_set & mega_aliases) and not bool(ticker_set & mega_real)
+
+    if not (apple_corrupted or mega_corrupted):
+        return cleaned
+
+    fixed = []
+    for t in cleaned:
+        if len(t) >= 2 and t[0].isalpha() and t[0] == t[1]:
+            fixed.append(t[1:])
+        else:
+            fixed.append(t)
+    return fixed
+
+
 def is_leveraged_or_inverse_etf(ticker: str, name: str = "") -> bool:
     """
     레버리지 또는 인버스 ETF인지 판단합니다.
@@ -171,6 +205,9 @@ def update_universe_file(progress_callback=None, status_callback=None):
         
         # Finviz 스크리너 실행 (진행률 콜백 포함)
         foverview = Overview()
+        # filters dict was previously unused → full ~8k dump then weak local filters.
+        # Apply server-side filters so the batch universe matches the documented criteria.
+        foverview.set_filter(filters_dict=filters)
         
         if progress_callback:
             progress_callback(0.1, "🔍 Finviz 데이터 다운로드 중...")
@@ -179,11 +216,22 @@ def update_universe_file(progress_callback=None, status_callback=None):
             progress_callback(0.12, "📡 Finviz 서버에 연결 중...")
         
         if progress_callback:
-            progress_callback(0.15, "📊 8,000+ 종목 데이터 처리 중... (콘솔에서 실제 진행률 확인 가능)")
+            progress_callback(0.15, "📊 Finviz 스크리닝 결과 수집 중... (콘솔에서 실제 진행률 확인 가능)")
         
         # Finviz API 호출 (블로킹 작업)
         # 실제 진행률은 콘솔에 [Info] loading page [####------] 형태로 표시됩니다.
         df = foverview.screener_view()
+
+        # Repair spurious leading 'A' on tickers (finvizfinance/Finviz HTML parse shift)
+        if not df.empty and 'Ticker' in df.columns:
+            raw_tickers = df['Ticker'].astype(str).tolist()
+            fixed_tickers = normalize_finviz_tickers(raw_tickers)
+            if fixed_tickers != raw_tickers:
+                df = df.copy()
+                df['Ticker'] = fixed_tickers
+                if status_callback:
+                    status_callback("🔧 Finviz 티커 첫 글자 중복 보정 적용")
+                print("[Universe] Applied Finviz ticker first-character dedupe normalization")
         
         if progress_callback:
             progress_callback(0.2, f"📥 전체 데이터 다운로드 완료: {len(df)}개 종목")

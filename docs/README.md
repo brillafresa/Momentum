@@ -11,13 +11,15 @@
 | [FMS_RECALIBRATION_WORKFLOW.md](FMS_RECALIBRATION_WORKFLOW.md) | FMS 재보정·튜닝 절차 |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 배포 가이드 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 기여 가이드 |
-| [README_BATCH.md](README_BATCH.md) | 배치 스캔·작업 스케줄러 |
-| [work-plans/](work-plans/) | 세션별 작업 일지 |
+| [README_BATCH.md](README_BATCH.md) | 배치 스캔·작업 스케줄러·레이트리밋/delisted 안내 |
+| [work-plans/](work-plans/) | 세션별 작업 일지 (예: harness-bootstrap, batch-recovery) |
 
 ## 루트에 남는 문서
 
 - `README.md` — 제품 개요 (GitHub/Streamlit 진입)
 - `CHANGELOG.md` — 버전 이력
-- `HARNESS_RULES.md` — 하네스 원칙 (세션 1순위)
+- `HARNESS_RULES.md` — 하네스 원칙·현재 검증 자산 SSOT (세션 1순위)
 - `TODO.md` — 진행 체크리스트
 - `LICENSE`
+
+FMS/배치 하네스 목록과 실행 방법은 **`HARNESS_RULES.md` §0**을 본다. `TODO.md`는 체크리스트만 유지한다.

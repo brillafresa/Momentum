@@ -5,6 +5,25 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.3.1] - 2026-07-16
+
+### 수정
+
+- **배치 스캔 복구 (Yahoo / Finviz)**
+  - yfinance가 `YFRateLimitError`를 `shared._ERRORS`로 삼켜 재시도가 동작하지 않던 문제 수정 → 레이트리밋 감지·지수 백오프·청크 슬립·outer batching
+  - Finviz Overview 티커 첫 글자 중복(`AAPL`→`AAAPL`, `OKTA`→`OOKTA`) 자동 정규화
+  - Finviz `set_filter` 미적용으로 ~7k 전체 dump 후 약필터만 돌리던 문제 수정 (서버측 스크리닝 조건 적용)
+  - Windows 배치 콘솔 UTF-8 설정 (`run_batch_manual.bat`)으로 cp949 `UnicodeEncodeError` 완화
+
+### 추가
+
+- `tests/unit/test_yf_rate_limit_retry.py`, `tests/unit/test_finviz_ticker_normalize.py`
+- 배치 동작 문서 보강: delisted/`no data`는 정상 스킵, Adj Close=배당 반영 명시 (`docs/README_BATCH.md`)
+
+### 확정
+
+- **배당 정책:** 수익/FMS = Adj Close, 거래적합성 = raw High/Low/Close (`auto_adjust=True` 전환 안 함)
+
 ## [4.3.0] - 2026-07-16
 
 ### 추가
