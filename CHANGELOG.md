@@ -5,6 +5,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.0] - 2026-07-17
+
+### 추가
+
+- **MarketDataPort / Adapter 경계 도입** (`adapters/market_data.py`)
+  - `MarketDataPort` 프로토콜 + 프로덕션 `YFinanceAdapter` + 오프라인 `FixtureAdapter`
+  - `calculate_fms_for_batch(..., market_data=port)` 주입 지원 — 다운로드/스코어 분리 (기본값은 기존과 동일한 YFinance 경로)
+  - 계약 테스트 `tests/unit/test_market_data_port.py`: fixture 주입 배치가 직접 스코어링(`momentum_now_and_delta`)과 FMS 완전 일치, yfinance 미호출 강제
+- **사전 필터 분석 도구** `scripts/analyze_prefilter_impact.py` (LIVE API, 수동 실행 전용)
+  - Finviz 필터 조합별 유니버스 크기 + 경계 밴드 종목의 실측 FMS 분포 수집
+- **세부보기 종목 selectbox 붙여넣기 UX 개선**
+  - 드롭다운을 열면 기존 선택 텍스트가 자동으로 비워져 복사한 티커를 바로 붙여넣어 검색 가능
+  - 빈 입력칸에서 Backspace 시 기존 라벨이 통째로 복원되는 BaseWeb 동작 차단
+  - Streamlit(1.51) 공식 옵션 부재로 세부보기 selectbox에만 스코프 한정한 CSS/JS 주입으로 구현
+    (다른 selectbox 영향 없음, 검증 데모: `scripts/demo_focus_clear.py`)
+
+### 수정
+
+- **배치 log RuntimeWarning 제거**: 음수/0 가격 글리치(Adj Close)가 `np.log`에 유입되어
+  `invalid value encountered in log` 경고를 유발하던 문제 수정
+  - `r_squared_3m`: 비양수 가격 비율을 NaN 마스킹 후 유효 지점만 회귀
+  - `_mom_snapshot` / `fms_recalib_build_features`: EMA20 로그 회귀 입력 `replace(0, NaN)` → `where(> 0)`
+  - 회귀 테스트: `test_non_positive_price_glitch_emits_no_log_warnings`
+
 ## [4.3.1] - 2026-07-16
 
 ### 수정

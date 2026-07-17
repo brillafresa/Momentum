@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-16 (KST) · 제품 버전 v4.3.1
+최종 갱신: 2026-07-17 (KST) · 제품 버전 v4.4.0
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.3.1)
+## 0. 현재 구축된 검증 하네스 (v4.4.0)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -27,6 +27,8 @@
 |------|------|-----------|
 | `tests/unit/test_yf_rate_limit_retry.py` | yfinance `shared._ERRORS` 레이트리밋 감지·재시도 | mock `yf.download` |
 | `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫 글자 중복 보정 | 순수 함수 assert |
+| `tests/unit/test_market_data_port.py` | `MarketDataPort` 계약: fixture 배치 = 직접 스코어링 FMS 일치, no-network | `FixtureAdapter` 주입 |
+| `adapters/market_data.py` | `YFinanceAdapter`(운영) / `FixtureAdapter`(테스트) | `calculate_fms_for_batch(market_data=...)` |
 
 검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.  
 운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.

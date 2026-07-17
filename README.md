@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.3.1**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.4.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
 
 ## 🌟 주요 기능
 
@@ -30,6 +30,7 @@
 - 최대 낙폭(Drawdown) 추적
 - 모멘텀 상태 배지 시스템
 - **종목 네비게이션**: 정렬된 순서로 이전/다음 종목 이동 및 맨 끝으로 이동
+- **티커 바로 붙여넣기 검색**: 종목 선택 박스를 열면 기존 텍스트가 자동으로 비워져 복사한 티커를 즉시 붙여넣어 검색 가능
 - **차트 기간 연동**: 선택된 차트 기간에 맞춰 차트 표시
 
 ### 📁 관심종목 관리
@@ -308,7 +309,13 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.3.1 (현재)
+### v4.4.0 (현재)
+
+- **MarketDataPort/Adapter 경계 도입**: `adapters/market_data.py` (`YFinanceAdapter` / 오프라인 `FixtureAdapter`), `calculate_fms_for_batch` 다운로드/스코어 분리 및 Port 주입 지원
+- **배치 log RuntimeWarning 제거**: 음수/0 가격 글리치가 R²·EMA20 로그 회귀에 유입되던 문제 가드
+- 계약 테스트 추가: fixture 주입 배치 = 직접 스코어링 FMS 일치 (`tests/unit/test_market_data_port.py`)
+
+### v4.3.1
 
 - 배치 스캔 복구: Yahoo 레이트리밋 재시도 수정, Finviz 티커 첫글자 중복 보정, set_filter 적용
 - Adj Close(배당 조정) 기준 수익률/FMS 문서화

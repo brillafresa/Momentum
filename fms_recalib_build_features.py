@@ -95,7 +95,7 @@ def main() -> None:
         if len(e20) >= 10:
             last10 = e20.iloc[-10:]
             x10 = np.arange(len(last10), dtype=float)
-            y10 = np.log(last10.replace(0, np.nan)).dropna()
+            y10 = np.log(last10.where(last10 > 0)).dropna()
             if len(y10) == len(x10):
                 coef = np.polyfit(x10, y10, 1)[0]
                 ema20_slope_10d[c] = float(coef)
@@ -110,7 +110,7 @@ def main() -> None:
             last10 = e20.iloc[-10:]
             x_seg = np.arange(10, dtype=float)
             def _slope(seg: pd.Series) -> float:
-                y = np.log(seg.replace(0, np.nan)).dropna()
+                y = np.log(seg.where(seg > 0)).dropna()
                 if len(y) != len(x_seg):
                     return np.nan
                 return float(np.polyfit(x_seg, y, 1)[0])

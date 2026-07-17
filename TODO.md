@@ -1,13 +1,22 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-16** (KST) · 제품 버전 **v4.3.1**
+> 최종 갱신: **2026-07-17** (KST) · 제품 버전 **v4.4.0**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-17 — v4.4.0 (MarketDataPort + log 경고 수정)
+
+- [x] `MarketDataPort` + `YFinanceAdapter` + `FixtureAdapter` (`adapters/market_data.py`)
+- [x] `calculate_fms_for_batch` 다운로드/스코어 분리 (Port 주입, 기본 동작 불변)
+- [x] 계약 테스트 `tests/unit/test_market_data_port.py` (fixture 배치 = 직접 스코어링 FMS 일치, no-network)
+- [x] 배치 `invalid value encountered in log` 경고 수정 (음수/0 가격 가드 + 회귀 테스트)
+- [x] 사전 필터 타이트함 실측 도구 `scripts/analyze_prefilter_impact.py` (LIVE, 수동 전용)
+- [x] 세부보기 selectbox 열림 시 검색 입력 자동 비움 (티커 즉시 붙여넣기) — CSS/JS 주입, 데모 `scripts/demo_focus_clear.py`
 
 ### 2026-07-16 — v4.3.1 (배치 복구 + 배당 정책 확정)
 
@@ -39,8 +48,8 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-- [ ] `MarketDataPort` + `YFinanceAdapter` + `FixtureAdapter` (`adapters/market_data.py`)
-- [ ] `calculate_fms_for_batch`에서 **다운로드 / 스코어 분리** (Port 주입; outer batch는 완료)
+- [ ] **사전 필터 완화 여부 사용자 결정 대기** (근거: `scripts/analyze_prefilter_impact.py` 실측 — 아래 참고)
+  - 2026-07-17 실측: Q+10/H+20 = 456종목, Q Up/H Up = 1,187종목; 경계 밴드 24종목 샘플 전원 FMS < 0 (max -0.92)
 - [ ] `ema` / `returns_pct` / `r_squared_3m` → `core/indicators.py` + re-export 셔임
 - [ ] `calculate_tradeability_filters` → `core/tradeability.py`
 - [ ] `compute_fms_snapshot` / `momentum_now_and_delta` → `core/fms.py`

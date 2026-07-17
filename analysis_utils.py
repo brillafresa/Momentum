@@ -428,13 +428,18 @@ def r_squared_3m(prices_krw: pd.DataFrame) -> pd.Series:
             r2_dict[col] = np.nan
             continue
         
-        # 로그 수익률 계산
-        log_returns = np.log(recent / recent.iloc[0])
-        
-        # 선형 회귀를 위한 인덱스 (0부터 시작하는 정수)
-        x = np.arange(len(log_returns))
-        y = log_returns.values
-        
+        # 로그 수익률 계산 (0/음수 글리치 가격은 NaN 처리해 log 경고 방지)
+        ratio = recent / recent.iloc[0]
+        log_returns = np.log(ratio.where(ratio > 0))
+
+        # 선형 회귀: 유효 값만 사용 (글리치 지점 제외, 원래 시간축 위치 유지)
+        valid = log_returns.notna().values
+        if valid.sum() < 2:
+            r2_dict[col] = np.nan
+            continue
+        x = np.flatnonzero(valid)
+        y = log_returns.values[valid]
+
         try:
             # 선형 회귀 수행
             slope, intercept, r_value, p_value, std_err = linregress(x, y)
@@ -684,11 +689,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         e20 = ema(s, 20)
 
-        # EMA20 기울기 (최근 10일, 로그 회귀)
+        # EMA20 기울기 (최근 10일, 로그 회귀; 0/음수는 NaN 처리해 log 경고 방지)
         if len(e20) >= 10:
             last10 = e20.iloc[-10:]
             x10 = np.arange(len(last10), dtype=float)
-            y10 = np.log(last10.replace(0, np.nan)).dropna()
+            y10 = np.log(last10.where(last10 > 0)).dropna()
             if len(y10) == len(x10):
                 ema20_slope_10d[c] = float(np.polyfit(x10, y10, 1)[0])
             else:
@@ -703,7 +708,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             x_seg = np.arange(10, dtype=float)
 
             def _slope(seg: pd.Series) -> float:
-                y = np.log(seg.replace(0, np.nan)).dropna()
+                y = np.log(seg.where(seg > 0)).dropna()
                 if len(y) != len(x_seg):
                     return np.nan
                 return float(np.polyfit(x_seg, y, 1)[0])
@@ -1118,25 +1123,13 @@ def _calculate_fms_for_symbol_chunk(
     interval: str,
     reference_prices_krw: Optional[pd.DataFrame],
     *,
-    chunk: int,
-    chunk_sleep: float,
-    max_retries: int,
+    market_data,
 ) -> pd.DataFrame:
-    """Score one outer chunk: download Adj Close + OHLC, then run FMS."""
+    """Score one outer chunk: fetch Adj Close + OHLC via the injected port, then run FMS."""
     if not symbols_batch:
         return pd.DataFrame()
 
-    dl_kwargs = dict(
-        period_=period_,
-        interval=interval,
-        chunk=chunk,
-        chunk_sleep=chunk_sleep,
-        max_retries=max_retries,
-        threads=False,
-        initial_sleep=YF_RATE_LIMIT_INITIAL_SLEEP,
-    )
-
-    prices, miss_px = download_prices(symbols_batch, **dl_kwargs)
+    prices, miss_px = market_data.get_prices(symbols_batch, period_, interval)
     if miss_px:
         print(f"[Batch] prices missing/delisted in chunk: {len(miss_px)} (e.g. {miss_px[:5]})")
     if prices.empty:
@@ -1147,7 +1140,7 @@ def _calculate_fms_for_symbol_chunk(
     need_fx = bool(usd_symbols or jpy_symbols)
     usdkrw = jpykrw = None
     if need_fx:
-        usdkrw, _, jpykrw = download_fx(period_, interval)
+        usdkrw, _, jpykrw = market_data.get_fx(period_, interval)
 
     if usd_symbols and usdkrw is not None and not usdkrw.empty:
         usdkrw_matched = usdkrw.reindex(prices.index).ffill()
@@ -1166,7 +1159,7 @@ def _calculate_fms_for_symbol_chunk(
         return pd.DataFrame()
 
     scored_symbols = [s for s in symbols_batch if s in prices_krw.columns]
-    ohlc_data, miss_ohlc = download_ohlc_prices(scored_symbols, **dl_kwargs)
+    ohlc_data, miss_ohlc = market_data.get_ohlc(scored_symbols, period_, interval)
     if miss_ohlc:
         print(f"[Batch] OHLC missing in chunk: {len(miss_ohlc)} (e.g. {miss_ohlc[:5]})")
     if ohlc_data.empty:
@@ -1184,16 +1177,28 @@ def calculate_fms_for_batch(
     chunk: int = YF_CHUNK_SIZE_DEFAULT,
     chunk_sleep: float = YF_CHUNK_SLEEP_BATCH,
     max_retries: int = YF_MAX_RETRIES_BATCH,
+    market_data=None,
 ) -> pd.DataFrame:
     """
     Universe FMS scan with outer batching and rate-limit-aware downloads.
 
     Prefers complete coverage over speed: slower chunk sleeps + many 429 retries.
     Delisted / no-data tickers are skipped (logged) and do not abort the run.
+
+    ``market_data`` accepts a ``MarketDataPort`` (see ``adapters.market_data``)
+    so tests/harness can inject fixture panels; defaults to ``YFinanceAdapter``.
     """
     symbols_batch = list(dict.fromkeys(symbols_batch))
     if not symbols_batch:
         return pd.DataFrame()
+
+    if market_data is None:
+        # Local import: adapters.market_data imports this module's download helpers.
+        from adapters.market_data import YFinanceAdapter
+        market_data = YFinanceAdapter(
+            chunk=chunk, chunk_sleep=chunk_sleep, max_retries=max_retries,
+            initial_sleep=YF_RATE_LIMIT_INITIAL_SLEEP, threads=False,
+        )
 
     outer = max(int(outer_batch_size), 1)
     parts: List[pd.DataFrame] = []
@@ -1210,7 +1215,7 @@ def calculate_fms_for_batch(
         try:
             df_part = _calculate_fms_for_symbol_chunk(
                 part, period_, interval, reference_prices_krw,
-                chunk=chunk, chunk_sleep=chunk_sleep, max_retries=max_retries,
+                market_data=market_data,
             )
         except Exception as e:
             print(f"[Batch] outer {idx} failed: {e}; continuing with remaining symbols")

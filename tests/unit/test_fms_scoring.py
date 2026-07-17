@@ -14,6 +14,7 @@ Covered behaviors
 - Missing OHLC skips -999 filter path
 - yfinance.download is never called
 - All-NaN column does not crash scoring
+- Non-positive price glitches do not emit ``log`` RuntimeWarnings
 
 Usage (from repo root)
 ----------------------
@@ -25,13 +26,14 @@ Regenerate panels: ``python scripts/fixtures/generate_synthetic_panel.py``.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
-from analysis_utils import compute_fms_snapshot, momentum_now_and_delta
+from analysis_utils import compute_fms_snapshot, momentum_now_and_delta, r_squared_3m
 
 
 def test_momentum_now_and_delta_rank_order_matches_golden(
@@ -109,6 +111,36 @@ def test_fms_scoring_does_not_call_yfinance_download(
             ohlc_data=synthetic_ohlc,
             symbols=symbols,
         )
+
+
+def test_non_positive_price_glitch_emits_no_log_warnings(
+    synthetic_prices_krw: pd.DataFrame,
+) -> None:
+    """Yahoo Adj Close glitches (negative/zero ticks) must not spam np.log warnings.
+
+    Regression for batch-scan console noise:
+    ``RuntimeWarning: invalid value encountered in log`` from
+    ``r_squared_3m`` / EMA20 slope-curvature log regressions.
+    """
+    glitch = synthetic_prices_krw.copy()
+    col = glitch.columns[0]
+    glitch.iloc[-30, glitch.columns.get_loc(col)] = -5.0
+    glitch.iloc[-40, glitch.columns.get_loc(col)] = 0.0
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        r_squared_3m(glitch)
+        result = momentum_now_and_delta(
+            glitch,
+            reference_prices_krw=glitch,
+            ohlc_data=None,
+            symbols=list(glitch.columns),
+        )
+
+    log_warnings = [w for w in caught if "in log" in str(w.message)]
+    assert log_warnings == [], [str(w.message) for w in log_warnings]
+    assert "FMS" in result.columns
+    assert result["FMS"].notna().all()
 
 
 def test_nan_column_does_not_crash_scoring(
