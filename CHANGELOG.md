@@ -5,6 +5,52 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.5] - 2026-07-18
+
+### 변경
+
+- **세부보기 selectbox 순정 복원**: v4.4.0에서 넣었던 검색 입력 자동 비움 CSS/JS 주입과
+  `scripts/demo_focus_clear.py`를 제거. Streamlit 기본 selectbox 동작으로 되돌림
+  (개선 방향은 사용 피드백 후 재결정)
+- **푸시 전 정리**: 사전필터 실측 CSV → `scripts/fixtures/`; `core/fms` 내부 가중치/헬퍼
+  중복 제거(모듈 상수 `_P_*` / `_smoothstep` / `_z_peer` 공유); 문서·하네스 §0을 v4.4.5로 동기화
+
+## [4.4.4] - 2026-07-18
+
+### 변경
+
+- **리캘리브 공식 포크 제거**: `f_current` / `f_proposed` → `core.fms.score_fms_from_feature_frame`
+  - production 참조-패널 공식의 feature→score 진입점을 `core/fms.py`에 공개
+  - 계약 테스트 `tests/unit/test_fms_recalib_parity.py` (feature 스코어 = `compute_fms_snapshot` FMS)
+  - tune 스크립트 baseline을 production(`f_current`)으로 고정; 파라미터 탐색용 `fms_score*`는 오프라인 전용으로 명시
+
+## [4.4.3] - 2026-07-18
+
+### 변경
+
+- **`core/fms.py` 이전** (`_mom_snapshot`, `compute_fms_snapshot`, `momentum_now_and_delta`)
+  - production FMS 단일 소스가 `core/fms.py`로 이동; `analysis_utils`는 identity re-export 셔임
+  - 의존 헬퍼 `ytd_return` / `last_vol_annualized` → `core/indicators.py` 동반 이전
+  - 기존 `test_fms_scoring.py` + 셔임 identity assert로 회귀 보호 (골든 순위·CRASHY -999 유지)
+
+## [4.4.2] - 2026-07-18
+
+### 변경
+
+- **`core/tradeability.py` 이전** (`calculate_tradeability_filters`)
+  - True Range 치명적 변동성 / 반복 하방리스크 / 고저가 0 대체 로직을 `core/`로 이동
+  - `analysis_utils` re-export 셔임 유지; `get_filter_debug_info`는 과도기적으로 facade에 잔류
+  - 단위 테스트 `tests/unit/test_tradeability.py` (CRASHY 실격, OHLC 부족, 짧은 시계열, TR/하방 엣지, 0 고저가, 셔임 identity)
+
+## [4.4.1] - 2026-07-18
+
+### 변경
+
+- **`core/indicators.py` 이전** (`ema`, `returns_pct`, `r_squared_3m`)
+  - 순수 지표 로직을 `core/`로 이동; `analysis_utils`는 동일 호출 가능하도록 re-export 셔임 유지
+  - 단위 테스트 `tests/unit/test_indicators.py` (EMA / n-period return / R² 순위·짧은 시계열·log glitch / 셔임 identity)
+- **사전 필터 유지 확정**: Finviz 현행 조건(Q+10/H+20 등) 유지 — 당분간 재론 없음
+
 ## [4.4.0] - 2026-07-17
 
 ### 추가

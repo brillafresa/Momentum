@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.4.0
+# KRW Momentum Radar - v4.4.5
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -23,7 +23,6 @@ import plotly.graph_objects as go
 import pytz
 import re
 import streamlit as st
-import streamlit.components.v1 as st_components
 from typing import Optional, Tuple
 import yfinance as yf
 from watchlist_utils import (
@@ -97,7 +96,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.4.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.4.5", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -1102,7 +1101,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.4.0")
+st.title("⚡ KRW Momentum Radar v4.4.5")
 
 
 
@@ -1236,65 +1235,6 @@ else:
             if new_index != st.session_state.detail_symbol_index:
                 st.session_state.detail_symbol_index = new_index
                 st.rerun()
-
-    # 세부보기 selectbox: 검색 입력칸을 열면(드롭다운 오픈) 기존 선택 텍스트를 비워서
-    # 티커를 복사해 와 바로 붙여넣을 수 있게 한다. Streamlit 공식 옵션이 없어(1.51 기준)
-    # 해당 selectbox(st-key-detail_selectbox_*)에만 스코프를 한정한 CSS/JS를 주입한다.
-    # 다른 selectbox에는 영향 없음. 검증: scripts/demo_focus_clear.py
-    st.markdown(
-        """
-        <style>
-        /* 드롭다운이 열려 있는 동안 선택 라벨을 숨겨 빈 입력칸처럼 보이게 함 (선택 후엔 즉시 복원) */
-        [class*="st-key-detail_selectbox"] [data-baseweb="select"]:has(input[aria-expanded="true"]) div[value] {
-            display: none;
-        }
-        /* 아래 JS 주입용 height=0 iframe이 차지하는 레이아웃 공백 제거 */
-        div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
-            display: none;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st_components.html(
-        """
-        <script>
-        (function () {
-            const doc = window.parent.document;
-            if (doc.__detailSelectboxFocusClear) { return; }
-            doc.__detailSelectboxFocusClear = true;
-            const inDetailBox = function (el) {
-                return el && el.tagName === 'INPUT'
-                    && el.closest('[class*="st-key-detail_selectbox"]');
-            };
-            // React가 관리하는 input이라 네이티브 setter로 값을 바꾸고 input 이벤트를 쏴야 반영된다.
-            const setter = Object.getOwnPropertyDescriptor(
-                window.parent.HTMLInputElement.prototype, 'value').set;
-            // 포커스 시 input에 남아 있는 텍스트 제거 (붙여넣기 즉시 가능)
-            doc.addEventListener('focusin', function (ev) {
-                const input = ev.target;
-                if (!inDetailBox(input)) { return; }
-                window.setTimeout(function () {
-                    if (doc.activeElement !== input || !input.value) { return; }
-                    setter.call(input, '');
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                }, 0);
-            }, true);
-            // 빈 입력칸에서 Backspace를 누르면 BaseWeb이 기존 라벨 전체를 복원하는 동작 차단
-            doc.addEventListener('keydown', function (ev) {
-                if (ev.key !== 'Backspace') { return; }
-                const input = ev.target;
-                if (!inDetailBox(input)) { return; }
-                if (!input.value) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                }
-            }, true);
-        })();
-        </script>
-        """,
-        height=0,
-    )
 
     s_full = prices_krw[detail_sym].dropna()
     # 선택된 차트 기간에 맞춰 데이터 필터링

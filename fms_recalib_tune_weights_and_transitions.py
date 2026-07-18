@@ -107,6 +107,11 @@ def dominates(a: Metrics, b: Metrics) -> bool:
 
 
 def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
+    """Parameterized FMS for Monte-Carlo search only (not production).
+
+    Baseline comparisons must use ``fms_recalib_evaluate_formulas.f_current``
+    (``core.fms``). Promote winning ``p`` into ``core/fms.py`` before shipping.
+    """
     # Inputs (기존 축)
     r1 = df["R_1M"]
     r3 = df["R_3M"]
@@ -310,10 +315,13 @@ def main() -> None:
         return
 
     df = pd.read_csv(FEATURE_CSV, index_col=0)
-    base = baseline_params()
-    base_m = compute_metrics(df, fms_score(df, base))
+    from fms_recalib_evaluate_formulas import f_current
 
-    print("=== Baseline (current) ===")
+    # Baseline = production SSOT (core.fms). Parameterized fms_score is search-only.
+    base_m = compute_metrics(df, f_current(df))
+    base = baseline_params()
+
+    print("=== Baseline (production / core.fms) ===")
     print(f"inversion_rate={base_m.inv:.4f}  spearman_rho={base_m.rho:.4f}  pair_delta_error={base_m.pair_err:.4f}")
 
     rng = np.random.default_rng(20260311)

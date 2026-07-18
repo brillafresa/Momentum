@@ -81,7 +81,11 @@ def smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
 
 
 def fms_score_with_vol_params(df: pd.DataFrame, *, q_pct: float, hard_power: float, hard_scale: float) -> pd.Series:
-    # --- current logic copied from fms_recalib_evaluate_formulas.f_current ---
+    """Offline Vol20-mapping search only — not production.
+
+    Baseline must use ``f_current`` (``core.fms``). Promote winners into core.
+    """
+    # --- simplified axes for vol-penalty shape search (not full production) ---
     r1 = df["R_1M"]
     r3 = df["R_3M"]
     r6 = df["R_6M"]
@@ -162,10 +166,11 @@ def main() -> None:
 
     df = pd.read_csv(FEATURE_CSV, index_col=0)
 
-    # Baseline = current params (q=60, hard_power=2, hard_scale=1)
-    base_score = fms_score_with_vol_params(df, q_pct=60.0, hard_power=2.0, hard_scale=1.0)
-    base = compute_metrics(df, base_score)
-    print("=== Baseline (current vol mapping) ===")
+    from fms_recalib_evaluate_formulas import f_current
+
+    # Baseline = production SSOT (core.fms). Vol-mapping search is offline only.
+    base = compute_metrics(df, f_current(df))
+    print("=== Baseline (production / core.fms) ===")
     print(f"inversion_rate={base.inv:.4f}  spearman_rho={base.rho:.4f}  pair_delta_error={base.pair_err:.4f}")
 
     q_pcts = [50.0, 55.0, 60.0, 65.0, 70.0]

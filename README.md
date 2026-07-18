@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.4.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.4.5**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
 
 ## 🌟 주요 기능
 
@@ -30,7 +30,6 @@
 - 최대 낙폭(Drawdown) 추적
 - 모멘텀 상태 배지 시스템
 - **종목 네비게이션**: 정렬된 순서로 이전/다음 종목 이동 및 맨 끝으로 이동
-- **티커 바로 붙여넣기 검색**: 종목 선택 박스를 열면 기존 텍스트가 자동으로 비워져 복사한 티커를 즉시 붙여넣어 검색 가능
 - **차트 기간 연동**: 선택된 차트 기간에 맞춰 차트 표시
 
 ### 📁 관심종목 관리
@@ -309,7 +308,29 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.4.0 (현재)
+### v4.4.5 (현재)
+
+- **세부보기 selectbox 순정 복원**: 붙여넣기 UX용 CSS/JS·데모 스크립트 제거 (Streamlit 기본 동작)
+- **푸시 전 정리**: 사전필터 실측 CSV → `scripts/fixtures/`; FMS 모듈 내부 헬퍼/가중치 단일화
+
+### v4.4.4
+
+- **recalib 공식 포크 제거**: `f_current`/`f_proposed` → `core.fms.score_fms_from_feature_frame`; 계약 테스트 `test_fms_recalib_parity.py`
+
+### v4.4.3
+
+- **core/fms 이전**: `compute_fms_snapshot` / `momentum_now_and_delta` → `core/fms.py` + 셔임; FMS 단일 소스 확정
+
+### v4.4.2
+
+- **core/tradeability 이전**: `calculate_tradeability_filters` → `core/tradeability.py` + 셔임; `test_tradeability.py` 추가
+
+### v4.4.1
+
+- **core/indicators 이전**: `ema` / `returns_pct` / `r_squared_3m` → `core/indicators.py` + `analysis_utils` 셔임; `test_indicators.py` 추가
+- **사전 필터 유지 확정**: Finviz 현행 조건 유지
+
+### v4.4.0
 
 - **MarketDataPort/Adapter 경계 도입**: `adapters/market_data.py` (`YFinanceAdapter` / 오프라인 `FixtureAdapter`), `calculate_fms_for_batch` 다운로드/스코어 분리 및 Port 주입 지원
 - **배치 log RuntimeWarning 제거**: 음수/0 가격 글리치가 R²·EMA20 로그 회귀에 유입되던 문제 가드

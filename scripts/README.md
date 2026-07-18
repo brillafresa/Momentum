@@ -11,9 +11,12 @@
 
 ```
 scripts/
-├── README.md          # 본 파일
-└── fixtures/          # fixture 생성·갱신 스크립트 및 작업용 스냅샷 출력물
-    └── README.md
+├── README.md
+├── analyze_prefilter_impact.py   # LIVE Finviz 사전필터 실측 (수동)
+└── fixtures/
+    ├── README.md
+    ├── generate_synthetic_panel.py
+    └── prefilter_band_sample_fms.csv
 ```
 
 ## 규칙

@@ -128,7 +128,7 @@ def sample_borderline_fms(sample_size: int) -> int:
     for thr in (0.0, 0.5, 1.0):
         print(f'  pass FMS > {thr}: {int((passing["FMS"] > thr).sum())} / {len(passing)}')
 
-    out_path = 'scripts/prefilter_band_sample_fms.csv'
+    out_path = 'scripts/fixtures/prefilter_band_sample_fms.csv'
     results.to_csv(out_path, encoding='utf-8-sig')
     print(f'[Prefilter] Full sample results saved: {out_path}')
     return 0

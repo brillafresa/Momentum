@@ -15,6 +15,10 @@ tests/
 │   └── golden_fms_ranks.json
 ├── unit/                # 순수 로직·헬퍼 단위 테스트
 │   ├── test_fms_scoring.py
+│   ├── test_fms_recalib_parity.py
+│   ├── test_indicators.py
+│   ├── test_tradeability.py
+│   ├── test_market_data_port.py
 │   ├── test_yf_rate_limit_retry.py
 │   └── test_finviz_ticker_normalize.py
 └── contract/            # 아키텍처 계약 (예: core 네트워크 금지)

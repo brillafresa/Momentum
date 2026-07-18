@@ -36,6 +36,16 @@ import pytest
 from analysis_utils import compute_fms_snapshot, momentum_now_and_delta, r_squared_3m
 
 
+def test_analysis_utils_reexports_core_fms() -> None:
+    """Transitional facade must expose the same FMS callables as core."""
+    import analysis_utils as au
+    import core.fms as cf
+
+    assert au.compute_fms_snapshot is cf.compute_fms_snapshot
+    assert au.momentum_now_and_delta is cf.momentum_now_and_delta
+    assert au._mom_snapshot is cf._mom_snapshot
+
+
 def test_momentum_now_and_delta_rank_order_matches_golden(
     synthetic_prices_krw: pd.DataFrame,
     synthetic_ohlc: pd.DataFrame,
