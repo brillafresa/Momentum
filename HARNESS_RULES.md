@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-20 (KST) · 제품 버전 v4.4.7
+최종 갱신: 2026-07-20 (KST) · 제품 버전 v4.4.8
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.4.7)
+## 0. 현재 구축된 검증 하네스 (v4.4.8)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -27,6 +27,7 @@
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
 | `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/prefilter_band_sample_fms.csv` | Finviz 사전필터 경계 밴드 실측 증거 (LIVE 산출) | 수동 참고 |
+| `scripts/analyze_prefilter_impact.py` | Finviz 사전필터 tightness 실측 (LIVE; 운영 미import) | `python scripts/analyze_prefilter_impact.py` |
 
 ### 배치 I/O · 유니버스 (네트워크 없이 단위 검증)
 
@@ -37,7 +38,15 @@
 | `tests/unit/test_market_data_port.py` | `MarketDataPort` 계약: fixture 배치 = 직접 스코어링 FMS 일치, no-network | `FixtureAdapter` 주입 |
 | `adapters/market_data.py` | `YFinanceAdapter`(운영) / `FixtureAdapter`(테스트) | `calculate_fms_for_batch(market_data=...)` |
 
-검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.  
+검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.
+
+### 운영 데이터 커밋 (필수)
+
+아래 파일은 **최신 제품 상태 SSOT**이므로, 로컬에서 변경되었으면 **모든 커밋에 반드시 포함**한다. 코드 전용 커밋이라도 “무관 파일”로 제외하지 않는다.
+
+- `watchlist_free.csv`
+- `watchlist_irp.csv`
+- `screened_universe.csv`  
 운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.
 
 ### 2026-07-20 세션에서 확정된 FMS 검증 요약
@@ -49,6 +58,12 @@
 5. **사전필터**: Finviz `Quarter Up` / `Half Up` + 로컬 `Perf > 0` (구 Q+10/H+20 폐기).
 6. **사전필터 ≤ 로컬 불변식**: Finviz Perf 축 exclusive floor ≤ 로컬 floor (`test_prefilter_not_stricter_than_local`). 사전필터는 배치 시간 절약용 early cut일 뿐, 로컬보다 엄격하면 안 됨.
 7. **사전필터 실측 CSV** (`scripts/fixtures/prefilter_band_sample_fms.csv`): Q+10/H+20 시대 스냅샷 — 참고용.
+8. **운영 데이터 커밋**: `watchlist_free.csv` / `watchlist_irp.csv` / `screened_universe.csv` 변경 시 모든 커밋에 포함.
+
+### 2026-07-20 세션 — UI (v4.4.8)
+
+- 세부보기 하단 Drawdown: 선택 기간·관심종목 전체 min/max로 y-range 고정 (상단 Rebased 100과 동일; FMS=-999 제외).
+- `관심종목 초기화` 버튼 제거 — 운영 실수 방지.
 
 ### 가격 / 배당 정책 (확정)
 

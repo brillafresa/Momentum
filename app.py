@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.4.7
+# KRW Momentum Radar - v4.4.8
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -55,7 +55,7 @@ warnings.filterwarnings("ignore", category=ResourceWarning)
 KST = pytz.timezone("Asia/Seoul")
 
 # ------------------------------
-# 기본 유니버스 (관심종목 초기화용)
+# 기본 유니버스 (세션 최초 로드·모드 전환 폴백)
 # ------------------------------
 DEFAULT_USD_SYMBOLS = [
     'AAPL','ABBV','AMZN','ARKK','AVGO','BND','BRK-B','CAT','COST','CRM','CVX','DIA',
@@ -96,7 +96,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.4.7", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.4.8", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -113,12 +113,11 @@ if 'account_mode' not in st.session_state:
     st.session_state.account_mode = MODE_FREE
 
 # ------------------------------
-# 관심종목 초기화 (모드별)
+# 관심종목 세션 로드 (모드별)
 # ------------------------------
 if 'watchlist' not in st.session_state:
     default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
     st.session_state.watchlist = load_watchlist(default_symbols, mode=st.session_state.account_mode)
-    # 관심종목 초기화 완료
 
 # 현재 관심종목을 기존 변수명으로 매핑 (하위 호환성)
 USD_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "USA"]
@@ -780,17 +779,6 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     if st.button("🗂️ 데이터 캐시 초기화"):
         st.cache_data.clear()
         st.success("캐시 초기화 완료")
-    
-    is_scanning, is_reassessing, button_disabled = get_button_states()
-    if st.button("🔄 관심종목 초기화", disabled=button_disabled):
-        default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
-        st.session_state.watchlist = default_symbols
-        save_success = save_watchlist(default_symbols, mode=st.session_state.account_mode)
-        if not save_success:
-            st.warning("⚠️ 관심종목 파일 저장에 실패했습니다.")
-        st.success("관심종목이 기본값으로 초기화되었습니다!")
-        st.rerun()
-
 
 
 def calculate_minimum_data_period(rv_window=63, tail_days=10):
@@ -1101,7 +1089,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.4.7")
+st.title("⚡ KRW Momentum Radar v4.4.8")
 
 
 
@@ -1277,6 +1265,32 @@ else:
         mx = max(mx, mn * 1.000001)
         return (float(np.log10(mn)), float(np.log10(mx)))
 
+    def _global_drawdown_range(prices: pd.DataFrame, period_key: str) -> Optional[Tuple[float, float]]:
+        # 전체 관심종목에 대해, 선택된 기간 구간의 Drawdown(%) 최소/최대 계산
+        if prices.empty:
+            return None
+        win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+        win_local = win_map_local.get(period_key, 126)
+        dd_list = []
+        for col in prices.columns:
+            s_col = prices[col].dropna()
+            if s_col.empty:
+                continue
+            s_win = s_col.iloc[-win_local:] if s_col.shape[0] > win_local else s_col
+            roll_max = s_win.cummax()
+            dd_list.append((s_win / roll_max - 1.0) * 100.0)
+        if not dd_list:
+            return None
+        dd_vals = pd.concat(dd_list, axis=0).dropna()
+        if dd_vals.empty:
+            return None
+        mn = float(dd_vals.min())
+        mx = float(dd_vals.max())
+        if mn == mx:
+            return (mn - 1.0, mx + 1.0)
+        pad = (mx - mn) * 0.05
+        return (mn - pad, mx + pad)
+
     # FMS=-999(거래 부적합) 종목은 y축 스케일 계산에서 제외
     valid_for_scale = [
         sym for sym in ordered_options
@@ -1284,6 +1298,7 @@ else:
     ]
     base_prices = prices_krw[valid_for_scale] if valid_for_scale else prices_krw[ordered_options]
     y_global_log = _global_rebased_log_range(base_prices, period)
+    y_dd_global = _global_drawdown_range(base_prices, period)
 
     # 선택된 종목에 대해서도 Rebased 100 + EMA
     s100 = _rebase_100(s)
@@ -1325,6 +1340,8 @@ else:
     dd = (s / roll_max - 1.0) * 100.0
     fig_dd = go.Figure([go.Scatter(x=dd.index, y=dd.values, mode="lines", name="Drawdown(%)")])
     fig_dd.update_layout(height=180, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="%")
+    if y_dd_global is not None:
+        fig_dd.update_yaxes(range=[y_dd_global[0], y_dd_global[1]])
     st.plotly_chart(fig_dd, use_container_width=True, config={"displayModeBar": False})
 
     row = mom.loc[detail_sym]

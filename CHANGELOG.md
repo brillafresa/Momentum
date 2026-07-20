@@ -5,6 +5,16 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.8] - 2026-07-20
+
+### 변경
+
+- **세부보기 Drawdown y축 통일**: 상단 Rebased 100 차트와 동일하게, 선택 기간 기준 관심종목 전체
+  Drawdown(%) 최소·최대로 하단 그래프 y-range 고정 (FMS=-999 종목은 스케일 계산 제외)
+- **UI**: 좌측 [도구 및 도움말] `관심종목 초기화` 버튼 제거 (실수 초기화 방지)
+- **운영 데이터 커밋 SSOT**: `watchlist_free.csv` / `watchlist_irp.csv` / `screened_universe.csv`는
+  코드 전용 커밋에서도 **항상 포함** (`.cursorrules`, `HARNESS_RULES.md`, `CONTRIBUTING.md`)
+
 ## [4.4.7] - 2026-07-20
 
 ### 변경

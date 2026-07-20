@@ -1,13 +1,19 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-20** (KST) · 제품 버전 **v4.4.7**
+> 최종 갱신: **2026-07-20** (KST) · 제품 버전 **v4.4.8**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-20 — v4.4.8 (UI 세부보기 + 운영 데이터 커밋 SSOT)
+
+- [x] 세부보기 하단 Drawdown y축: 관심종목 전체 기준 고정 range (상단 Rebased 100과 동일 정책)
+- [x] 좌측 [도구 및 도움말] `관심종목 초기화` 버튼 제거
+- [x] 운영 데이터 3파일 항상 커밋 SSOT (`.cursorrules` / `HARNESS_RULES.md` / `CONTRIBUTING.md`)
 
 ### 2026-07-20 — v4.4.7 (FMS 6M→4M + Quarter/Half Up)
 

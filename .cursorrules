@@ -59,7 +59,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v4.4.7, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v4.4.8, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -137,10 +137,13 @@ Momentum/
 ### 중요 파일 관리
 - **watchlist_free.csv**: 자유투자계좌 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
 - **watchlist_irp.csv**: 퇴직연금IRP 관심종목 저장 파일 (버전 관리 포함, 삭제 금지)
-- **커밋 규칙 (필수)**: `watchlist_free.csv` / `watchlist_irp.csv`는 변경이 있으면 **항상 커밋에 포함한다**.
-  코드 전용 커밋이더라도 워치리스트 변경을 분리·누락하지 않는다 (관심종목은 제품 상태의 일부).
+- **screened_universe.csv**: 사전 필터링된 미국 유니버스 목록 (스캔 시 갱신, 버전 관리 포함)
+- **커밋 규칙 (필수·절대 제외 금지)**: 아래 3파일은 **변경이 있으면 매 커밋에 반드시 포함**한다.
+  코드 전용·기능 커밋이더라도 **“운영 데이터”·“무관 파일” 등의 이유로 제외하지 않는다** (최신 제품 상태 SSOT).
+  - `watchlist_free.csv`
+  - `watchlist_irp.csv`
+  - `screened_universe.csv`
 - **watchlist.csv**: [레거시] 기존 파일 (자동으로 watchlist_free.csv로 마이그레이션됨)
-- **screened_universe.csv**: 사전 필터링된 미국 유니버스 목록 (매일 업데이트 권장)
 - **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, 단 ETF는 국내 지수/국내 자산 및 국내 인버스만 포함, 해외/레버리지형 ETF 제외, Symbol,Name 컬럼, 수동 관리)
   - **Name 컬럼**: 한국 종목명 직접 입력 (yfinance API 호출 없이 파일에서 읽어옴)
 - **symbol_names_cache.json**: 비한국 종목명 영구 캐시 파일 (자동 생성, 삭제 시 캐시 초기화)

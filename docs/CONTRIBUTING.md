@@ -66,7 +66,8 @@ git checkout -b fix/your-bug-fix
 
 3. **테스트**: 로컬에서 애플리케이션이 정상 작동하는지 확인합니다.
 
-4. **커밋**: 의미있는 커밋 메시지와 함께 변경사항을 커밋합니다:
+4. **커밋**: 의미있는 커밋 메시지와 함께 변경사항을 커밋합니다.
+   **운영 데이터 3파일**(`watchlist_free.csv`, `watchlist_irp.csv`, `screened_universe.csv`)은 변경 시 **항상 같은 커밋에 포함**합니다 (코드만 커밋할 때도 제외하지 않음).
 
 ```bash
 git add .
