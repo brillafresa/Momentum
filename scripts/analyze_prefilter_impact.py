@@ -11,9 +11,11 @@ entrypoints. Run manually from repo root:
 Purpose
 -------
 Quantify how many US symbols are discarded by the current server-side Finviz
-pre-filter (Quarter +10% / Half +20%) versus relaxed variants, to judge
+pre-filter (Quarter Up / Half Up) versus tighter historical variants, to judge
 whether stocks with potential FMS > 0 are being pre-filtered away
-(FMS trend gates open at R_3M≈5% / R_6M≈8%, i.e. looser than the pre-filter).
+(FMS trend gates open at R_3M≈5% / R_4M≈5.3%, i.e. related to but distinct from
+the pre-filter). Historical sample CSV under scripts/fixtures/ was captured
+under the older Q+10%/H+20% policy (2026-07-17).
 """
 
 import argparse
@@ -37,9 +39,9 @@ BASE_FILTERS = {
 }
 
 COMBOS = {
-    'current  (Quarter +10%, Half +20%)': {'Performance': 'Quarter +10%', 'Performance 2': 'Half +20%'},
+    'current  (Quarter Up, Half Up)    ': {'Performance': 'Quarter Up', 'Performance 2': 'Half Up'},
+    'legacy   (Quarter +10%, Half +20%)': {'Performance': 'Quarter +10%', 'Performance 2': 'Half +20%'},
     'mid      (Quarter Up,   Half +10%)': {'Performance': 'Quarter Up', 'Performance 2': 'Half +10%'},
-    'relaxed  (Quarter Up,   Half Up)  ': {'Performance': 'Quarter Up', 'Performance 2': 'Half Up'},
     'sma-only (no performance filter)  ': {},
 }
 
@@ -66,10 +68,10 @@ def sample_borderline_fms(sample_size: int) -> int:
 
     Samples from the relaxed pre-filter set (Quarter Up / Half Up), scores it
     exactly like ``run_scan_batch`` (watchlist reference distribution), then
-    splits post-hoc by the *computed* R_3M/R_6M into:
+    splits post-hoc by the *computed* R_3M/R_4M into:
 
-    - borderline band: fails the current pre-filter (Q<10% or H<20%)
-    - passing set: satisfies the current pre-filter
+    - borderline band: fails Up policy (R_3M<=0 or R_4M<=0)
+    - passing set: satisfies Up policy
 
     This answers: "does the current pre-filter discard FMS>0 candidates?"
     (Post-hoc split avoids trusting Finviz perf columns, whose units drift.)
@@ -114,8 +116,9 @@ def sample_borderline_fms(sample_size: int) -> int:
 
     scored = results[results['FMS'] > -900].copy()  # exclude -999 disqualifications
     n_disq = len(results) - len(scored)
-    border = scored[(scored['R_3M'] < 0.10) | (scored['R_6M'] < 0.20)]
-    passing = scored[(scored['R_3M'] >= 0.10) & (scored['R_6M'] >= 0.20)]
+    r4col = 'R_4M' if 'R_4M' in scored.columns else 'R_6M'
+    border = scored[(scored['R_3M'] <= 0.0) | (scored[r4col] <= 0.0)]
+    passing = scored[(scored['R_3M'] > 0.0) & (scored[r4col] > 0.0)]
 
     print()
     print(f'[Prefilter] scored={len(scored)}  disqualified(-999)={n_disq}')

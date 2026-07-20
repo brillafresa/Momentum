@@ -38,7 +38,7 @@ def _feature_frame_from_prices(prices_krw: pd.DataFrame) -> tuple[pd.DataFrame, 
         symbols=list(prices_krw.columns),
     )
     feat = snap.drop(columns=["FMS", "Filter_Status"], errors="ignore").copy()
-    feat["R_6M"] = returns_pct(prices_krw, 126)
+    feat["R_4M"] = returns_pct(prices_krw, 84)
     feat = feat.rename(columns={"Vol20(ann)": "Vol20_Ann"})
     return feat, snap["FMS"]
 
@@ -80,7 +80,7 @@ def test_mapping_params_override_changes_score(
     """Dict overrides must be accepted and change at least one finite score."""
     feat, _ = _feature_frame_from_prices(synthetic_prices_krw)
     base = score_fms_from_feature_frame(feat)
-    tweaked = dataclasses.replace(production_fms_score_params(), w_r3=0.05, w_r6=0.05)
+    tweaked = dataclasses.replace(production_fms_score_params(), w_r3=0.05, w_r4=0.05)
     alt = score_fms_from_feature_frame(feat, params=tweaked)
     finite = base.replace(-999.0, pd.NA).dropna()
     assert not finite.empty

@@ -5,6 +5,22 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.7] - 2026-07-20
+
+### 변경
+
+- **FMS 장기 수익률 6M→4M**
+  - `R_6M`(126d) → `R_4M`(84d); params `w_r4` / `gate_r4_w` / `level_r4_hi`
+  - 게이트 중심·quality·level: 복리 매핑 `(1+r)^(84/126)-1` (8%→≈5.26%, 50%→≈31.0%)
+  - `gate_r4_w`: √t 노이즈 스케일 (`×√(84/126)`); `w_r4` 유지 (횡단면 Z 불변)
+  - R² 창은 63d 유지 (`test_fms_horizon_map.py`)
+- **사전필터 Quarter/Half Up**
+  - Finviz 서버: `Quarter Up` + `Half Up` (구 Q+10%/H+20% 해제)
+  - 로컬: `Perf Quarter > 0`, `Perf Half > 0` (서버·로컬·문서 일치)
+  - **계약 하네스**: `test_prefilter_not_stricter_than_local` — 사전필터 exclusive floor ≤ 로컬
+    (배치 early cut이 로컬보다 엄격해지는 회귀 차단; SSOT in `universe_utils`)
+- 문서/UI/`config.FMS_FORMULA` / recalib 빌더·tune 스크립트 동기화
+
 ## [4.4.6] - 2026-07-20
 
 ### 변경

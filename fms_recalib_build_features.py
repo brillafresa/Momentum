@@ -2,7 +2,7 @@
 FMS 재보정을 위한 피처 테이블 생성 스크립트.
 
 - 입력: 최신 세션(fms_calibration_sessions/) 및 해당 스냅샷(fms_calibration_snapshots/)
-- 출력: fms_recalib_features.csv (R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank)
+- 출력: fms_recalib_features.csv (R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank)
 
 실행 전 UI에서 FMS 재보정 A/B 비교를 완료해 세션을 저장해 두어야 합니다.
 """
@@ -53,9 +53,11 @@ def main() -> None:
     prices_krw = prices_krw[cols].dropna(how="all")
 
     # 기본 수익률/지표 (기존 7개)
+    from core.fms import HORIZON_DAYS_4M
+
     r_1m = returns_pct(prices_krw, 21).rename("R_1M")
     r_3m = returns_pct(prices_krw, 63).rename("R_3M")
-    r_6m = returns_pct(prices_krw, 126).rename("R_6M")
+    r_4m = returns_pct(prices_krw, HORIZON_DAYS_4M).rename("R_4M")
     R2_3m = r_squared_3m(prices_krw).rename("R2_3M")
     vol20 = last_vol_annualized(prices_krw, 20).rename("Vol20_Ann")
 
@@ -176,7 +178,7 @@ def main() -> None:
         [
             r_1m,
             r_3m,
-            r_6m,
+            r_4m,
             R2_3m,
             above_ema50,
             vol20,

@@ -27,7 +27,7 @@ def main() -> None:
 
     sub = df.loc[
         present,
-        ["FMS", "R_3M", "R_6M", "R2_3M", "AboveEMA50", "Vol20(ann)", "MaxDD_Pct", "Filter_Status"],
+        ["FMS", "R_3M", "R_4M", "R2_3M", "AboveEMA50", "Vol20(ann)", "MaxDD_Pct", "Filter_Status"],
     ].copy()
     sub["Rank_in_watchlist"] = df["FMS"].rank(ascending=False, method="min").loc[sub.index].astype(int)
 

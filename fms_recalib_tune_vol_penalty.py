@@ -88,19 +88,23 @@ def fms_score_with_vol_params(df: pd.DataFrame, *, q_pct: float, hard_power: flo
     # --- simplified axes for vol-penalty shape search (not full production) ---
     r1 = df["R_1M"]
     r3 = df["R_3M"]
-    r6 = df["R_6M"]
+    r4 = df["R_4M"] if "R_4M" in df.columns else df["R_6M"]
     r2 = df["R2_3M"].clip(lower=0.0, upper=1.0)
     ema50 = df["AboveEMA50"].clip(lower=-0.5, upper=1.5)
     vol20 = df["Vol20_Ann"]
     maxdd = df["MaxDD_Pct"]
+
+    from core.fms import R_3M_GATE_CENTER, R_4M_GATE_CENTER, R_4M_QUALITY_MIN
 
     w_mid = smoothstep(r2, 0.70 - 0.02, 0.70 + 0.02)
     w_high = smoothstep(r2, 0.90 - 0.02, 0.90 + 0.02)
     r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
     r2_effect = r2_mult * r2
 
-    r2_gate = smoothstep(r3, 0.05 - 0.01, 0.05 + 0.01) * smoothstep(r6, 0.08 - 0.01, 0.08 + 0.01)
-    r2_level = smoothstep(r3, 0.05, 0.15) * smoothstep(r6, 0.08, 0.25)
+    r2_gate = smoothstep(r3, R_3M_GATE_CENTER - 0.01, R_3M_GATE_CENTER + 0.01) * smoothstep(
+        r4, R_4M_GATE_CENTER - 0.01, R_4M_GATE_CENTER + 0.01
+    )
+    r2_level = smoothstep(r3, R_3M_GATE_CENTER, 0.15) * smoothstep(r4, R_4M_GATE_CENTER, 0.25)
     r2_strength = r2_gate * (0.80 + 0.20 * r2_level)
     r2_term = z(pd.Series(r2_effect * r2_strength, index=df.index))
 
@@ -121,16 +125,16 @@ def fms_score_with_vol_params(df: pd.DataFrame, *, q_pct: float, hard_power: flo
     vol_penalty = z(pd.Series(v_combined, index=df.index))
 
     r3_term = z(r3)
-    r6_term = z(r6)
+    r4_term = z(r4)
     ema_term = z(ema50)
 
-    quality_mask = (r2 > 0.85) & (r3 > 0.3) & (r6 > 0.5)
+    quality_mask = (r2 > 0.85) & (r3 > 0.3) & (r4 > R_4M_QUALITY_MIN)
     r1_good = pd.Series(np.where(quality_mask, r1, 0.0), index=df.index)
     r1_bad = pd.Series(np.where(~quality_mask & (r1 > 0.3), r1, 0.0), index=df.index)
     r1_pos = z(r1_good)
     r1_neg = z(r1_bad)
 
-    pos = 0.45 * r3_term + 0.35 * r6_term + 0.5 * r2_term + 0.3 * ema_term + 0.15 * r1_pos
+    pos = 0.45 * r3_term + 0.35 * r4_term + 0.5 * r2_term + 0.3 * ema_term + 0.15 * r1_pos
     neg = 0.5 * dd_penalty + 0.35 * vol_penalty + 0.15 * r1_neg
     return pos - neg
 

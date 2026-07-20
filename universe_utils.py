@@ -19,6 +19,79 @@ KST = pytz.timezone("Asia/Seoul")
 MODE_FREE = "FREE"
 MODE_IRP = "IRP"
 
+# ---------------------------------------------------------------------------
+# US Finviz performance prefilter vs local post-filter
+# ---------------------------------------------------------------------------
+# Prefilter only shrinks the batch early. On the same Perf axes it MUST never
+# be stricter than the local post-filter (enforced by
+# ``tests/contract/test_prefilter_not_stricter_than_local.py``).
+#
+# Strictness model: exclusive floor ``f`` means "pass if return > f".
+# Higher floor ⇒ stricter. Finviz label → floor via ``finviz_perf_exclusive_floor``.
+
+LOCAL_PERF_QUARTER_GT = 0.0  # pass if Perf Quarter > this
+LOCAL_PERF_HALF_GT = 0.0     # pass if Perf Half > this
+
+FINVIZ_PERF_QUARTER_LABEL = "Quarter Up"
+FINVIZ_PERF_HALF_LABEL = "Half Up"
+
+# Known Finviz Performance labels → exclusive floor (return must exceed this).
+# "+N%" screens are treated as requiring >= N% ⇒ exclusive floor = N/100.
+_FINVIZ_PERF_EXCLUSIVE_FLOOR = {
+    "Quarter Up": 0.0,
+    "Quarter +5%": 0.05,
+    "Quarter +10%": 0.10,
+    "Half Up": 0.0,
+    "Half +5%": 0.05,
+    "Half +10%": 0.10,
+    "Half +20%": 0.20,
+    "Year Up": 0.0,
+    "Year +10%": 0.10,
+    "Year +20%": 0.20,
+}
+
+
+def finviz_perf_exclusive_floor(label: str) -> float:
+    """Map a Finviz Performance filter label to an exclusive return floor.
+
+    Raises ``KeyError`` for unknown labels so new Finviz options are registered
+    explicitly before use.
+    """
+    key = str(label).strip()
+    if key not in _FINVIZ_PERF_EXCLUSIVE_FLOOR:
+        raise KeyError(
+            f"Unknown Finviz Performance label {label!r}; "
+            f"add it to _FINVIZ_PERF_EXCLUSIVE_FLOOR with an exclusive floor"
+        )
+    return float(_FINVIZ_PERF_EXCLUSIVE_FLOOR[key])
+
+
+def us_finviz_performance_filters() -> dict:
+    """Server-side Finviz Performance filters used by ``update_universe_file``."""
+    return {
+        "Performance": FINVIZ_PERF_QUARTER_LABEL,
+        "Performance 2": FINVIZ_PERF_HALF_LABEL,
+    }
+
+
+def assert_prefilter_not_stricter_than_local() -> None:
+    """Raise ``AssertionError`` if Finviz Perf gates are stricter than local.
+
+    Invariant: for each axis, ``finviz_floor <= local_floor``.
+    """
+    q_f = finviz_perf_exclusive_floor(FINVIZ_PERF_QUARTER_LABEL)
+    h_f = finviz_perf_exclusive_floor(FINVIZ_PERF_HALF_LABEL)
+    if q_f > LOCAL_PERF_QUARTER_GT:
+        raise AssertionError(
+            f"Finviz Quarter prefilter floor {q_f} > local {LOCAL_PERF_QUARTER_GT} "
+            f"(label={FINVIZ_PERF_QUARTER_LABEL!r})"
+        )
+    if h_f > LOCAL_PERF_HALF_GT:
+        raise AssertionError(
+            f"Finviz Half prefilter floor {h_f} > local {LOCAL_PERF_HALF_GT} "
+            f"(label={FINVIZ_PERF_HALF_LABEL!r})"
+        )
+
 
 def normalize_finviz_tickers(tickers) -> list:
     """
@@ -168,7 +241,7 @@ def update_universe_file(progress_callback=None, status_callback=None):
     
     필터링 조건:
     - 유동성: 가격 $10 이상, 평균 거래량 300K 이상
-    - 추세 지속성: 분기 10% 이상, 반기 20% 이상 상승
+    - 추세 지속성: 분기(Quarter) Up(>0%), 반기(Half) Up(>0%)
     - 추세 안정성: 50일/200일 이동평균 위에 위치
     
     Args:
@@ -191,9 +264,8 @@ def update_universe_file(progress_callback=None, status_callback=None):
             'Price': 'Over $10',           # 가격 $10 이상 (기존 $5에서 강화)
             'Average Volume': 'Over 300K', # 평균 거래량 300,000주 이상 (기존 200K에서 강화)
 
-            # 2. 추세 지속성 필터 (신규 도입)
-            'Performance': 'Quarter +10%',       # 최소 3개월간 10% 이상 상승
-            'Performance 2': 'Half +20%',        # 최소 6개월간 20% 이상 상승
+            # 2. 추세 지속성 필터 (SSOT: us_finviz_performance_filters / LOCAL_PERF_*_GT)
+            **us_finviz_performance_filters(),
 
             # 3. 추세 안정성 필터 (핵심 신규 도입)
             '50-Day Simple Moving Average': 'Price above SMA50',  # 중기 상승 추세 확인
@@ -255,18 +327,18 @@ def update_universe_file(progress_callback=None, status_callback=None):
             if progress_callback:
                 progress_callback(0.45, f"📈 거래량 300K 이상 필터링: {len(df)}개 종목")
         
-        # 2. 추세 지속성 필터 (완화: 0% 이상)
+        # 2. 추세 지속성 필터 (서버와 동일 SSOT: LOCAL_PERF_*_GT 초과)
         if 'Perf Quarter' in df.columns:
             df['Perf_Quarter_clean'] = df['Perf Quarter'].str.replace('%', '').astype(float)
-            df = df[df['Perf_Quarter_clean'] >= 0.0]  # 3개월간 0% 이상 상승
+            df = df[df['Perf_Quarter_clean'] > LOCAL_PERF_QUARTER_GT]
             if progress_callback:
-                progress_callback(0.55, f"📊 분기 수익률 0% 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.55, f"📊 분기 수익률 >{LOCAL_PERF_QUARTER_GT:.0%} 필터링: {len(df)}개 종목")
         
         if 'Perf Half' in df.columns:
             df['Perf_Half_clean'] = df['Perf Half'].str.replace('%', '').astype(float)
-            df = df[df['Perf_Half_clean'] >= 0.0]  # 6개월간 0% 이상 상승
+            df = df[df['Perf_Half_clean'] > LOCAL_PERF_HALF_GT]
             if progress_callback:
-                progress_callback(0.65, f"📊 반기 수익률 0% 이상 필터링: {len(df)}개 종목")
+                progress_callback(0.65, f"📊 반기 수익률 >{LOCAL_PERF_HALF_GT:.0%} 필터링: {len(df)}개 종목")
         
         # 3. 추세 안정성 필터 (핵심 신규 도입)
         if 'SMA50' in df.columns:

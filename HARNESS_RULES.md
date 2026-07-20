@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-20 (KST) · 제품 버전 v4.4.6
+최종 갱신: 2026-07-20 (KST) · 제품 버전 v4.4.7
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.4.6)
+## 0. 현재 구축된 검증 하네스 (v4.4.7)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -21,7 +21,9 @@
 | `tests/unit/test_fms_scoring.py` | 순위 / `-999` / 결측 / yfinance 미호출 / 셔임 | `python -m pytest` |
 | `tests/unit/test_fms_recalib_parity.py` | recalib `f_current` = production FMS | (pytest 포함) |
 | `tests/unit/test_fms_params.py` | params 기본값=production / 오버라이드 / tune 위임 | (pytest 포함) |
+| `tests/unit/test_fms_horizon_map.py` | 6M→4M 복리/√t 매핑 · R²=63d 불변 | (pytest 포함) |
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
+| `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
 | `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/prefilter_band_sample_fms.csv` | Finviz 사전필터 경계 밴드 실측 증거 (LIVE 산출) | 수동 참고 |
@@ -41,10 +43,12 @@
 ### 2026-07-20 세션에서 확정된 FMS 검증 요약
 
 1. **순수 스코어 SSOT** = `core/fms.py` (가격 패널 → `compute_fms_snapshot`; 피처 테이블 → `score_fms_from_feature_frame`).
-2. **파라미터 SSOT** = `FmsScoreParams` / `production_fms_score_params()`; tune은 `params=` 주입만 (공식 포크 금지).
-3. **회귀**: 합성 패널 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)`.
-4. **리캘리브 드리프트 차단**: `f_current`/`f_proposed`는 core만 호출; `test_fms_recalib_parity` + `test_fms_params`.
-5. **사전필터**: 현행 Finviz 조건 유지(재론 없음); 실측 CSV는 `scripts/fixtures/`에 보존.
+2. **장기 축** = `R_4M`(84d); 게이트/quality는 복리 매핑, `gate_r4_w`는 √t; `w_r4`는 Z 불변으로 유지.
+3. **파라미터 SSOT** = `FmsScoreParams` / `production_fms_score_params()`; tune은 `params=` 주입만.
+4. **회귀**: 합성 패널 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)`.
+5. **사전필터**: Finviz `Quarter Up` / `Half Up` + 로컬 `Perf > 0` (구 Q+10/H+20 폐기).
+6. **사전필터 ≤ 로컬 불변식**: Finviz Perf 축 exclusive floor ≤ 로컬 floor (`test_prefilter_not_stricter_than_local`). 사전필터는 배치 시간 절약용 early cut일 뿐, 로컬보다 엄격하면 안 됨.
+7. **사전필터 실측 CSV** (`scripts/fixtures/prefilter_band_sample_fms.csv`): Q+10/H+20 시대 스냅샷 — 참고용.
 
 ### 가격 / 배당 정책 (확정)
 
@@ -105,6 +109,11 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
   - OHLC 없음(필터 스킵) vs OHLC 있음
   - 참조 분포 변경 시 점수 변동
 - `core/` 네트워크 import 금지는 `tests/contract/`로 강제한다.
+- **Finviz 사전필터 ≤ 로컬 후처리**: 사전필터는 배치 I/O를 줄이기 위한 early cut이다.
+  동일 Perf 축에서 Finviz exclusive floor가 로컬보다 높으면(더 엄격하면) 안 된다.
+  SSOT 상수·헬퍼: `universe_utils` (`FINVIZ_PERF_*_LABEL`, `LOCAL_PERF_*_GT`,
+  `assert_prefilter_not_stricter_than_local`). 계약:
+  `tests/contract/test_prefilter_not_stricter_than_local.py`.
 - **TDD 순서:** (1) 순수 I/O 인터페이스 정의 → (2) fixture·테스트 작성 → (3) 구현 → (4) 엔트리포인트 연결
 
 ### 2.5 FMS 단일 소스 오브 트루스

@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.4.6
+# KRW Momentum Radar - v4.4.7
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -96,7 +96,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.4.6", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.4.7", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -742,17 +742,17 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     
     st.markdown(f"""
     **개요:**  
-    - FMS는 **중·장기 우상향(3M/6M 수익률)**, **추세의 매끄러움(3M R²)**, **현재 위치(EMA50 대비)**,  
+    - FMS는 **중·장기 우상향(3M/4M 수익률)**, **추세의 매끄러움(3M R²)**, **현재 위치(EMA50 대비)**,  
       그리고 **건강한 추세에서의 최근 가속(조건부 1M 수익률)** 을 가산하고,  
       **깊은 드로우다운**, **과도한 20일 변동성**, **추세가 나쁜데 1M만 튄 이벤트성 급등**을 감점하는 **비선형 점수**입니다.
 
     **긍정 요인 (가산)**  
-    - **R_3M, R_6M**: 3개월/6개월 수익률이 높을수록 가산  
+    - **R_3M, R_4M**: 3개월/4개월 수익률이 높을수록 가산  
     - **R2_3M (3M R²)**:  
       - 0.7/0.9 같은 임계값에서 **계단식으로 점수가 튀지 않도록**, 경계 주변을 **부드러운 곡선(smoothstep)** 으로 전이  
-      - **추세상승 게이트(연속형)**: R²는 R_3M≈5%, R_6M≈8%를 기준으로 가산되되, 경계에서 **부드럽게 켜지고/꺼지도록** 적용  
+      - **추세상승 게이트(연속형)**: R²는 R_3M≈5%, R_4M≈5.3%를 기준으로 가산되되, 경계에서 **부드럽게 켜지고/꺼지도록** 적용  
     - **AboveEMA50**: 현재가가 EMA50 위에 있고, 충분히 위에 있을수록 가산  
-    - **조건부 R_1M (좋은 경우)**: 이미 R2_3M, R_3M, R_6M 이 모두 좋은 “건강한 우상향”인 종목에서만,  
+    - **조건부 R_1M (좋은 경우)**: 이미 R2_3M, R_3M, R_4M 이 모두 좋은 “건강한 우상향”인 종목에서만,  
       최근 1개월 수익률이 높으면 추가 가산 (견고한 추세의 가속으로 해석)
 
     **부정 요인 (감점)**  
@@ -762,7 +762,7 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     - **Vol20_Ann (20일 변동성)**:  
       - 중간 수준의 변동성까지는 완만한 패널티  
       - 상위 변동성 구간에서 제곱 항으로 급격히 강한 패널티 (과도하게 요동치는 종목 기피)  
-    - **조건부 R_1M (나쁜 경우)**: R2_3M, R_3M, R_6M 이 받쳐주지 않는데 1M 수익률만 높은 경우,  
+    - **조건부 R_1M (나쁜 경우)**: R2_3M, R_3M, R_4M 이 받쳐주지 않는데 1M 수익률만 높은 경우,  
       이벤트성 급등으로 보고 감점 요인으로 사용
 
     **추가 필터 (거래 적합성)**  
@@ -800,7 +800,7 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     각 기능별 최소 거래일 요구사항:
     - FMS 계산: R_3M(63일) + ΔFMS_5D(5일) = 68일
     - 거래 적합성 필터: 63일
-    - R_6M: 126일
+    - R_4M: 84일
     - 수익률-변동성 이동맵: rv_window + tail_days (최대 73일)
     - YTD Return: 연초부터 (1년 데이터면 충분)
     
@@ -820,8 +820,8 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     # 2. 거래 적합성 필터: 63일
     requirements.append(63)
     
-    # 3. R_6M: 126일
-    requirements.append(126)
+    # 3. R_4M: 84일
+    requirements.append(84)
     
     # 4. 수익률-변동성 이동맵: rv_window + tail_days
     requirements.append(rv_window + tail_days)
@@ -1101,7 +1101,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.4.6")
+st.title("⚡ KRW Momentum Radar v4.4.7")
 
 
 
@@ -1615,7 +1615,7 @@ st.subheader("모멘텀 테이블 (가속/추세/수익률)")
 disp = mom.copy()
 
 # FMS 컬럼 표시
-for c in ["R_1W","R_1M","R_3M","R_6M","R_YTD","AboveEMA50"]:
+for c in ["R_1W","R_1M","R_3M","R_4M","R_YTD","AboveEMA50"]:
     if c in disp:
         disp[c] = (disp[c]*100).round(2)
 
@@ -1678,7 +1678,7 @@ def generate_dynamic_column_order(fms_formula, available_columns):
     remaining_columns = [col for col in available_columns if col not in column_order]
     
     # 보조 변수들을 우선순위에 따라 정렬
-    priority_order = ['ΔFMS_1D', 'ΔFMS_5D', 'R_1W', 'R_6M', 'R_YTD']
+    priority_order = ['ΔFMS_1D', 'ΔFMS_5D', 'R_1W', 'R_4M', 'R_YTD']
     prioritized_remaining = []
     for priority_col in priority_order:
         if priority_col in remaining_columns:

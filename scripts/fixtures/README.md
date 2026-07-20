@@ -21,4 +21,4 @@ python -m pytest tests/unit/test_fms_scoring.py -q
 
 | File | Purpose |
 |------|---------|
-| `prefilter_band_sample_fms.csv` | 2026-07-17 Finviz 사전필터 경계 밴드 실측 FMS 샘플 (LIVE 분석 산출물). 생성: `python scripts/analyze_prefilter_impact.py --sample N` |
+| `prefilter_band_sample_fms.csv` | 2026-07-17 Finviz 사전필터 경계 밴드 실측 FMS 샘플 (**Q+10%/H+20% 시대** LIVE 산출물; 현행 정책은 Q/H Up). 재생성: `python scripts/analyze_prefilter_impact.py --sample N` |

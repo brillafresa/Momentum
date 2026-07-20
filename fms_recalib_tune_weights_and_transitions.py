@@ -138,7 +138,7 @@ def sample_params(rng: np.random.Generator, base: Dict[str, float]) -> Dict[str,
         p[key] = float(np.clip(val * mult, lo, hi))
 
     jitter("w_r3", 0.15, 0.15, 0.80)
-    jitter("w_r6", 0.15, 0.10, 0.70)
+    jitter("w_r4", 0.15, 0.10, 0.70)
     jitter("w_r2", 0.15, 0.10, 0.90)
     jitter("w_ema", 0.20, 0.05, 0.60)
     jitter("w_ema_shape", 0.20, 0.05, 0.60)
@@ -155,11 +155,11 @@ def sample_params(rng: np.random.Generator, base: Dict[str, float]) -> Dict[str,
     # Transition widths: sample in small continuous ranges
     p["r2_transition_w"] = float(rng.uniform(0.005, 0.05))
     p["gate_r3_w"] = float(rng.uniform(0.005, 0.03))
-    p["gate_r6_w"] = float(rng.uniform(0.005, 0.04))
+    p["gate_r4_w"] = float(rng.uniform(0.005, 0.04))
 
     # Ramp hi bounds (keep > low edges)
     p["level_r3_hi"] = float(rng.uniform(0.10, 0.25))
-    p["level_r6_hi"] = float(rng.uniform(0.18, 0.60))
+    p["level_r4_hi"] = float(rng.uniform(0.18, 0.60))
 
     # floor: keep close-ish to 0.8 but allow explore
     p["r2_floor"] = float(rng.uniform(0.60, 0.90))

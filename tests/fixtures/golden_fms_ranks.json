@@ -4,5 +4,5 @@
   "disqualified": {
     "CRASHY": -999.0
   },
-  "notes": "CRASHY is disqualified by tradeability filter (extreme TR + repeated downside)."
+  "notes": "CRASHY is disqualified by tradeability filter (extreme TR + repeated downside). Long-horizon feature is R_4M (84d) as of v4.4.7; rank order unchanged vs R_6M era on this fixture."
 }

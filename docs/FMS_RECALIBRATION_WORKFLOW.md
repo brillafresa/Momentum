@@ -210,7 +210,7 @@ python fms_recalib_build_features.py
 - 입력: 최신 세션(`fms_calibration_sessions/`) 및 해당 스냅샷(`fms_calibration_snapshots/`) 자동 사용
 - 출력:
   - `fms_recalib_features.csv`  
-    - 컬럼: `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
+    - 컬럼: `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
     - **rank**: 당신이 정렬한 최종 순서(정답셋)
 
 #### 2. FMS 수정 전 vs 수정 후 비교
@@ -272,7 +272,7 @@ python fms_recalib_rank_metrics.py
 >   - `fms_calibration_sessions/<session_id>.json` 안의 `final_ranking`은 내가 A/B 그래프 비교로 정한 “정답 순서”입니다.  
 >   - `fms_calibration_snapshots/<snapshot_id>/prices_krw.pkl`에는 그 시점의 KRW 환산 가격 데이터가 들어 있습니다.  
 >   - `fms_recalib_features.csv`에는 각 종목에 대해  
->     기본 피처 `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 와  
+>     기본 피처 `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 와  
 >     확장 피처 `R_10D, R_5D, EMA20_SLOPE_10D, EMA20_CURV_20D, UNDER_EMA20_DEPTH, UNDER_EMA20_DAYS, DOWN_STREAK_5D` 가 들어 있습니다.
 >   - `fms_calibration_sessions/<session_id>__baseline_metrics.json`에는 **해당 정답셋(features.csv) 기준**으로 계산된 current FMS의 baseline 지표/순위가 저장됩니다.
 > - 해야 할 일:  
@@ -281,7 +281,7 @@ python fms_recalib_rank_metrics.py
 >   2. 그 패턴을 바탕으로 FMS를 구성하는데 적절한 **설명 변수(지표)** 들과,  
 >      각 변수에 부여해야 하는 **가중/임계/비선형 요소(예: 구간별 처리, 제곱, clip)** 를 제안해 주세요.  
 >   3. 제안된 설명을 바탕으로, 사람이 이해 가능한 형태의 **FMS 수식 후보 1~2개**를 만들어 주세요.  
->      - 새 FMS는 오직 `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct` 같은 **그래프에서 유도 가능한 변수**만 사용해야 합니다.
+>      - 새 FMS는 오직 `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct` 같은 **그래프에서 유도 가능한 변수**만 사용해야 합니다.
 
 #### 2. 수식 평가·비교 요청용 프롬프트
 

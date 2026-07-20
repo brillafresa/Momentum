@@ -11,7 +11,7 @@ import numpy as np
 
 def main() -> None:
     df = pd.read_csv("fms_recalib_features.csv", index_col=0)
-    cols = ["R_1M", "R_3M", "R_6M", "R2_3M", "AboveEMA50", "Vol20_Ann", "MaxDD_Pct"]
+    cols = ["R_1M", "R_3M", "R_4M", "R2_3M", "AboveEMA50", "Vol20_Ann", "MaxDD_Pct"]
 
     n = len(df)
     third = max(1, n // 3)

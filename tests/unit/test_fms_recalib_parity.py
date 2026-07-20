@@ -30,7 +30,7 @@ def _feature_frame_from_prices(prices_krw: pd.DataFrame) -> pd.DataFrame:
         symbols=list(prices_krw.columns),
     )
     feat = snap.drop(columns=["FMS", "Filter_Status"], errors="ignore").copy()
-    feat["R_6M"] = returns_pct(prices_krw, 126)
+    feat["R_4M"] = returns_pct(prices_krw, 84)
     feat = feat.rename(columns={"Vol20(ann)": "Vol20_Ann"})
     return feat, snap["FMS"]
 

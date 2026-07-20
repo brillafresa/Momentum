@@ -32,8 +32,13 @@ from core.indicators import (  # noqa: F401
 from core.tradeability import calculate_tradeability_filters  # noqa: F401
 from core.fms import (  # noqa: F401
     FmsScoreParams,
+    HORIZON_DAYS_4M,
+    R_4M_GATE_CENTER,
+    R_4M_QUALITY_MIN,
     _mom_snapshot,
     compute_fms_snapshot,
+    gate_width_scale,
+    horizon_return_map,
     momentum_now_and_delta,
     production_fms_score_params,
     score_fms_from_feature_frame,

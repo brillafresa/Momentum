@@ -26,6 +26,46 @@ from core.indicators import (
 from core.tradeability import calculate_tradeability_filters
 
 
+# Calendar-aligned trading-day horizons (1M=21, 3M=63, 4M=84; legacy 6M=126).
+HORIZON_DAYS_1M = 21
+HORIZON_DAYS_3M = 63
+HORIZON_DAYS_4M = 84
+HORIZON_DAYS_LEGACY_6M = 126
+
+# Pre-4M gate/quality centers (used only to derive production 4M hurdles).
+_LEGACY_R6_GATE_CENTER = 0.08
+_LEGACY_R6_QUALITY_MIN = 0.50
+_LEGACY_GATE_R6_W = 0.006355
+_LEGACY_LEVEL_R6_HI = 0.430268
+
+
+def horizon_return_map(r: float, from_days: int, to_days: int) -> float:
+    """Map a simple return across horizons under constant compounding.
+
+    ``(1 + r_to) = (1 + r_from) ** (to_days / from_days)``.
+    """
+    if from_days <= 0 or to_days <= 0:
+        raise ValueError("from_days and to_days must be positive")
+    return float((1.0 + float(r)) ** (float(to_days) / float(from_days)) - 1.0)
+
+
+def gate_width_scale(width: float, from_days: int, to_days: int) -> float:
+    """Scale a smoothstep half-width with cumulative-return noise (∝ √T)."""
+    if from_days <= 0 or to_days <= 0:
+        raise ValueError("from_days and to_days must be positive")
+    return float(float(width) * (float(to_days) / float(from_days)) ** 0.5)
+
+
+# Production R_4M raw-return hurdles (compound / √t mapped from legacy 6M).
+R_4M_GATE_CENTER = horizon_return_map(
+    _LEGACY_R6_GATE_CENTER, HORIZON_DAYS_LEGACY_6M, HORIZON_DAYS_4M
+)
+R_4M_QUALITY_MIN = horizon_return_map(
+    _LEGACY_R6_QUALITY_MIN, HORIZON_DAYS_LEGACY_6M, HORIZON_DAYS_4M
+)
+R_3M_GATE_CENTER = 0.05  # unchanged (3M axis)
+
+
 @dataclass(frozen=True)
 class FmsScoreParams:
     """Tunable FMS weights / transition widths (reference-panel / feature-frame path).
@@ -36,7 +76,7 @@ class FmsScoreParams:
     """
 
     w_r3: float
-    w_r6: float
+    w_r4: float
     w_r2: float
     w_ema: float
     w_ema_shape: float
@@ -51,9 +91,9 @@ class FmsScoreParams:
     w_under_days: float
     r2_transition_w: float
     gate_r3_w: float
-    gate_r6_w: float
+    gate_r4_w: float
     level_r3_hi: float
-    level_r6_hi: float
+    level_r4_hi: float
     r2_floor: float
     w_ema_slope_base: float
     w_ema_curv_reward_base: float
@@ -78,7 +118,7 @@ def production_fms_score_params() -> FmsScoreParams:
     """Iteration 5 production weights / transition widths (reference-panel path)."""
     return FmsScoreParams(
         w_r3=0.46869,
-        w_r6=0.417409,
+        w_r4=0.417409,
         w_r2=0.505669,
         w_ema=0.323264,
         w_ema_shape=0.387801,
@@ -93,9 +133,13 @@ def production_fms_score_params() -> FmsScoreParams:
         w_under_days=0.097883,
         r2_transition_w=0.04552,
         gate_r3_w=0.019359,
-        gate_r6_w=0.006355,
+        gate_r4_w=gate_width_scale(
+            _LEGACY_GATE_R6_W, HORIZON_DAYS_LEGACY_6M, HORIZON_DAYS_4M
+        ),
         level_r3_hi=0.205305,
-        level_r6_hi=0.430268,
+        level_r4_hi=horizon_return_map(
+            _LEGACY_LEVEL_R6_HI, HORIZON_DAYS_LEGACY_6M, HORIZON_DAYS_4M
+        ),
         r2_floor=0.734629,
         w_ema_slope_base=0.7,
         w_ema_curv_reward_base=0.3,
@@ -109,7 +153,7 @@ def production_fms_score_params() -> FmsScoreParams:
 # Peer-set path (no external reference panel) primary weights — shared extended
 # axes still come from ``production_fms_score_params()``.
 _PEER_W_R3 = 0.519348
-_PEER_W_R6 = 0.430148
+_PEER_W_R4 = 0.430148
 _PEER_W_R2 = 0.519626
 _PEER_W_EMA = 0.398466
 _PEER_W_DD = 0.265056
@@ -162,6 +206,9 @@ def _normalize_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
         out["Vol20_Ann"] = out["Vol20(ann)"]
     if "Vol20_Ann" in out.columns and "Vol20(ann)" not in out.columns:
         out["Vol20(ann)"] = out["Vol20_Ann"]
+    # Legacy recalib CSVs may still label the long-horizon return R_6M.
+    if "R_6M" in out.columns and "R_4M" not in out.columns:
+        out["R_4M"] = out["R_6M"]
     return out
 
 
@@ -183,7 +230,7 @@ def score_fms_from_feature_frame(
     (or pass ``production_fms_score_params()``) for the shipped formula.
 
     Required columns (either ``Vol20_Ann`` or ``Vol20(ann)``):
-    ``R_1M``, ``R_3M``, ``R_6M``, ``R2_3M``, ``AboveEMA50``, ``Vol20_*``,
+    ``R_1M``, ``R_3M``, ``R_4M``, ``R2_3M``, ``AboveEMA50``, ``Vol20_*``,
     ``MaxDD_Pct``, ``R_10D``, ``R_5D``, ``EMA20_SLOPE_10D``, ``EMA20_CURV_20D``,
     ``UNDER_EMA20_DEPTH``, ``UNDER_EMA20_DAYS``, ``DOWN_STREAK_5D``.
     """
@@ -194,7 +241,7 @@ def score_fms_from_feature_frame(
     required = [
         "R_1M",
         "R_3M",
-        "R_6M",
+        "R_4M",
         "R2_3M",
         "AboveEMA50",
         "Vol20_Ann",
@@ -213,7 +260,7 @@ def score_fms_from_feature_frame(
 
     r_1m = feat["R_1M"].astype(float)
     r_3m = feat["R_3M"].astype(float)
-    r_6m = feat["R_6M"].astype(float)
+    r_4m = feat["R_4M"].astype(float)
     r2_3m = feat["R2_3M"].astype(float)
     above_ema50 = feat["AboveEMA50"].astype(float)
     vol20 = feat["Vol20_Ann"].astype(float)
@@ -228,21 +275,21 @@ def score_fms_from_feature_frame(
 
     ref_r_1m = ref["R_1M"].astype(float)
     ref_r_3m = ref["R_3M"].astype(float)
-    ref_r_6m = ref["R_6M"].astype(float)
+    ref_r_4m = ref["R_4M"].astype(float)
     ref_r2_3m = ref["R2_3M"].astype(float)
     ref_above = ref["AboveEMA50"].astype(float)
     ref_vol20 = ref["Vol20_Ann"].astype(float)
     ref_max_dd = ref["MaxDD_Pct"].astype(float)
 
-    r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
-        r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+    r2_gate = _smoothstep(r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
+        r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
     )
-    ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
-        ref_r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+    ref_r2_gate = _smoothstep(ref_r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
+        ref_r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
     )
-    r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
-    ref_r2_level = _smoothstep(ref_r_3m, 0.05, p.level_r3_hi) * _smoothstep(
-        ref_r_6m, 0.08, p.level_r6_hi
+    r2_level = _smoothstep(r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(r_4m, R_4M_GATE_CENTER, p.level_r4_hi)
+    ref_r2_level = _smoothstep(ref_r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(
+        ref_r_4m, R_4M_GATE_CENTER, p.level_r4_hi
     )
     r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
     ref_r2_strength = ref_r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * ref_r2_level)
@@ -289,13 +336,13 @@ def score_fms_from_feature_frame(
     vol_penalty = _z_ref(v_combined, v_ref_combined)
 
     r3_term = _z_ref(r_3m, ref_r_3m)
-    r6_term = _z_ref(r_6m, ref_r_6m)
+    r4_term = _z_ref(r_4m, ref_r_4m)
     ema_term = _z_ref(above_ema50, ref_above)
 
-    quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r_6m > 0.5)
+    quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r_4m > R_4M_QUALITY_MIN)
     r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
     r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
-    ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_6m > 0.5)
+    ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_4m > R_4M_QUALITY_MIN)
     ref_r1_good = pd.Series(np.where(ref_quality, ref_r_1m, 0.0), index=ref_r_1m.index)
     ref_r1_bad = pd.Series(
         np.where(~ref_quality & (ref_r_1m > 0.3), ref_r_1m, 0.0), index=ref_r_1m.index
@@ -324,7 +371,7 @@ def score_fms_from_feature_frame(
 
     pos = (
         p.w_r3 * r3_term
-        + p.w_r6 * r6_term
+        + p.w_r4 * r4_term
         + p.w_r2 * r2_term
         + p.w_ema * ema_term
         + p.w_ema_shape * ema_shape_term
@@ -480,7 +527,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         # 참조 데이터 기반 분포
         ref_r_1m = returns_pct(reference_prices_krw, 21)
         ref_r_3m = returns_pct(reference_prices_krw, 63)
-        ref_r_6m = returns_pct(reference_prices_krw, 126)
+        ref_r_4m = returns_pct(reference_prices_krw, HORIZON_DAYS_4M)
         ref_r2_3m = r_squared_3m(reference_prices_krw).rename('R2_3M')
         ref_above_ema50 = {}
         for c in reference_prices_krw.columns:
@@ -506,16 +553,16 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         ref_max_dd = pd.Series(ref_md, name='MaxDD_Pct')
 
         # R2 비선형 가중 + 추세상승 게이트 (평평한 그래프 억제)
-        r_6m = returns_pct(prices_krw, 126)
-        r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
-            r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        r_4m = returns_pct(prices_krw, HORIZON_DAYS_4M)
+        r2_gate = _smoothstep(r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
+            r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
         )
-        ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
-            ref_r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        ref_r2_gate = _smoothstep(ref_r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
+            ref_r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
         )
-        r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
-        ref_r2_level = _smoothstep(ref_r_3m, 0.05, p.level_r3_hi) * _smoothstep(
-            ref_r_6m, 0.08, p.level_r6_hi
+        r2_level = _smoothstep(r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(r_4m, R_4M_GATE_CENTER, p.level_r4_hi)
+        ref_r2_level = _smoothstep(ref_r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(
+            ref_r_4m, R_4M_GATE_CENTER, p.level_r4_hi
         )
         r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
         ref_r2_strength = ref_r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * ref_r2_level)
@@ -561,14 +608,14 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         # 주요 양의 축들
         r3_term = _z_ref(r_3m, ref_r_3m)
-        r6_term = _z_ref(returns_pct(prices_krw, 126), ref_r_6m)
+        r4_term = _z_ref(returns_pct(prices_krw, HORIZON_DAYS_4M), ref_r_4m)
         ema_term = _z_ref(above_ema50_ser, ref_above_ema50)
 
         # R1 조건부 처리
-        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5)
+        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, HORIZON_DAYS_4M) > R_4M_QUALITY_MIN)
         r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
         r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
-        ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_6m > 0.5)
+        ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_4m > R_4M_QUALITY_MIN)
         ref_r1_good = pd.Series(np.where(ref_quality, ref_r_1m, 0.0), index=ref_r_1m.index)
         ref_r1_bad = pd.Series(np.where(~ref_quality & (ref_r_1m > 0.3), ref_r_1m, 0.0), index=ref_r_1m.index)
         r1_pos = _z_ref(r1_good, ref_r1_good)
@@ -588,7 +635,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
         recent_break_raw = pd.Series(
-            np.where((r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, 126) > 0.5) & (r_10d < 0.0), -r_10d, 0.0),
+            np.where((r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, HORIZON_DAYS_4M) > R_4M_QUALITY_MIN) & (r_10d < 0.0), -r_10d, 0.0),
             index=r_10d.index,
         )
         recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)
@@ -598,7 +645,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         Pos = (
             p.w_r3 * r3_term
-            + p.w_r6 * r6_term
+            + p.w_r4 * r4_term
             + p.w_r2 * r2_term
             + p.w_ema * ema_term
             + p.w_ema_shape * ema_shape_term
@@ -618,11 +665,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
     else:
         # 참조 데이터가 없을 때: 현재 집합 분포 기준
-        r_6m = returns_pct(prices_krw, 126)
-        r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
-            r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        r_4m = returns_pct(prices_krw, HORIZON_DAYS_4M)
+        r2_gate = _smoothstep(r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
+            r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
         )
-        r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
+        r2_level = _smoothstep(r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(r_4m, R_4M_GATE_CENTER, p.level_r4_hi)
         r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
         w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
@@ -644,12 +691,12 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         v_combined = v_soft + v_hard
         vol_penalty = _z_peer(v_combined, disqualified_symbols)
 
-        r6_full = returns_pct(prices_krw, 126)
+        r4_full = returns_pct(prices_krw, HORIZON_DAYS_4M)
         r3_term = _z_peer(r_3m, disqualified_symbols)
-        r6_term = _z_peer(r6_full, disqualified_symbols)
+        r4_term = _z_peer(r4_full, disqualified_symbols)
         ema_term = _z_peer(above_ema50_ser, disqualified_symbols)
 
-        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r6_full > 0.5)
+        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r4_full > R_4M_QUALITY_MIN)
         r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
         r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
         r1_pos = _z_peer(r1_good, disqualified_symbols)
@@ -678,7 +725,7 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         Pos = (
             _PEER_W_R3 * r3_term
-            + _PEER_W_R6 * r6_term
+            + _PEER_W_R4 * r4_term
             + _PEER_W_R2 * r2_term
             + _PEER_W_EMA * ema_term
             + p.w_ema_shape * ema_shape_term
@@ -747,7 +794,7 @@ def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optio
     df['ΔFMS_1D'] = df['FMS'] - d1['FMS']
     df['ΔFMS_5D'] = df['FMS'] - d5['FMS']
     df['R_1W'] = returns_pct(prices_krw, 5)
-    df['R_6M'] = returns_pct(prices_krw, 126)
+    df['R_4M'] = returns_pct(prices_krw, HORIZON_DAYS_4M)
     df['R_YTD'] = ytd_return(prices_krw)
     return df.sort_values('FMS', ascending=False)
 

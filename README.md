@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.4.6**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.4.7**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
 
 ## 🌟 주요 기능
 
@@ -164,8 +164,8 @@ FMS는 **중·장기 추세·위치·매끄러움(긍정 요인)** 에 가중합
 \begin{aligned}
 \mathrm{FMS} =&\ 
 w_{R3}\,z(R_{3M})
-+ w_{R6}\,z(R_{6M})
-+ w_{R2}\,z\bigl(R_{2,\mathrm{eff}}(R_{3M}, R_{6M}, R2_{3M})\bigr)
++ w_{R4}\,z(R_{4M})
++ w_{R2}\,z\bigl(R_{2,\mathrm{eff}}(R_{3M}, R_{4M}, R2_{3M})\bigr)
 + w_{E50}\,z(E_{50}) \\
 &+ w_{\mathrm{shape}}\,z\bigl(\Phi_{\mathrm{EMA20}}(\mathrm{slope}_{20}, \mathrm{curv}_{20})\bigr)
 + w_{\mathrm{accel}}\,z\bigl(\Psi_{\mathrm{recent}}(R_{10D}, R_{5D})\bigr)
@@ -183,9 +183,9 @@ w_{DD}\,z(D_{DD})
 \end{aligned}
 \]
 
-- \(R_{1M}, R_{3M}, R_{6M}\): 1/3/6개월 수익률  
+- \(R_{1M}, R_{3M}, R_{4M}\): 1/3/4개월 수익률  
 - \(R2_{3M}\): 3개월 로그 수익률의 결정계수(R²),  
-  \(R_{2,\mathrm{eff}}\) 는 0.7/0.9 및 \(R_{3M}, R_{6M}\) 임계값(5%, 8%) 주변에서 smoothstep으로  
+  \(R_{2,\mathrm{eff}}\) 는 0.7/0.9 및 \(R_{3M}, R_{4M}\) 임계값(≈5%, ≈5.3%) 주변에서 smoothstep으로  
   부드럽게 가중·게이트한 비선형 함수입니다.
 - \(E_{50}\): EMA50 대비 현재가 상대 위치  
 - \(\Phi_{\mathrm{EMA20}}(\mathrm{slope}_{20}, \mathrm{curv}_{20})\):  
@@ -245,7 +245,7 @@ python fms_recalib_build_features.py
 
 - 최신 세션(`fms_calibration_sessions/`)과 해당 스냅샷(`fms_calibration_snapshots/`)을 읽어,
 - 각 종목에 대해 다음 컬럼을 가진 `fms_recalib_features.csv`를 생성합니다:
-  - `R_1M, R_3M, R_6M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
+  - `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
   - `rank`: 1단계에서 만든 정답 순서
 
 #### 2-2. FMS 수정 전/후 비교 (역전 비율)
@@ -308,7 +308,12 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.4.6 (현재)
+### v4.4.7 (현재)
+
+- **FMS 장기 축 6M→4M**: `R_4M`(84거래일); 게이트/quality는 복리·√t 매핑; 사전필터 Quarter/Half Up(>0%)
+- **골든 순위 유지** (합성 fixture): TREND_UP > MILD_UP > FLAT > CRASHY(-999)
+
+### v4.4.6
 
 - **tune `fms_score` → core 파라미터 주입**: `FmsScoreParams` / `production_fms_score_params()`; 탐색은 `score_fms_from_feature_frame(..., params=...)`만 사용; `test_fms_params.py`
 
