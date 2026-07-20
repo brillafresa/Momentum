@@ -10,7 +10,8 @@ See HARNESS_RULES.md §2.5 (single source of truth).
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from dataclasses import asdict, dataclass, fields
+from typing import Dict, List, Mapping, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -25,19 +26,104 @@ from core.indicators import (
 from core.tradeability import calculate_tradeability_filters
 
 
-# Iteration 5 production weights / transition widths (reference-panel path).
-_P_W_R3 = 0.46869
-_P_W_R6 = 0.417409
-_P_W_R2 = 0.505669
-_P_W_EMA = 0.323264
-_P_W_DD = 0.28298
-_P_W_VOL = 0.291973
-_P_R2_TRANSITION_W = 0.04552
-_P_GATE_R3_W = 0.019359
-_P_GATE_R6_W = 0.006355
-_P_LEVEL_R3_HI = 0.205305
-_P_LEVEL_R6_HI = 0.430268
-_P_R2_FLOOR = 0.734629
+@dataclass(frozen=True)
+class FmsScoreParams:
+    """Tunable FMS weights / transition widths (reference-panel / feature-frame path).
+
+    Production defaults live in ``production_fms_score_params()``. Offline Monte-Carlo
+    search (tune scripts) must call ``score_fms_from_feature_frame(..., params=...)``
+    instead of forking the formula body.
+    """
+
+    w_r3: float
+    w_r6: float
+    w_r2: float
+    w_ema: float
+    w_ema_shape: float
+    w_recent: float
+    w_r1_pos: float
+    w_dd: float
+    w_vol: float
+    w_r1_neg: float
+    w_break: float
+    w_down5: float
+    w_under_depth: float
+    w_under_days: float
+    r2_transition_w: float
+    gate_r3_w: float
+    gate_r6_w: float
+    level_r3_hi: float
+    level_r6_hi: float
+    r2_floor: float
+    w_ema_slope_base: float
+    w_ema_curv_reward_base: float
+    w_ema_curv_penalty_base: float
+    vol_q_pct: float
+    vol_hard_power: float
+    vol_hard_scale: float
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, float]) -> "FmsScoreParams":
+        """Build params from a dict, filling missing keys from production defaults."""
+        known = {f.name for f in fields(cls)}
+        unknown = set(mapping) - known
+        if unknown:
+            raise TypeError(f"unknown FmsScoreParams keys: {sorted(unknown)}")
+        base = asdict(production_fms_score_params())
+        base.update({k: float(v) for k, v in mapping.items()})
+        return cls(**base)
+
+
+def production_fms_score_params() -> FmsScoreParams:
+    """Iteration 5 production weights / transition widths (reference-panel path)."""
+    return FmsScoreParams(
+        w_r3=0.46869,
+        w_r6=0.417409,
+        w_r2=0.505669,
+        w_ema=0.323264,
+        w_ema_shape=0.387801,
+        w_recent=0.183015,
+        w_r1_pos=0.270777,
+        w_dd=0.28298,
+        w_vol=0.291973,
+        w_r1_neg=0.212139,
+        w_break=0.228832,
+        w_down5=0.186758,
+        w_under_depth=0.19622,
+        w_under_days=0.097883,
+        r2_transition_w=0.04552,
+        gate_r3_w=0.019359,
+        gate_r6_w=0.006355,
+        level_r3_hi=0.205305,
+        level_r6_hi=0.430268,
+        r2_floor=0.734629,
+        w_ema_slope_base=0.7,
+        w_ema_curv_reward_base=0.3,
+        w_ema_curv_penalty_base=0.3,
+        vol_q_pct=70.0,
+        vol_hard_power=1.5,
+        vol_hard_scale=1.0,
+    )
+
+
+# Peer-set path (no external reference panel) primary weights — shared extended
+# axes still come from ``production_fms_score_params()``.
+_PEER_W_R3 = 0.519348
+_PEER_W_R6 = 0.430148
+_PEER_W_R2 = 0.519626
+_PEER_W_EMA = 0.398466
+_PEER_W_DD = 0.265056
+_PEER_W_VOL = 0.218807
+
+
+def _resolve_fms_score_params(
+    params: Optional[Union[FmsScoreParams, Mapping[str, float]]] = None,
+) -> FmsScoreParams:
+    if params is None:
+        return production_fms_score_params()
+    if isinstance(params, FmsScoreParams):
+        return params
+    return FmsScoreParams.from_mapping(params)
 
 
 def _smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
@@ -84,6 +170,7 @@ def score_fms_from_feature_frame(
     *,
     reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set] = None,
+    params: Optional[Union[FmsScoreParams, Mapping[str, float]]] = None,
 ) -> pd.Series:
     """Score FMS from a precomputed feature table (recalib / harness entrypoint).
 
@@ -92,11 +179,15 @@ def score_fms_from_feature_frame(
     ``reference_features`` is omitted, the target frame is used as its own
     reference (same as ``reference_prices_krw=prices_krw`` in the app).
 
+    ``params`` overrides weights / transition widths for offline search. Omit
+    (or pass ``production_fms_score_params()``) for the shipped formula.
+
     Required columns (either ``Vol20_Ann`` or ``Vol20(ann)``):
     ``R_1M``, ``R_3M``, ``R_6M``, ``R2_3M``, ``AboveEMA50``, ``Vol20_*``,
     ``MaxDD_Pct``, ``R_10D``, ``R_5D``, ``EMA20_SLOPE_10D``, ``EMA20_CURV_20D``,
     ``UNDER_EMA20_DEPTH``, ``UNDER_EMA20_DAYS``, ``DOWN_STREAK_5D``.
     """
+    p = _resolve_fms_score_params(params)
     feat = _normalize_feature_frame(features)
     ref = _normalize_feature_frame(reference_features) if reference_features is not None else feat
 
@@ -143,28 +234,28 @@ def score_fms_from_feature_frame(
     ref_vol20 = ref["Vol20_Ann"].astype(float)
     ref_max_dd = ref["MaxDD_Pct"].astype(float)
 
-    r2_gate = _smoothstep(r_3m, 0.05 - _P_GATE_R3_W, 0.05 + _P_GATE_R3_W) * _smoothstep(
-        r_6m, 0.08 - _P_GATE_R6_W, 0.08 + _P_GATE_R6_W
+    r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
+        r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
     )
-    ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - _P_GATE_R3_W, 0.05 + _P_GATE_R3_W) * _smoothstep(
-        ref_r_6m, 0.08 - _P_GATE_R6_W, 0.08 + _P_GATE_R6_W
+    ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
+        ref_r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
     )
-    r2_level = _smoothstep(r_3m, 0.05, _P_LEVEL_R3_HI) * _smoothstep(r_6m, 0.08, _P_LEVEL_R6_HI)
-    ref_r2_level = _smoothstep(ref_r_3m, 0.05, _P_LEVEL_R3_HI) * _smoothstep(
-        ref_r_6m, 0.08, _P_LEVEL_R6_HI
+    r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
+    ref_r2_level = _smoothstep(ref_r_3m, 0.05, p.level_r3_hi) * _smoothstep(
+        ref_r_6m, 0.08, p.level_r6_hi
     )
-    r2_strength = r2_gate * (_P_R2_FLOOR + (1.0 - _P_R2_FLOOR) * r2_level)
-    ref_r2_strength = ref_r2_gate * (_P_R2_FLOOR + (1.0 - _P_R2_FLOOR) * ref_r2_level)
+    r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
+    ref_r2_strength = ref_r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * ref_r2_level)
 
     r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-    w_mid = _smoothstep(r2_clip, 0.70 - _P_R2_TRANSITION_W, 0.70 + _P_R2_TRANSITION_W)
-    w_high = _smoothstep(r2_clip, 0.90 - _P_R2_TRANSITION_W, 0.90 + _P_R2_TRANSITION_W)
+    w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
+    w_high = _smoothstep(r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
     r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
     r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
 
     ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
-    ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - _P_R2_TRANSITION_W, 0.70 + _P_R2_TRANSITION_W)
-    ref_w_high = _smoothstep(ref_r2_clip, 0.90 - _P_R2_TRANSITION_W, 0.90 + _P_R2_TRANSITION_W)
+    ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
+    ref_w_high = _smoothstep(ref_r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
     ref_r2_mult = 0.2 + 0.4 * ref_w_mid + 0.6 * ref_w_high
     ref_r2_eff_gated = pd.Series(
         (ref_r2_mult * ref_r2_clip) * ref_r2_strength, index=ref_r2_3m.index
@@ -184,14 +275,16 @@ def score_fms_from_feature_frame(
 
     v = vol20.clip(lower=0.0)
     v_ref = ref_vol20.clip(lower=0.0)
-    q_ref = np.nanpercentile(v_ref, 70) if not v_ref.dropna().empty else np.nan
+    q_ref = (
+        np.nanpercentile(v_ref, p.vol_q_pct) if not v_ref.dropna().empty else np.nan
+    )
     if np.isnan(q_ref):
-        q_ref = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
+        q_ref = np.nanpercentile(v, p.vol_q_pct) if not v.dropna().empty else 0.0
     v_soft = v.clip(upper=q_ref)
-    v_hard = (v - q_ref).clip(lower=0.0) ** 1.5
+    v_hard = p.vol_hard_scale * ((v - q_ref).clip(lower=0.0) ** p.vol_hard_power)
     v_combined = v_soft + v_hard
     v_ref_soft = v_ref.clip(upper=q_ref)
-    v_ref_hard = (v_ref - q_ref).clip(lower=0.0) ** 1.5
+    v_ref_hard = p.vol_hard_scale * ((v_ref - q_ref).clip(lower=0.0) ** p.vol_hard_power)
     v_ref_combined = v_ref_soft + v_ref_hard
     vol_penalty = _z_ref(v_combined, v_ref_combined)
 
@@ -213,7 +306,11 @@ def score_fms_from_feature_frame(
     slope_term = _z_peer(ema20_slope, disqualified_symbols)
     curv_penalty = _z_peer(ema20_curv.clip(lower=0.0), disqualified_symbols)
     curv_reward = _z_peer((-ema20_curv).clip(lower=0.0), disqualified_symbols)
-    ema_shape_term = 0.7 * slope_term + 0.3 * curv_reward - 0.3 * curv_penalty
+    ema_shape_term = (
+        p.w_ema_slope_base * slope_term
+        + p.w_ema_curv_reward_base * curv_reward
+        - p.w_ema_curv_penalty_base * curv_penalty
+    )
 
     recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
     recent_break_raw = pd.Series(
@@ -226,22 +323,22 @@ def score_fms_from_feature_frame(
     down5_term = _z_peer(down5.astype(float), disqualified_symbols)
 
     pos = (
-        _P_W_R3 * r3_term
-        + _P_W_R6 * r6_term
-        + _P_W_R2 * r2_term
-        + _P_W_EMA * ema_term
-        + 0.387801 * ema_shape_term
-        + 0.183015 * recent_accel_term
-        + 0.270777 * r1_pos
+        p.w_r3 * r3_term
+        + p.w_r6 * r6_term
+        + p.w_r2 * r2_term
+        + p.w_ema * ema_term
+        + p.w_ema_shape * ema_shape_term
+        + p.w_recent * recent_accel_term
+        + p.w_r1_pos * r1_pos
     )
     neg = (
-        _P_W_DD * dd_penalty
-        + _P_W_VOL * vol_penalty
-        + 0.212139 * r1_neg
-        + 0.228832 * recent_break_term
-        + 0.186758 * down5_term
-        + 0.19622 * depth_term
-        + 0.097883 * days_term
+        p.w_dd * dd_penalty
+        + p.w_vol * vol_penalty
+        + p.w_r1_neg * r1_neg
+        + p.w_break * recent_break_term
+        + p.w_down5 * down5_term
+        + p.w_under_depth * depth_term
+        + p.w_under_days * days_term
     )
     return (pos - neg).rename("FMS")
 
@@ -375,8 +472,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             if is_disq and sym in prices_krw.columns
         }
 
-    # Scoring helpers / weights: module-level ``_z_peer`` / ``_smoothstep`` / ``_P_*``
-    # (shared with ``score_fms_from_feature_frame`` — do not reintroduce local forks).
+    # Scoring helpers / weights: ``production_fms_score_params()`` shared with
+    # ``score_fms_from_feature_frame`` — do not reintroduce local weight forks.
+    p = production_fms_score_params()
 
     if reference_prices_krw is not None:
         # 참조 데이터 기반 분포
@@ -409,22 +507,28 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
 
         # R2 비선형 가중 + 추세상승 게이트 (평평한 그래프 억제)
         r_6m = returns_pct(prices_krw, 126)
-        r2_gate = _smoothstep(r_3m, 0.05 - _P_GATE_R3_W, 0.05 + _P_GATE_R3_W) * _smoothstep(r_6m, 0.08 - _P_GATE_R6_W, 0.08 + _P_GATE_R6_W)
-        ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - _P_GATE_R3_W, 0.05 + _P_GATE_R3_W) * _smoothstep(ref_r_6m, 0.08 - _P_GATE_R6_W, 0.08 + _P_GATE_R6_W)
-        r2_level = _smoothstep(r_3m, 0.05, _P_LEVEL_R3_HI) * _smoothstep(r_6m, 0.08, _P_LEVEL_R6_HI)
-        ref_r2_level = _smoothstep(ref_r_3m, 0.05, _P_LEVEL_R3_HI) * _smoothstep(ref_r_6m, 0.08, _P_LEVEL_R6_HI)
-        r2_strength = r2_gate * (_P_R2_FLOOR + (1.0 - _P_R2_FLOOR) * r2_level)
-        ref_r2_strength = ref_r2_gate * (_P_R2_FLOOR + (1.0 - _P_R2_FLOOR) * ref_r2_level)
+        r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
+            r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        )
+        ref_r2_gate = _smoothstep(ref_r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
+            ref_r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        )
+        r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
+        ref_r2_level = _smoothstep(ref_r_3m, 0.05, p.level_r3_hi) * _smoothstep(
+            ref_r_6m, 0.08, p.level_r6_hi
+        )
+        r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
+        ref_r2_strength = ref_r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * ref_r2_level)
 
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        w_mid = _smoothstep(r2_clip, 0.70 - _P_R2_TRANSITION_W, 0.70 + _P_R2_TRANSITION_W)
-        w_high = _smoothstep(r2_clip, 0.90 - _P_R2_TRANSITION_W, 0.90 + _P_R2_TRANSITION_W)
+        w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
+        w_high = _smoothstep(r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
         r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high  # 0.2 -> 0.6 -> 1.2
         r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
 
         ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
-        ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - _P_R2_TRANSITION_W, 0.70 + _P_R2_TRANSITION_W)
-        ref_w_high = _smoothstep(ref_r2_clip, 0.90 - _P_R2_TRANSITION_W, 0.90 + _P_R2_TRANSITION_W)
+        ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
+        ref_w_high = _smoothstep(ref_r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
         ref_r2_mult = 0.2 + 0.4 * ref_w_mid + 0.6 * ref_w_high
         ref_r2_eff_gated = pd.Series((ref_r2_mult * ref_r2_clip) * ref_r2_strength, index=ref_r2_3m.index)
 
@@ -444,14 +548,14 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         # Vol20 패널티 (참조 분포 기준)
         v = vol20.clip(lower=0.0)
         v_ref = ref_vol20.clip(lower=0.0)
-        q_ref = np.nanpercentile(v_ref, 70) if not v_ref.dropna().empty else np.nan
+        q_ref = np.nanpercentile(v_ref, p.vol_q_pct) if not v_ref.dropna().empty else np.nan
         if np.isnan(q_ref):
-            q_ref = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
+            q_ref = np.nanpercentile(v, p.vol_q_pct) if not v.dropna().empty else 0.0
         v_soft = v.clip(upper=q_ref)
-        v_hard = (v - q_ref).clip(lower=0.0) ** 1.5
+        v_hard = p.vol_hard_scale * ((v - q_ref).clip(lower=0.0) ** p.vol_hard_power)
         v_combined = v_soft + v_hard
         v_ref_soft = v_ref.clip(upper=q_ref)
-        v_ref_hard = (v_ref - q_ref).clip(lower=0.0) ** 1.5
+        v_ref_hard = p.vol_hard_scale * ((v_ref - q_ref).clip(lower=0.0) ** p.vol_hard_power)
         v_ref_combined = v_ref_soft + v_ref_hard
         vol_penalty = _z_ref(v_combined, v_ref_combined)
 
@@ -476,7 +580,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
         curv_penalty = _z_peer(curv_penalty_raw, disqualified_symbols)
         curv_reward = _z_peer(curv_reward_raw, disqualified_symbols)
-        ema_shape_term = 0.7 * slope_term + 0.3 * curv_reward - 0.3 * curv_penalty
+        ema_shape_term = (
+            p.w_ema_slope_base * slope_term
+            + p.w_ema_curv_reward_base * curv_reward
+            - p.w_ema_curv_penalty_base * curv_penalty
+        )
 
         recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
         recent_break_raw = pd.Series(
@@ -489,34 +597,36 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         down5_term = _z_peer(down_streak_5d_ser.astype(float), disqualified_symbols)
 
         Pos = (
-            _P_W_R3 * r3_term
-            + _P_W_R6 * r6_term
-            + _P_W_R2 * r2_term
-            + _P_W_EMA * ema_term
-            + 0.387801 * ema_shape_term
-            + 0.183015 * recent_accel_term
-            + 0.270777 * r1_pos
+            p.w_r3 * r3_term
+            + p.w_r6 * r6_term
+            + p.w_r2 * r2_term
+            + p.w_ema * ema_term
+            + p.w_ema_shape * ema_shape_term
+            + p.w_recent * recent_accel_term
+            + p.w_r1_pos * r1_pos
         )
         Neg = (
-            _P_W_DD * dd_penalty
-            + _P_W_VOL * vol_penalty
-            + 0.212139 * r1_neg
-            + 0.228832 * recent_break_term
-            + 0.186758 * down5_term
-            + 0.19622 * depth_term
-            + 0.097883 * days_term
+            p.w_dd * dd_penalty
+            + p.w_vol * vol_penalty
+            + p.w_r1_neg * r1_neg
+            + p.w_break * recent_break_term
+            + p.w_down5 * down5_term
+            + p.w_under_depth * depth_term
+            + p.w_under_days * days_term
         )
         FMS = Pos - Neg
 
     else:
         # 참조 데이터가 없을 때: 현재 집합 분포 기준
         r_6m = returns_pct(prices_krw, 126)
-        r2_gate = _smoothstep(r_3m, 0.05 - _P_GATE_R3_W, 0.05 + _P_GATE_R3_W) * _smoothstep(r_6m, 0.08 - _P_GATE_R6_W, 0.08 + _P_GATE_R6_W)
-        r2_level = _smoothstep(r_3m, 0.05, _P_LEVEL_R3_HI) * _smoothstep(r_6m, 0.08, _P_LEVEL_R6_HI)
-        r2_strength = r2_gate * (_P_R2_FLOOR + (1.0 - _P_R2_FLOOR) * r2_level)
+        r2_gate = _smoothstep(r_3m, 0.05 - p.gate_r3_w, 0.05 + p.gate_r3_w) * _smoothstep(
+            r_6m, 0.08 - p.gate_r6_w, 0.08 + p.gate_r6_w
+        )
+        r2_level = _smoothstep(r_3m, 0.05, p.level_r3_hi) * _smoothstep(r_6m, 0.08, p.level_r6_hi)
+        r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
         r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        w_mid = _smoothstep(r2_clip, 0.70 - _P_R2_TRANSITION_W, 0.70 + _P_R2_TRANSITION_W)
-        w_high = _smoothstep(r2_clip, 0.90 - _P_R2_TRANSITION_W, 0.90 + _P_R2_TRANSITION_W)
+        w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
+        w_high = _smoothstep(r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
         r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
         r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
         r2_term = _z_peer(r2_eff_gated, disqualified_symbols)
@@ -528,9 +638,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         dd_penalty = _z_peer(dd_combined, disqualified_symbols)
 
         v = vol20.clip(lower=0.0)
-        q = np.nanpercentile(v, 70) if not v.dropna().empty else 0.0
+        q = np.nanpercentile(v, p.vol_q_pct) if not v.dropna().empty else 0.0
         v_soft = v.clip(upper=q)
-        v_hard = (v - q).clip(lower=0.0) ** 1.5
+        v_hard = p.vol_hard_scale * ((v - q).clip(lower=0.0) ** p.vol_hard_power)
         v_combined = v_soft + v_hard
         vol_penalty = _z_peer(v_combined, disqualified_symbols)
 
@@ -550,7 +660,11 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
         curv_penalty = _z_peer(curv_penalty_raw, disqualified_symbols)
         curv_reward = _z_peer(curv_reward_raw, disqualified_symbols)
-        ema_shape_term = 0.7 * slope_term + 0.3 * curv_reward - 0.3 * curv_penalty
+        ema_shape_term = (
+            p.w_ema_slope_base * slope_term
+            + p.w_ema_curv_reward_base * curv_reward
+            - p.w_ema_curv_penalty_base * curv_penalty
+        )
 
         recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
         recent_break_raw = pd.Series(
@@ -563,22 +677,22 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         down5_term = _z_peer(down_streak_5d_ser.astype(float), disqualified_symbols)
 
         Pos = (
-            0.519348 * r3_term
-            + 0.430148 * r6_term
-            + 0.519626 * r2_term
-            + 0.398466 * ema_term
-            + 0.387801 * ema_shape_term
-            + 0.183015 * recent_accel_term
-            + 0.270777 * r1_pos
+            _PEER_W_R3 * r3_term
+            + _PEER_W_R6 * r6_term
+            + _PEER_W_R2 * r2_term
+            + _PEER_W_EMA * ema_term
+            + p.w_ema_shape * ema_shape_term
+            + p.w_recent * recent_accel_term
+            + p.w_r1_pos * r1_pos
         )
         Neg = (
-            0.265056 * dd_penalty
-            + 0.218807 * vol_penalty
-            + 0.212139 * r1_neg
-            + 0.228832 * recent_break_term
-            + 0.186758 * down5_term
-            + 0.19622 * depth_term
-            + 0.097883 * days_term
+            _PEER_W_DD * dd_penalty
+            + _PEER_W_VOL * vol_penalty
+            + p.w_r1_neg * r1_neg
+            + p.w_break * recent_break_term
+            + p.w_down5 * down5_term
+            + p.w_under_depth * depth_term
+            + p.w_under_days * days_term
         )
         FMS = Pos - Neg
 

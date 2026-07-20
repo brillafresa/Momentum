@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.4.5**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.4.6**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
 
 ## 🌟 주요 기능
 
@@ -308,7 +308,11 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.4.5 (현재)
+### v4.4.6 (현재)
+
+- **tune `fms_score` → core 파라미터 주입**: `FmsScoreParams` / `production_fms_score_params()`; 탐색은 `score_fms_from_feature_frame(..., params=...)`만 사용; `test_fms_params.py`
+
+### v4.4.5
 
 - **세부보기 selectbox 순정 복원**: 붙여넣기 UX용 CSS/JS·데모 스크립트 제거 (Streamlit 기본 동작)
 - **푸시 전 정리**: 사전필터 실측 CSV → `scripts/fixtures/`; FMS 모듈 내부 헬퍼/가중치 단일화

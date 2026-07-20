@@ -1,13 +1,20 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-18** (KST) · 제품 버전 **v4.4.5**
+> 최종 갱신: **2026-07-20** (KST) · 제품 버전 **v4.4.6**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-20 — v4.4.6 (tune fms_score → core params)
+
+- [x] `FmsScoreParams` / `production_fms_score_params()` (`core/fms.py`)
+- [x] `score_fms_from_feature_frame(..., params=...)` Mapping/dataclass 주입
+- [x] tune `fms_score` / `baseline_params` → core 위임 (공식 포크 삭제)
+- [x] 계약 테스트 `tests/unit/test_fms_params.py`
 
 ### 2026-07-18 — v4.4.5 (세부보기 selectbox 순정 복원 + 푸시 전 정리)
 
@@ -65,6 +72,7 @@
 
 | 자산 | 검증 내용 | 실행 |
 |------|-----------|------|
+| `tests/unit/test_fms_params.py` | params 기본값=production, 오버라이드, tune 위임 | (pytest 포함) |
 | `tests/unit/test_fms_recalib_parity.py` | recalib feature→score = production snapshot FMS | (pytest 포함) |
 | `tests/unit/test_fms_scoring.py` | 골든 순위, CRASHY→-999, OHLC 없음, NaN, yfinance 미호출 | `python -m pytest` |
 | `tests/unit/test_tradeability.py` | True Range 실격·엣지 + analysis_utils 셔임 | (pytest 포함) |
@@ -83,7 +91,7 @@
 ## 지금 당장 (Next — 우선순위 순)
 
 - [ ] (선택) `get_filter_debug_info` → `core/tradeability.py` 동반 이전
-- [ ] tune 스크립트 독립 `fms_score` 본체를 core 파라미터 주입형으로 통합 (또는 calibration/ 이동)
+- [ ] (선택) `fms_recalib_tune_vol_penalty.fms_score_with_vol_params` → core `vol_*` params 경로로 단순화 탐색 정리
 - [ ] `fms_recalib_*.py` → `calibration/` 점진 이동
 
 ---

@@ -5,6 +5,16 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.6] - 2026-07-20
+
+### 변경
+
+- **tune `fms_score` core 파라미터 주입형 통합**
+  - `FmsScoreParams` / `production_fms_score_params()` — production 가중치·전이폭 SSOT
+  - `score_fms_from_feature_frame(..., params=...)` — Mapping/dataclass 오버라이드 지원
+  - `fms_recalib_tune_weights_and_transitions.fms_score` / `baseline_params` → core 위임 (공식 포크 삭제)
+  - 계약 테스트 `tests/unit/test_fms_params.py` (default=production, 오버라이드 변화, tune 위임)
+
 ## [4.4.5] - 2026-07-18
 
 ### 변경

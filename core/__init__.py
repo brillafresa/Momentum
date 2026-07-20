@@ -4,7 +4,7 @@ Migrated so far:
 - ``core.indicators`` — ``ema``, ``returns_pct``, ``r_squared_3m``, ``ytd_return``, ``last_vol_annualized``
 - ``core.tradeability`` — ``calculate_tradeability_filters``
 - ``core.fms`` — ``compute_fms_snapshot``, ``momentum_now_and_delta``, ``_mom_snapshot``,
-  ``score_fms_from_feature_frame``
+  ``score_fms_from_feature_frame``, ``FmsScoreParams``, ``production_fms_score_params``
 
 Still in ``analysis_utils`` (transitional): downloads, filter debug, batch orchestration.
 
