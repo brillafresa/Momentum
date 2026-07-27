@@ -4,18 +4,18 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-20 (KST) · 제품 버전 v4.4.8
+최종 갱신: 2026-07-27 (KST) · 제품 버전 v4.4.9
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.4.8)
+## 0. 현재 구축된 검증 하네스 (v4.4.9)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
 | `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame` / `FmsScoreParams`) | production 스코어 + recalib/tune feature→score | fixture; `analysis_utils` 셔임 |
-| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` | `tests/unit/test_indicators.py` |
+| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` / `mask_non_positive_prices` | `tests/unit/test_indicators.py` |
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
 | `tests/unit/test_fms_scoring.py` | 순위 / `-999` / 결측 / yfinance 미호출 / 셔임 | `python -m pytest` |
@@ -25,6 +25,7 @@
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
+| `harness/diagnose_fms_outlier.py` | 단일 티커 FMS 극단치 원인 LIVE 점검 | `python -m harness.diagnose_fms_outlier SYMBOL` |
 | `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/prefilter_band_sample_fms.csv` | Finviz 사전필터 경계 밴드 실측 증거 (LIVE 산출) | 수동 참고 |
 | `scripts/analyze_prefilter_impact.py` | Finviz 사전필터 tightness 실측 (LIVE; 운영 미import) | `python scripts/analyze_prefilter_impact.py` |
@@ -69,6 +70,7 @@
 
 - **수익·FMS:** `auto_adjust=False` + **Adj Close** (배당 조정 총수익)
 - **거래적합성 OHLC:** raw High/Low/Close (실제 거래 변동성)
+- **비양수 Adj Close:** 스코어링 전 `mask_non_positive_prices`로 NaN 처리 (음수 히스토리→EMA/FMS 폭증 방지; v4.4.9)
 - UI 배당 분해 표시는 중기 선택 과제 (`TODO.md`)
 
 

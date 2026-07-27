@@ -30,6 +30,7 @@ import warnings
 from typing import Any, Dict
 from unittest.mock import patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -167,3 +168,43 @@ def test_nan_column_does_not_crash_scoring(
     )
     assert "ALL_NAN" in result.index
     assert "FMS" in result.columns
+
+
+def test_negative_adj_close_history_does_not_inflate_fms(
+    synthetic_prices_krw: pd.DataFrame,
+) -> None:
+    """Long negative Adj Close then a jump to normal prices must not explode FMS.
+
+    Regression for 381560.KS-style Yahoo glitches: EMA50 stays contaminated by
+    huge negative history, ``AboveEMA50`` becomes double-digit, and FMS jumps to
+    tens/hundreds while peers stay near single digits.
+    """
+    ref = synthetic_prices_krw.copy()
+    idx = ref.index
+    n = len(idx)
+    # ~80% deeply negative, then jump to a mild positive path near FLAT levels.
+    glitch = np.full(n, -250_000.0, dtype=float)
+    pos_n = max(40, n // 5)
+    glitch[-pos_n:] = np.linspace(18_000.0, 16_500.0, pos_n)
+    prices = ref.copy()
+    prices["NEG_GLITCH"] = glitch
+
+    # Unsanitized feature path would see AboveEMA50 >> 1; scoring must mask first.
+    result = momentum_now_and_delta(
+        prices,
+        reference_prices_krw=ref,
+        ohlc_data=None,
+        symbols=list(prices.columns),
+    )
+    assert "NEG_GLITCH" in result.index
+    above = result.loc["NEG_GLITCH", "AboveEMA50"]
+    fms = result.loc["NEG_GLITCH", "FMS"]
+    peer_max = float(result.drop(index="NEG_GLITCH")["FMS"].max())
+
+    # Either insufficient clean history (NaN) or a sane relative level — never 70+.
+    if pd.notna(above):
+        assert abs(float(above)) < 2.0
+    if pd.notna(fms):
+        assert float(fms) < max(20.0, peer_max + 5.0)
+    else:
+        assert pd.isna(fms)

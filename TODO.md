@@ -1,13 +1,19 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-20** (KST) · 제품 버전 **v4.4.8**
+> 최종 갱신: **2026-07-27** (KST) · 제품 버전 **v4.4.9**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-27 — v4.4.9 (음수 Adj Close FMS 폭증 수정)
+
+- [x] `mask_non_positive_prices` + `_mom_snapshot` / public FMS API 진입점 적용
+- [x] 회귀: `test_negative_adj_close_history_does_not_inflate_fms` (381560.KS류)
+- [x] 진단: `harness/diagnose_fms_outlier.py` (LIVE 수동 점검)
 
 ### 2026-07-20 — v4.4.8 (UI 세부보기 + 운영 데이터 커밋 SSOT)
 

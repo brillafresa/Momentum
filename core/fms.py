@@ -19,6 +19,7 @@ import pandas as pd
 from core.indicators import (
     ema,
     last_vol_annualized,
+    mask_non_positive_prices,
     returns_pct,
     r_squared_3m,
     ytd_return,
@@ -392,6 +393,12 @@ def score_fms_from_feature_frame(
 
 def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                   ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
+    # Yahoo Adj Close can contain long negative stretches (KR ETF glitches).
+    # Mask before EMA/return features so AboveEMA50 / FMS cannot explode.
+    prices_krw = mask_non_positive_prices(prices_krw)
+    if reference_prices_krw is not None:
+        reference_prices_krw = mask_non_positive_prices(reference_prices_krw)
+
     # 기본 수익률/지표
     r_1m = returns_pct(prices_krw, 21)
     r_3m = returns_pct(prices_krw, 63)
@@ -781,12 +788,18 @@ def compute_fms_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optiona
     (and optional OHLC / reference) DataFrames so tests can inject fixtures
     without calling yfinance.
     """
+    prices_krw = mask_non_positive_prices(prices_krw)
+    if reference_prices_krw is not None:
+        reference_prices_krw = mask_non_positive_prices(reference_prices_krw)
     return _mom_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
 
 
 def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                            ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
     """Compute FMS plus 1D/5D deltas from injected KRW price panels (no network I/O)."""
+    prices_krw = mask_non_positive_prices(prices_krw)
+    if reference_prices_krw is not None:
+        reference_prices_krw = mask_non_positive_prices(reference_prices_krw)
     now = compute_fms_snapshot(prices_krw, reference_prices_krw, ohlc_data, symbols)
     d1 = _mom_snapshot(prices_krw.iloc[:-1], reference_prices_krw, ohlc_data, symbols) if len(prices_krw) > 1 else now * np.nan
     d5 = _mom_snapshot(prices_krw.iloc[:-5], reference_prices_krw, ohlc_data, symbols) if len(prices_krw) > 5 else now * np.nan

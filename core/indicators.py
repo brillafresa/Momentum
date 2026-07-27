@@ -21,6 +21,20 @@ def ema(s: pd.Series, span: int) -> pd.Series:
     return s.ewm(span=span, adjust=False).mean()
 
 
+def mask_non_positive_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace non-positive prices with NaN (Yahoo Adj Close hygiene).
+
+    Some tickers (e.g. certain KR ETFs) publish large **negative** Adj Close
+    histories that later jump back to normal positives. Feeding those into EMA /
+    return features inflates ``AboveEMA50`` and FMS into triple-digit outliers.
+    Callers that score FMS must mask before indicator math.
+    """
+    if df is None or df.empty:
+        return df
+    out = df.astype(float).copy()
+    return out.where(out > 0.0)
+
+
 def returns_pct(df: pd.DataFrame, n: int) -> pd.Series:
     """Last-row n-period percentage return per column.
 

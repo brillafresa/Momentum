@@ -25,6 +25,7 @@ from yfinance.exceptions import YFRateLimitError
 from core.indicators import (  # noqa: F401
     ema,
     last_vol_annualized,
+    mask_non_positive_prices,
     returns_pct,
     r_squared_3m,
     ytd_return,

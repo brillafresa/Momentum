@@ -93,6 +93,19 @@ def test_r_squared_3m_non_positive_glitch_emits_no_log_warnings(
     assert out.notna().any()
 
 
+def test_mask_non_positive_prices_replaces_zeros_and_negatives() -> None:
+    """Adj Close hygiene helper must keep only strictly positive prices."""
+    from core.indicators import mask_non_positive_prices
+
+    idx = pd.date_range("2024-01-01", periods=4, freq="B")
+    raw = pd.DataFrame({"A": [100.0, -50.0, 0.0, 110.0]}, index=idx)
+    cleaned = mask_non_positive_prices(raw)
+    assert cleaned["A"].tolist()[0] == pytest.approx(100.0)
+    assert pd.isna(cleaned["A"].iloc[1])
+    assert pd.isna(cleaned["A"].iloc[2])
+    assert cleaned["A"].tolist()[3] == pytest.approx(110.0)
+
+
 def test_analysis_utils_reexports_core_indicators() -> None:
     """Transitional facade must expose the same callables as core."""
     import analysis_utils as au
@@ -101,3 +114,4 @@ def test_analysis_utils_reexports_core_indicators() -> None:
     assert au.ema is ci.ema
     assert au.returns_pct is ci.returns_pct
     assert au.r_squared_3m is ci.r_squared_3m
+    assert au.mask_non_positive_prices is ci.mask_non_positive_prices

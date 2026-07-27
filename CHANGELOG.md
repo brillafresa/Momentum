@@ -5,6 +5,16 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.4.9] - 2026-07-27
+
+### 수정
+
+- **음수 Adj Close 글리치로 FMS 폭증 방지** (`381560.KS` 등): Yahoo가 장기간 음수 Adj Close 후
+  정상 가격으로 점프하는 티커에서 EMA50이 오염되어 `AboveEMA50`·FMS가 수십~백 단위로 폭증하던
+  문제를 수정. 스코어링 진입점에서 비양수 가격을 NaN 마스킹 (`mask_non_positive_prices`)
+- 회귀 테스트: `test_negative_adj_close_history_does_not_inflate_fms`, `test_mask_non_positive_prices_*`
+- 진단 스크립트: `harness/diagnose_fms_outlier.py` (LIVE 수동 점검)
+
 ## [4.4.8] - 2026-07-20
 
 ### 변경
