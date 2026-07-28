@@ -7,11 +7,12 @@ KRW Momentum Radar - 배치 스캔 실행기 (CLI)
 analysis_utils의 단일 FMS/필터 로직으로 결과 산출 및 저장.
 
 사용법:
-    python run_scan_batch.py [--mode FREE|IRP]
-    
+    python run_scan_batch.py [--mode FREE|IRP] [--skip-universe-update]
+
     --mode: 계좌 모드 선택 (기본값: FREE)
-        FREE: 자유투자계좌 (미국+한국 주식)
+        FREE: 자유투자계좌 (미국+한국+홍콩 주식)
         IRP: 퇴직연금IRP (국내상장 ETF 전 종목)
+    --skip-universe-update: Finviz screened_universe.csv 갱신 생략 (기존 CSV 사용)
 """
 
 import os
@@ -39,19 +40,26 @@ def main() -> int:
     parser = argparse.ArgumentParser(description='KRW Momentum Radar 배치 스캔 실행기')
     parser.add_argument('--mode', type=str, choices=['FREE', 'IRP'], default='FREE',
                         help='계좌 모드 선택 (FREE: 자유투자계좌, IRP: 퇴직연금IRP)')
+    parser.add_argument(
+        '--skip-universe-update',
+        action='store_true',
+        help='FREE 모드에서 Finviz 유니버스 갱신 생략 (screened_universe.csv 등 기존 파일 사용)',
+    )
     args = parser.parse_args()
     
     mode = args.mode
     mode_label = "자유투자계좌" if mode == MODE_FREE else "퇴직연금IRP"
     print(f"[Batch] 🏦 모드: {mode_label} ({mode})")
     
-    # FREE 모드일 때만 Finviz 유니버스 업데이트 (IRP는 수동 관리 파일 사용)
-    if mode == MODE_FREE:
+    # FREE 모드: 기본은 Finviz 유니버스 갱신. --skip-universe-update 시 기존 CSV 사용.
+    if mode == MODE_FREE and not args.skip_universe_update:
         print("[Batch] 🔄 Updating universe with relaxed filters...")
         success, message, symbol_count = update_universe_file()
         print(f"[Batch] Universe update: {message} (symbols: {symbol_count})")
         if not success:
             return 1
+    elif mode == MODE_FREE:
+        print("[Batch] ℹ️ Skipping Finviz universe update; using existing universe CSV files.")
     else:
         print("[Batch] ℹ️ IRP 모드: 수동 관리 유니버스 파일 사용 (korean_etf_univers.csv)")
 

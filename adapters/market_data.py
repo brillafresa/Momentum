@@ -42,8 +42,10 @@ class MarketDataPort(Protocol):
         """Return (MultiIndex (symbol, field) High/Low/Close panel, missing tickers)."""
         ...
 
-    def get_fx(self, period_: str, interval: str) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        """Return (USDKRW, USDJPY, JPYKRW) series (may be empty)."""
+    def get_fx(
+        self, period_: str, interval: str
+    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+        """Return (USDKRW, USDJPY, JPYKRW, HKDKRW) series (may be empty)."""
         ...
 
 
@@ -81,7 +83,9 @@ class YFinanceAdapter:
     def get_ohlc(self, tickers: List[str], period_: str, interval: str) -> Tuple[pd.DataFrame, List[str]]:
         return download_ohlc_prices(tickers, **self._dl_kwargs(period_, interval))
 
-    def get_fx(self, period_: str, interval: str) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    def get_fx(
+        self, period_: str, interval: str
+    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
         return download_fx(period_, interval, initial_sleep=self.initial_sleep)
 
 
@@ -95,12 +99,14 @@ class FixtureAdapter:
         usdkrw: Optional[pd.Series] = None,
         usdjpy: Optional[pd.Series] = None,
         jpykrw: Optional[pd.Series] = None,
+        hkdkrw: Optional[pd.Series] = None,
     ) -> None:
         self._prices = prices
         self._ohlc = ohlc
         self._usdkrw = usdkrw if usdkrw is not None else pd.Series(dtype=float, name='USDKRW')
         self._usdjpy = usdjpy if usdjpy is not None else pd.Series(dtype=float, name='USDJPY')
         self._jpykrw = jpykrw if jpykrw is not None else pd.Series(dtype=float, name='JPYKRW')
+        self._hkdkrw = hkdkrw if hkdkrw is not None else pd.Series(dtype=float, name='HKDKRW')
 
     def get_prices(self, tickers: List[str], period_: str, interval: str) -> Tuple[pd.DataFrame, List[str]]:
         cols = [t for t in tickers if t in self._prices.columns]
@@ -117,5 +123,7 @@ class FixtureAdapter:
             return pd.DataFrame(), missing
         return self._ohlc.loc[:, cols].copy(), missing
 
-    def get_fx(self, period_: str, interval: str) -> Tuple[pd.Series, pd.Series, pd.Series]:
-        return self._usdkrw, self._usdjpy, self._jpykrw
+    def get_fx(
+        self, period_: str, interval: str
+    ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+        return self._usdkrw, self._usdjpy, self._jpykrw, self._hkdkrw

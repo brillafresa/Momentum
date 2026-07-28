@@ -6,12 +6,16 @@ Finviz를 사용한 유니버스 스크리닝 및 파일 관리 기능
 
 import os
 import re
+import math
 import time
 import glob
 import pandas as pd
 from datetime import datetime
 import pytz
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
+
+import requests
+from bs4 import BeautifulSoup
 
 KST = pytz.timezone("Asia/Seoul")
 
@@ -124,6 +128,154 @@ def normalize_finviz_tickers(tickers) -> list:
         else:
             fixed.append(t)
     return fixed
+
+
+FINVIZ_SCREENER_URL = "https://finviz.com/screener.ashx"
+FINVIZ_PAGE_SIZE = 20
+FINVIZ_CONNECT_TIMEOUT = 10
+FINVIZ_READ_TIMEOUT = 45
+FINVIZ_PAGE_MAX_RETRIES = 5
+FINVIZ_PAGE_INITIAL_BACKOFF = 2.0
+FINVIZ_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+}
+
+
+def parse_finviz_total_count(soup: BeautifulSoup) -> Optional[int]:
+    """Parse ``#1 / 1090 Total`` style result count from Finviz screener HTML."""
+    count_el = soup.find(class_="count-text")
+    if not count_el:
+        return None
+    text = count_el.get_text(" ", strip=True)
+    match = re.search(r"/\s*([0-9,]+)\s+Total", text, flags=re.I)
+    if not match:
+        match = re.search(r"of\s+([0-9,]+)", text, flags=re.I)
+    if not match:
+        return None
+    return int(match.group(1).replace(",", ""))
+
+
+def finviz_reported_page_count(soup: BeautifulSoup) -> int:
+    """Return Finviz ``pageSelect`` option count (may over-report vs total rows)."""
+    try:
+        return len(soup.find(id="pageSelect").find_all("option"))
+    except Exception:
+        return 0
+
+
+def finviz_effective_page_count(soup: BeautifulSoup, page_size: int = FINVIZ_PAGE_SIZE) -> int:
+    """Cap pageSelect by ceil(total/page_size) when Finviz exposes a total count."""
+    reported = finviz_reported_page_count(soup)
+    total = parse_finviz_total_count(soup)
+    if total is not None:
+        needed = max(1, math.ceil(total / page_size))
+        if reported:
+            return min(reported, needed)
+        return needed
+    return reported
+
+
+def fetch_finviz_screener_page(
+    params: dict,
+    *,
+    max_retries: int = FINVIZ_PAGE_MAX_RETRIES,
+    initial_backoff: float = FINVIZ_PAGE_INITIAL_BACKOFF,
+) -> BeautifulSoup:
+    """Fetch one Finviz screener page with connect/read timeouts and retries."""
+    delay = max(float(initial_backoff), 0.0)
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.get(
+                FINVIZ_SCREENER_URL,
+                params=params,
+                headers=FINVIZ_HTTP_HEADERS,
+                timeout=(FINVIZ_CONNECT_TIMEOUT, FINVIZ_READ_TIMEOUT),
+            )
+            response.raise_for_status()
+            return BeautifulSoup(response.text, "lxml")
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as err:
+            last_err = err
+            if attempt >= max_retries:
+                break
+            print(
+                f"[Universe] Finviz page fetch retry {attempt}/{max_retries} "
+                f"(r={params.get('r', 1)}): {err}"
+            )
+            time.sleep(delay)
+            delay = min(delay * 2, 60.0)
+    raise RuntimeError(f"Finviz page fetch failed after {max_retries} retries: {last_err}")
+
+
+def finviz_screener_view_resilient(
+    overview: Any,
+    order: str = "Ticker",
+    ascend: bool = True,
+    verbose: int = 1,
+    sleep_sec: float = 1.25,
+    allow_partial: bool = True,
+) -> pd.DataFrame:
+    """Paginated Finviz screener with per-page timeout, retry, and partial fallback.
+
+    finvizfinance's ``screener_view`` uses a single timeout and no per-page retry.
+    After dozens of sequential requests Finviz may stall on the final page; this
+    wrapper retries that page and can return partial results instead of hanging.
+    """
+    from finvizfinance.constants import order_dict
+    from finvizfinance.util import progress_bar
+
+    if order not in order_dict:
+        order_keys = list(order_dict.keys())
+        raise ValueError(f"Invalid order {order!r}. Possible order: {order_keys}")
+
+    overview.request_params["o"] = ("" if ascend else "-") + order_dict[order]
+    params = dict(overview.request_params)
+
+    soup = fetch_finviz_screener_page(params)
+    page_count = finviz_effective_page_count(soup, page_size=overview.size)
+    if page_count <= 0:
+        overview.reset()
+        return pd.DataFrame()
+
+    df = overview._parse_table(None, soup, limit=100_000)
+    if page_count <= 1 or len(df) < overview.size:
+        overview.reset()
+        return df
+
+    for page_idx in range(1, page_count):
+        if sleep_sec > 0:
+            time.sleep(sleep_sec)
+        if verbose == 1:
+            progress_bar(page_idx, page_count)
+
+        params["r"] = page_idx * overview.size + 1
+        try:
+            soup = fetch_finviz_screener_page(params)
+        except RuntimeError as err:
+            if allow_partial and not df.empty:
+                print(
+                    f"[Universe] Finviz page {page_idx + 1}/{page_count} failed; "
+                    f"using partial results ({len(df)} rows). Cause: {err}"
+                )
+                overview.reset()
+                return df
+            raise
+
+        prev_len = len(df)
+        df = overview._parse_table(df, soup, limit=100_000)
+        added = len(df) - prev_len
+        if added <= 0:
+            if verbose:
+                print(f"\n[Universe] Finviz early stop at page {page_idx + 1}: empty page")
+            break
+        if added < overview.size:
+            break
+
+    overview.reset()
+    return df
 
 
 def is_leveraged_or_inverse_etf(ticker: str, name: str = "") -> bool:
@@ -292,7 +444,7 @@ def update_universe_file(progress_callback=None, status_callback=None):
         
         # Finviz API 호출 (블로킹 작업)
         # 실제 진행률은 콘솔에 [Info] loading page [####------] 형태로 표시됩니다.
-        df = foverview.screener_view()
+        df = finviz_screener_view_resilient(foverview, verbose=1, sleep_sec=1.25)
 
         # Repair spurious leading 'A' on tickers (finvizfinance/Finviz HTML parse shift)
         if not df.empty and 'Ticker' in df.columns:
@@ -411,6 +563,7 @@ def load_universe_file(mode: str = MODE_FREE):
     Args:
         mode (str): 계좌 모드 ("FREE" 또는 "IRP", 기본값: "FREE")
         - FREE: screened_universe.csv (미국) + korean_universe.csv (한국)
+               + hongkong_universe.csv (홍콩, HSI/HSCEI/HSTECH 합집합, 수동 관리)
         - IRP: korean_etf_univers.csv (국내상장 ETF 전 종목)
     
     Returns:
@@ -430,6 +583,7 @@ def load_universe_file(mode: str = MODE_FREE):
             # FREE 모드: 미국 + 한국 유니버스 병합
             usa_symbols = []
             kor_symbols = []
+            hkg_symbols = []
             
             # 미국 유니버스 로드
             if os.path.exists('screened_universe.csv'):
@@ -440,13 +594,26 @@ def load_universe_file(mode: str = MODE_FREE):
             if os.path.exists('korean_universe.csv'):
                 kor_df = pd.read_csv('korean_universe.csv')
                 kor_symbols = kor_df['Symbol'].tolist()
+
+            # 홍콩 유니버스 로드 (FREE 모드 전용)
+            if os.path.exists('hongkong_universe.csv'):
+                hkg_df = pd.read_csv('hongkong_universe.csv')
+                if 'Symbol' in hkg_df.columns:
+                    hkg_symbols = hkg_df['Symbol'].tolist()
             
-            all_symbols = usa_symbols + kor_symbols
+            # 유지: USA→KR→HK 순서 우선, 중복 제거는 안정적으로 수행
+            all_symbols = usa_symbols + kor_symbols + hkg_symbols
+            all_symbols = list(dict.fromkeys(all_symbols))
             
             if not all_symbols:
                 return False, [], "유니버스 파일이 없습니다."
             
-            return True, all_symbols, f"유니버스 로드 완료: 미국 {len(usa_symbols)}개 + 한국 {len(kor_symbols)}개 = 총 {len(all_symbols)}개 종목"
+            return (
+                True,
+                all_symbols,
+                "유니버스 로드 완료: "
+                f"미국 {len(usa_symbols)}개 + 한국 {len(kor_symbols)}개 + 홍콩 {len(hkg_symbols)}개 = 총 {len(all_symbols)}개 종목",
+            )
         
     except Exception as e:
         return False, [], f"유니버스 파일 로드 중 오류: {str(e)}"

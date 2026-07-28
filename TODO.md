@@ -1,13 +1,23 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-27** (KST) · 제품 버전 **v4.4.9**
+> 최종 갱신: **2026-07-28** (KST) · 제품 버전 **v4.5.0**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-28 — v4.5.0 (FREE 홍콩 유니버스 + Finviz 페이지네이션 복원력)
+
+- [x] `hongkong_universe.csv` — HSI/HSCEI/HSTECH 합집합 108종 (수동 관리)
+- [x] FREE 유니버스 병합: screened + korean + hongkong; IRP 불변
+- [x] `.HK → HKG` classify; HKD→KRW FX (`HKDKRW = USDKRW / HKDUSD`)
+- [x] `finviz_screener_view_resilient()` — 마지막 페이지 hang/fix; 계약 테스트
+- [x] 회귀: `test_hk_*`, `test_finviz_screener_pagination`, `test_market_data_port` 4-tuple FX
+- [x] 유지보수: `scripts/build_hk_universe_from_indices.py` (LIVE 재생성; 운영 미import)
+- [x] 배치: `--skip-universe-update` (개발용 Finviz 갱신 생략)
 
 ### 2026-07-27 — v4.4.9 (음수 Adj Close FMS 폭증 수정)
 
@@ -59,7 +69,12 @@
 | `tests/unit/test_indicators.py` | `core.indicators` EMA/returns/R² + analysis_utils 셔임 | (pytest 포함) |
 | `tests/unit/test_yf_rate_limit_retry.py` | 429/`shared._ERRORS` 재시도 | (pytest 포함) |
 | `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫글자 중복 보정 | (pytest 포함) |
-| `tests/unit/test_market_data_port.py` | FixtureAdapter 배치 = 직접 스코어링, no-network | (pytest 포함) |
+| `tests/unit/test_market_data_port.py` | FixtureAdapter 배치 = 직접 스코어링, 4-tuple FX, no-network | (pytest 포함) |
+| `tests/unit/test_hk_classify.py` | `.HK → HKG` classify | (pytest 포함) |
+| `tests/unit/test_hk_fx_conversion.py` | HKD→KRW FX 경로 | (pytest 포함) |
+| `tests/unit/test_hk_universe_loader.py` | FREE HK 병합 / IRP 제외 | (pytest 포함) |
+| `tests/unit/test_finviz_screener_pagination.py` | Finviz 페이지 재시도·partial fallback | (pytest 포함) |
+| `scripts/build_hk_universe_from_indices.py` | HK 유니버스 LIVE 재생성 (운영 미import) | `python scripts/build_hk_universe_from_indices.py` |
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | fixture → FMS 테이블 육안 확인 | `python -m harness.run_fms_snapshot` |
 

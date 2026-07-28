@@ -5,6 +5,29 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.5.0] - 2026-07-28
+
+### 추가
+
+- **FREE 모드 홍콩 유니버스**: `hongkong_universe.csv` (HSI·HSCEI·HSTECH 구성종목 합집합, 108종, 수동 관리)
+  - `load_universe_file(FREE)` = screened_universe + korean_universe + hongkong_universe
+  - IRP 모드는 변경 없음 (국내상장 ETF만)
+- **홍콩 KRW 환산 경로**: `classify` `.HK → HKG`; `HKDKRW = USDKRW / HKDUSD` (`HKD=X`)
+  - `build_prices_krw` / 배치 FMS / `MarketDataPort.get_fx()` 4-tuple FX 일관 적용
+- **Finviz 페이지네이션 복원력**: `finviz_screener_view_resilient()` — 페이지별 타임아웃·재시도·부분 결과 fallback
+  - 마지막 페이지(54/55) hang 회귀 방지; `update_universe_file` 경로 교체
+- **배치 CLI**: `--skip-universe-update` (개발·재스캔용; Finviz 갱신 생략)
+- **유니버스 재생성 스크립트**: `scripts/build_hk_universe_from_indices.py` (LIVE; 운영 미import)
+
+### 검증 하네스
+
+- `tests/unit/test_hk_classify.py` — `.HK → HKG`
+- `tests/unit/test_hk_fx_conversion.py` — HKD→KRW FX 경로
+- `tests/unit/test_hk_universe_loader.py` — FREE 병합 / IRP 제외
+- `tests/unit/test_finviz_screener_pagination.py` — Finviz 재시도·partial fallback
+- `tests/unit/test_market_data_port.py` — 4-tuple FX 계약
+- `tests/contract/test_prefilter_not_stricter_than_local.py` — `finviz_screener_view_resilient` 사용 계약
+
 ## [4.4.9] - 2026-07-27
 
 ### 수정

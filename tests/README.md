@@ -20,9 +20,14 @@ tests/
 │   ├── test_tradeability.py
 │   ├── test_market_data_port.py
 │   ├── test_yf_rate_limit_retry.py
-│   └── test_finviz_ticker_normalize.py
+│   ├── test_finviz_ticker_normalize.py
+│   ├── test_finviz_screener_pagination.py
+│   ├── test_hk_classify.py
+│   ├── test_hk_fx_conversion.py
+│   └── test_hk_universe_loader.py
 └── contract/            # 아키텍처 계약 (예: core 네트워크 금지)
-    └── test_no_network_in_core.py
+    ├── test_no_network_in_core.py
+    └── test_prefilter_not_stricter_than_local.py
 ```
 
 ## 실행

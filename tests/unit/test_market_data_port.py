@@ -53,8 +53,8 @@ def test_fixture_adapter_returns_requested_columns_and_missing(
 
 def test_fixture_adapter_fx_defaults_to_empty(fixture_adapter: FixtureAdapter) -> None:
     """Without FX fixtures the port returns empty series (panel already in KRW)."""
-    usdkrw, usdjpy, jpykrw = fixture_adapter.get_fx("1y", "1d")
-    assert usdkrw.empty and usdjpy.empty and jpykrw.empty
+    usdkrw, usdjpy, jpykrw, hkdkrw = fixture_adapter.get_fx("1y", "1d")
+    assert usdkrw.empty and usdjpy.empty and jpykrw.empty and hkdkrw.empty
 
 
 def test_batch_with_fixture_adapter_matches_direct_scoring_offline(
@@ -104,7 +104,12 @@ def test_yfinance_adapter_delegates_with_configured_settings() -> None:
         adapter.get_ohlc(["AAPL"], "1y", "1d")
     assert mock_ohlc.call_args.kwargs["chunk"] == 7
 
-    fx_sentinel = (pd.Series(dtype=float), pd.Series(dtype=float), pd.Series(dtype=float))
+    fx_sentinel = (
+        pd.Series(dtype=float),
+        pd.Series(dtype=float),
+        pd.Series(dtype=float),
+        pd.Series(dtype=float),
+    )
     with patch("adapters.market_data.download_fx", return_value=fx_sentinel) as mock_fx:
         adapter.get_fx("1y", "1d")
     assert mock_fx.call_args.args[0] == "1y"

@@ -66,6 +66,8 @@ def classify(sym: str) -> str:
     # - KOSDAQ: .KQ
     if s.endswith('.KS') or s.endswith('.KQ'):
         return 'KOR'
+    if s.endswith('.HK'):
+        return 'HKG'
     if s.endswith('.T'):
         return 'JPN'
     return 'USA'
@@ -364,11 +366,14 @@ def download_fx(
     period_: str = '1y',
     interval: str = '1d',
     initial_sleep: float = YF_RATE_LIMIT_INITIAL_SLEEP,
-) -> Tuple[pd.Series, pd.Series, pd.Series]:
+) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     fx_krw, _ = download_prices(['KRW=X'], period_, interval, initial_sleep=initial_sleep, chunk_sleep=0.0)
     fx_jpy, _ = download_prices(['JPY=X'], period_, interval, initial_sleep=initial_sleep, chunk_sleep=0.0)
+    fx_hkd, _ = download_prices(['HKD=X'], period_, interval, initial_sleep=initial_sleep, chunk_sleep=0.0)
     usdkrw = fx_krw.iloc[:, 0].rename('USDKRW') if not fx_krw.empty else pd.Series(dtype=float, name='USDKRW')
     usdjpy = fx_jpy.iloc[:, 0].rename('USDJPY') if not fx_jpy.empty else pd.Series(dtype=float, name='USDJPY')
+    hkdusd = fx_hkd.iloc[:, 0].rename('HKDUSD') if not fx_hkd.empty else pd.Series(dtype=float, name='HKDUSD')
+
     if not usdkrw.empty and not usdjpy.empty:
         start = min(usdkrw.index.min(), usdjpy.index.min())
         end = max(usdkrw.index.max(), usdjpy.index.max())
@@ -378,7 +383,18 @@ def download_fx(
         jpykrw = (usdkrw / usdjpy).rename('JPYKRW')
     else:
         jpykrw = pd.Series(dtype=float, name='JPYKRW')
-    return usdkrw, usdjpy, jpykrw
+
+    if not usdkrw.empty and not hkdusd.empty:
+        start = min(usdkrw.index.min(), hkdusd.index.min())
+        end = max(usdkrw.index.max(), hkdusd.index.max())
+        idx = pd.date_range(start, end, freq='B')
+        usdkrw_h = usdkrw.reindex(idx).ffill()
+        hkdusd_h = hkdusd.reindex(idx).ffill()
+        hkdkrw = (usdkrw_h / hkdusd_h).rename('HKDKRW')
+    else:
+        hkdkrw = pd.Series(dtype=float, name='HKDKRW')
+
+    return usdkrw, usdjpy, jpykrw, hkdkrw
 
 
 def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
@@ -411,10 +427,13 @@ def build_prices_krw_from_symbols(period_key: str, symbols: List[str]) -> pd.Dat
     usd_symbols = [str(s) for s in symbols if classify(s) == 'USA']
     krw_symbols = [str(s) for s in symbols if classify(s) == 'KOR']
     jpy_symbols = [str(s) for s in symbols if classify(s) == 'JPN']
-    usdkrw, _, jpykrw = download_fx(yf_period, interval)
+    hkg_symbols = [str(s) for s in symbols if classify(s) == 'HKG']
+
+    usdkrw, _, jpykrw, hkdkrw = download_fx(yf_period, interval)
     usd_df, _ = download_prices(usd_symbols, yf_period, interval)
     krw_df, _ = download_prices(krw_symbols, yf_period, interval)
     jpy_df, _ = download_prices(jpy_symbols, yf_period, interval)
+    hkg_df, _ = download_prices(hkg_symbols, yf_period, interval)
     frames: List[pd.DataFrame] = []
     if not usd_df.empty and not usdkrw.empty:
         usdkrw_matched = usdkrw.reindex(usd_df.index).ffill()
@@ -424,6 +443,9 @@ def build_prices_krw_from_symbols(period_key: str, symbols: List[str]) -> pd.Dat
     if not jpy_df.empty and not jpykrw.empty:
         jpykrw_matched = jpykrw.reindex(jpy_df.index).ffill()
         frames.append(jpy_df.mul(jpykrw_matched, axis=0))
+    if not hkg_df.empty and not hkdkrw.empty:
+        hkdkrw_matched = hkdkrw.reindex(hkg_df.index).ffill()
+        frames.append(hkg_df.mul(hkdkrw_matched, axis=0))
     if not frames:
         return pd.DataFrame()
     prices_krw = pd.concat(frames, axis=1).sort_index()
@@ -452,10 +474,11 @@ def _calculate_fms_for_symbol_chunk(
 
     usd_symbols = [s for s in symbols_batch if classify(s) == 'USA']
     jpy_symbols = [s for s in symbols_batch if classify(s) == 'JPN']
-    need_fx = bool(usd_symbols or jpy_symbols)
-    usdkrw = jpykrw = None
+    hkg_symbols = [s for s in symbols_batch if classify(s) == 'HKG']
+    need_fx = bool(usd_symbols or jpy_symbols or hkg_symbols)
+    usdkrw = jpykrw = hkdkrw = None
     if need_fx:
-        usdkrw, _, jpykrw = market_data.get_fx(period_, interval)
+        usdkrw, _, jpykrw, hkdkrw = market_data.get_fx(period_, interval)
 
     if usd_symbols and usdkrw is not None and not usdkrw.empty:
         usdkrw_matched = usdkrw.reindex(prices.index).ffill()
@@ -468,6 +491,12 @@ def _calculate_fms_for_symbol_chunk(
         jpy_prices = prices[[s for s in jpy_symbols if s in prices.columns]]
         if not jpy_prices.empty:
             prices[jpy_prices.columns] = jpy_prices.mul(jpykrw_matched, axis=0)
+
+    if hkg_symbols and hkdkrw is not None and not hkdkrw.empty:
+        hkdkrw_matched = hkdkrw.reindex(prices.index).ffill()
+        hkg_prices = prices[[s for s in hkg_symbols if s in prices.columns]]
+        if not hkg_prices.empty:
+            prices[hkg_prices.columns] = hkg_prices.mul(hkdkrw_matched, axis=0)
 
     prices_krw = harmonize_calendar(prices, coverage=0.9)
     if prices_krw.empty:

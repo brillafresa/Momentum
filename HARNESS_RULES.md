@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-27 (KST) · 제품 버전 v4.4.9
+최종 갱신: 2026-07-28 (KST) · 제품 버전 v4.5.0
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.4.9)
+## 0. 현재 구축된 검증 하네스 (v4.5.0)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -36,8 +36,13 @@
 |------|------|-----------|
 | `tests/unit/test_yf_rate_limit_retry.py` | yfinance `shared._ERRORS` 레이트리밋 감지·재시도 | mock `yf.download` |
 | `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫 글자 중복 보정 | 순수 함수 assert |
-| `tests/unit/test_market_data_port.py` | `MarketDataPort` 계약: fixture 배치 = 직접 스코어링 FMS 일치, no-network | `FixtureAdapter` 주입 |
+| `tests/unit/test_finviz_screener_pagination.py` | Finviz 페이지별 재시도·partial fallback | mock Overview |
+| `tests/unit/test_hk_classify.py` | `.HK → HKG` classify | (pytest 포함) |
+| `tests/unit/test_hk_fx_conversion.py` | `HKDKRW = USDKRW / HKDUSD` | (pytest 포함) |
+| `tests/unit/test_hk_universe_loader.py` | FREE HK 병합 / IRP 제외 | (pytest 포함) |
+| `tests/unit/test_market_data_port.py` | `MarketDataPort` 계약: fixture 배치 = 직접 스코어링 FMS 일치, 4-tuple FX, no-network | `FixtureAdapter` 주입 |
 | `adapters/market_data.py` | `YFinanceAdapter`(운영) / `FixtureAdapter`(테스트) | `calculate_fms_for_batch(market_data=...)` |
+| `scripts/build_hk_universe_from_indices.py` | HK 유니버스 LIVE 재생성 (HSI CSV + HSCEI/HSTECH PDF) | `python scripts/build_hk_universe_from_indices.py` |
 
 검증 명령: `python -m pytest` 및 `python -m harness.run_fms_snapshot`.
 
@@ -71,7 +76,17 @@
 - **수익·FMS:** `auto_adjust=False` + **Adj Close** (배당 조정 총수익)
 - **거래적합성 OHLC:** raw High/Low/Close (실제 거래 변동성)
 - **비양수 Adj Close:** 스코어링 전 `mask_non_positive_prices`로 NaN 처리 (음수 히스토리→EMA/FMS 폭증 방지; v4.4.9)
+- **홍콩 FX (v4.5.0):** `HKG` 종목은 `HKDKRW = USDKRW / HKDUSD`; 수익/FMS·거래적합성 경로는 미국/한국과 동일 정책
 - UI 배당 분해 표시는 중기 선택 과제 (`TODO.md`)
+
+### 2026-07-28 세션 — FREE 홍콩 유니버스 + Finviz 복원력 (v4.5.0)
+
+1. **유니버스**: FREE = Finviz US + `korean_universe.csv` + `hongkong_universe.csv` (108종, HSI/HSCEI/HSTECH 합집합).
+2. **classify**: `.HK` 접미사 → `HKG`; IRP는 HK 미포함.
+3. **FX 경로**: `download_fx()` / `MarketDataPort.get_fx()` → `(USDKRW, USDJPY, JPYKRW, HKDKRW)`.
+4. **Finviz hang fix**: `finviz_screener_view_resilient()` — per-page timeout, 5× exponential backoff, `allow_partial` fallback.
+5. **회귀 하네스**: `test_hk_*`, `test_finviz_screener_pagination`; 계약 — `update_universe_file` must call resilient helper.
+6. **운영/하네스 경계**: `app.py` / `run_scan_batch.py`는 tests·fixture 미import; HK 재생성은 `scripts/` LIVE 전용.
 
 
 ## 1. 목적

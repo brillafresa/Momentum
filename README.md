@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.4.9**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다. 이제 단순한 모니터링 도구를 넘어서 **진정한 의미의 전체 시장 탐색 엔진**으로 진화했습니다.
+⚡ **KRW Momentum Radar v4.5.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -308,7 +308,13 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.4.9 (현재)
+### v4.5.0 (현재)
+
+- **FREE 모드 홍콩 유니버스**: `hongkong_universe.csv` (HSI·HSCEI·HSTECH, 108종) + HKD→KRW FX 경로
+- **Finviz 페이지네이션 복원력**: 마지막 페이지 hang 방지 (`finviz_screener_view_resilient`)
+- **하네스**: `test_hk_*`, `test_finviz_screener_pagination` 추가
+
+### v4.4.9
 
 - **음수 Adj Close FMS 폭증 수정**: 비양수 가격 마스킹으로 `381560.KS`류 Yahoo 글리치에서 FMS 수십~백 단위 이상치 차단
 
@@ -433,7 +439,7 @@ python fms_recalib_rank_metrics.py
 
 - **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
   - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
-  - 모드별 유니버스 스캔 (FREE: 미국+한국 주식, IRP: 국내상장 ETF 전 종목)
+  - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
   - 모드별 배치 스캔 결과 저장 및 로드
   - UI에서 모드 전환 시 자동으로 해당 모드의 관심종목 및 스캔 결과 표시
   - 배치 스캔 실행 시 현재 선택된 모드로 자동 실행

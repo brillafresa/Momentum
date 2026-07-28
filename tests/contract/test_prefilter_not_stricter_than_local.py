@@ -68,6 +68,7 @@ def test_update_universe_file_uses_policy_ssot() -> None:
     """
     src = inspect.getsource(update_universe_file)
     assert "us_finviz_performance_filters" in src
+    assert "finviz_screener_view_resilient" in src
     assert "LOCAL_PERF_QUARTER_GT" in src
     assert "LOCAL_PERF_HALF_GT" in src
     # Hardcoded legacy stricter labels must not reappear in the function body.

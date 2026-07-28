@@ -41,14 +41,14 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 6. **수익률-변동성 이동맵**: 정적/애니메이션 모드 지원
 7. **상세 분석**: 개별 종목의 EMA 분석 및 Drawdown 추적
 8. **동적 관심종목 관리**: 영구 저장 및 실시간 추가/삭제
-9. **시장 탐색 엔진**: Finviz.com 스크리닝(`set_filter` + 티커 정규화) + 한국 유니버스 병합 스캔
+9. **시장 탐색 엔진**: Finviz.com 스크리닝(`set_filter` + 티커 정규화) + 한국·홍콩 유니버스 병합 스캔
 10. **진부한 종목 자동 편출**: FMS 기반 저성과 종목 제거 제안
 11. **배치 스캔 시스템**: CLI 오프라인 배치 — 레이트리밋 백오프·outer batch·커버리지 우선
-12. **다국가 통합 스캔**: 미국(Finviz 스크리닝) + 한국(KOSPI200/KOSDAQ150/국내상장 ETF) 유니버스 병합
+12. **다국가 통합 스캔**: 미국(Finviz 스크리닝) + 한국(KOSPI200/KOSDAQ150) + 홍콩(HSI/HSCEI/HSTECH) 유니버스 병합
 13. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
 14. **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
     - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
-    - 모드별 유니버스 스캔 (FREE: 미국+한국 주식, IRP: 국내상장 ETF 전 종목)
+    - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
     - 모드별 배치 스캔 결과 저장 및 로드
 15. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
 
@@ -59,7 +59,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v4.4.9, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v4.5.0, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -88,6 +88,7 @@ Momentum/
 ├── watchlist_irp.csv         # 퇴직연금IRP 관심종목 저장 파일
 ├── screened_universe.csv     # 사전 필터링된 미국 유니버스 (Finviz)
 ├── korean_universe.csv       # 한국 유니버스
+├── hongkong_universe.csv     # 홍콩 유니버스 (HSI/HSCEI/HSTECH, FREE 전용, 수동 관리)
 ├── korean_etf_univers.csv    # IRP 모드용 국내상장 ETF 유니버스
 ├── requirements.txt          # Python 의존성 (pytest 포함)
 ├── fms_recalib_*.py          # [과도기] 재보정 스크립트 (→ calibration/)
@@ -146,6 +147,8 @@ Momentum/
 - **watchlist.csv**: [레거시] 기존 파일 (자동으로 watchlist_free.csv로 마이그레이션됨)
 - **korean_universe.csv**: 한국 유니버스 목록 (KOSPI 200 + KOSDAQ 150 + 국내상장 ETF 전 종목, 단 ETF는 국내 지수/국내 자산 및 국내 인버스만 포함, 해외/레버리지형 ETF 제외, Symbol,Name 컬럼, 수동 관리)
   - **Name 컬럼**: 한국 종목명 직접 입력 (yfinance API 호출 없이 파일에서 읽어옴)
+- **hongkong_universe.csv**: 홍콩 유니버스 (HSI·HSCEI·HSTECH 구성종목 합집합, Symbol,Name, `####.HK` 형식, FREE 모드 전용, 수동 관리)
+  - 재생성: `scripts/build_hk_universe_from_indices.py` (LIVE; 운영 미import)
 - **symbol_names_cache.json**: 비한국 종목명 영구 캐시 파일 (자동 생성, 삭제 시 캐시 초기화)
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
 
@@ -202,7 +205,7 @@ Momentum/
 - 메모리 사용량 최적화
 - 실시간 데이터 업데이트 처리
 - 다국가 시장의 시간대 차이 고려
-- **중요 파일 보존**: watchlist_free.csv, watchlist_irp.csv, screened_universe.csv, korean_universe.csv, korean_etf_univers.csv 파일 항상 보존
+- **중요 파일 보존**: watchlist_free.csv, watchlist_irp.csv, screened_universe.csv, korean_universe.csv, hongkong_universe.csv, korean_etf_univers.csv 파일 항상 보존
 
 ## Streamlit 실행 규칙
 - **기존 프로세스 중지**: Streamlit 실행 전에 기존 Python 프로세스를 중지

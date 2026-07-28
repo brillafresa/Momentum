@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.4.9
+# KRW Momentum Radar - v4.5.0
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -90,13 +90,15 @@ def classify(sym):
     # - KOSDAQ: .KQ
     if sym_str.endswith(".KS") or sym_str.endswith(".KQ"):
         return "KOR"
+    if sym_str.endswith(".HK"):
+        return "HKG"
     if sym_str.endswith(".T"):  return "JPN"
     return "USA"
 
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.4.9", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.5.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -272,8 +274,10 @@ def download_ohlc_prices(tickers, period_="2y", interval="1d", chunk=25):
 def download_fx(period_="2y", interval="1d"):
     fx_krw, miss1 = download_prices(["KRW=X"], period_, interval)
     fx_jpy, miss2 = download_prices(["JPY=X"], period_, interval)
+    fx_hkd, miss3 = download_prices(["HKD=X"], period_, interval)
     usdkrw = fx_krw.iloc[:,0].rename("USDKRW") if not fx_krw.empty else pd.Series(dtype=float, name="USDKRW")
     usdjpy = fx_jpy.iloc[:,0].rename("USDJPY") if not fx_jpy.empty else pd.Series(dtype=float, name="USDJPY")
+    hkdusd = fx_hkd.iloc[:,0].rename("HKDUSD") if not fx_hkd.empty else pd.Series(dtype=float, name="HKDUSD")
     if not usdkrw.empty and not usdjpy.empty:
         start=min(usdkrw.index.min(), usdjpy.index.min())
         end=max(usdkrw.index.max(), usdjpy.index.max())
@@ -283,7 +287,16 @@ def download_fx(period_="2y", interval="1d"):
         jpykrw = (usdkrw/usdjpy).rename("JPYKRW")
     else:
         jpykrw = pd.Series(dtype=float, name="JPYKRW")
-    return usdkrw, usdjpy, jpykrw, (miss1+miss2)
+    if not usdkrw.empty and not hkdusd.empty:
+        start = min(usdkrw.index.min(), hkdusd.index.min())
+        end = max(usdkrw.index.max(), hkdusd.index.max())
+        idx = pd.date_range(start, end, freq='B')
+        usdkrw_h = usdkrw.reindex(idx).ffill()
+        hkdusd_h = hkdusd.reindex(idx).ffill()
+        hkdkrw = (usdkrw_h / hkdusd_h).rename("HKDKRW")
+    else:
+        hkdkrw = pd.Series(dtype=float, name="HKDKRW")
+    return usdkrw, usdjpy, jpykrw, hkdkrw, (miss1+miss2+miss3)
 
 def harmonize_calendar(df, coverage=0.9):
     if df.empty: return df
@@ -402,7 +415,7 @@ with st.sidebar.expander("🏦 계좌 모드 선택", expanded=True):
         "계좌 모드",
         options=list(mode_options.keys()),
         index=0 if st.session_state.account_mode == MODE_FREE else 1,
-        help="자유투자계좌: 미국+한국 주식 | 퇴직연금IRP: 국내상장 ETF 전 종목"
+        help="자유투자계좌: 미국+한국+홍콩 주식 | 퇴직연금IRP: 국내상장 ETF 전 종목"
     )
     
     selected_mode = mode_options[selected_mode_label]
@@ -857,18 +870,22 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=No
     usd_symbols = [str(s) for s in watchlist_symbols if classify(s) == "USA"]
     krw_symbols = [str(s) for s in watchlist_symbols if classify(s) == "KOR"]
     jpy_symbols = [str(s) for s in watchlist_symbols if classify(s) == "JPN"]
+    hkg_symbols = [str(s) for s in watchlist_symbols if classify(s) == "HKG"]
 
     # 계산에 필요한 최소 데이터 기간 사용 (차트 표시 기간이 아닌)
-    usdkrw, usdjpy, jpykrw, fx_missing = download_fx(min_data_period, interval)
+    usdkrw, usdjpy, jpykrw, hkdkrw, fx_missing = download_fx(min_data_period, interval)
     usd_df, miss_us = download_prices(usd_symbols, min_data_period, interval)
     krw_df, miss_kr = download_prices(krw_symbols, min_data_period, interval)
     jpy_df, miss_jp = download_prices(jpy_symbols, min_data_period, interval)
+    hkg_df, miss_hk = download_prices(hkg_symbols, min_data_period, interval)
 
     usd_df = align_bday_ffill(usd_df)
     krw_df = align_bday_ffill(krw_df)
     jpy_df = align_bday_ffill(jpy_df)
     usdkrw = align_bday_ffill(usdkrw.to_frame()).iloc[:,0] if not usdkrw.empty else usdkrw
     jpykrw = align_bday_ffill(jpykrw.to_frame()).iloc[:,0] if not jpykrw.empty else jpykrw
+    hkg_df = align_bday_ffill(hkg_df)
+    hkdkrw = align_bday_ffill(hkdkrw.to_frame()).iloc[:,0] if not hkdkrw.empty else hkdkrw
 
     frames=[]
     if not usd_df.empty and not usdkrw.empty:
@@ -879,9 +896,12 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=No
     if not jpy_df.empty and not jpykrw.empty:
         jpykrw_matched = jpykrw.reindex(jpy_df.index).ffill()
         frames.append(jpy_df.mul(jpykrw_matched, axis=0))
+    if not hkg_df.empty and not hkdkrw.empty:
+        hkdkrw_matched = hkdkrw.reindex(hkg_df.index).ffill()
+        frames.append(hkg_df.mul(hkdkrw_matched, axis=0))
 
     if not frames:
-        return pd.DataFrame(), {"fx_missing": fx_missing, "price_missing": miss_us+miss_kr+miss_jp}
+        return pd.DataFrame(), {"fx_missing": fx_missing, "price_missing": miss_us+miss_kr+miss_jp+miss_hk}
 
     prices_krw = pd.concat(frames, axis=1).sort_index()
     prices_krw = prices_krw.loc[:, ~prices_krw.columns.duplicated()]
@@ -898,7 +918,7 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=No
 
     miss_dict = {
         "fx_missing": fx_missing,
-        "price_missing": sorted(list(set(miss_us+miss_kr+miss_jp)))
+        "price_missing": sorted(list(set(miss_us+miss_kr+miss_jp+miss_hk)))
     }
     
     # 빈 DataFrame 체크 (harmonize_calendar가 모든 컬럼을 제외한 경우)
@@ -1089,7 +1109,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.4.9")
+st.title("⚡ KRW Momentum Radar v4.5.0")
 
 
 

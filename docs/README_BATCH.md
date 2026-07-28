@@ -46,7 +46,9 @@
 - 모든 스캔 결과 파일은 `scan_results/` 디렉토리에만 저장됩니다
 
 ## 동작 참고
-- 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리).
+- 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리 + `korean_universe.csv` + `hongkong_universe.csv` 병합).
+- Finviz Overview 페이지 fetch는 `finviz_screener_view_resilient()`로 per-page 재시도·partial fallback 합니다 (마지막 페이지 hang 방지).
+- 개발 시 Finviz 갱신 생략: `python run_scan_batch.py --skip-universe-update`
 - Finviz Overview가 티커 첫 글자를 중복하는 경우(예: `AAPL`→`AAAPL`) 자동 보정합니다.
 - 앱과 동일한 FMS/거래 적합성 필터 로직(`analysis_utils.py`)을 사용합니다.
 - **가격은 Adj Close(배당 조정) 기준**입니다. OHLC 거래적합성 필터는 원시 High/Low/Close를 사용합니다.
