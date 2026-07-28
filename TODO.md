@@ -69,15 +69,15 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-- [ ] (선택) `get_filter_debug_info` → `core/tradeability.py` 동반 이전
-- [ ] (선택) `fms_recalib_tune_vol_penalty` 단순화 본문 정리
-- [ ] `fms_recalib_*.py` → `calibration/` 점진 이동
+- [x] (선택) `get_filter_debug_info` → `core/tradeability.py` 동반 이전
+- [x] (선택) `fms_recalib_tune_vol_penalty` 단순화 본문 정리
+- [x] `fms_recalib_*.py` → `calibration/` 점진 이동
 
 ---
 
 ## 중기 (공식 드리프트 제거)
 
-- [ ] `calibration_utils.py` → `calibration/session.py` + 셔임
+- [x] `calibration_utils.py` → `calibration/session.py` + 셔임
 - [ ] (선택) UI에 배당 기여분(가격수익 vs 총수익) 분해 표시
 
 ---
