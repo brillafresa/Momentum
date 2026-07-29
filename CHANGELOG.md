@@ -5,6 +5,48 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.7.0] - 2026-07-30
+
+### 변경
+
+- **FMS 상대평가 의미 복원**: 10축 가중치는 유지하고 Z-score 기준을 고정 development 통계에서
+  현재 계좌모드 관심종목의 median/mean/std로 변경
+- 앱은 현재 관심종목끼리 비교; 배치는 신규 후보를 현재 계좌 관심종목 reference와 비교
+- reference 미지정 시 target panel을 자기 reference로 사용
+- self-reference 재평가는 outer chunk별 normalization을 금지하고 전체 watchlist를 한 기준으로 사용
+- 신규 탐색은 유효 관심종목 reference가 2개 미만이면 중단
+- 유효 reference가 2개 미만이거나 표준편차가 0인 축은 상대 정보가 없으므로 기여도 0
+- 현금성 양의 보너스 게이트와 거래적합성 `FMS=-999`는 유지
+- `FMS ≥ 0` 의미를 고정 절대 기준에서 “현재 관심종목 대비 상대 우위”로 변경
+
+### 검증 하네스
+
+- reference panel 변경 시 FMS 변경, 미지정 시 자기 reference와 동일
+- 축별 자기-reference ungated 기여 평균 0, zero-variance 축 기여 0
+- 배치 `FixtureAdapter`와 직접 scorer parity, feature-frame/snapshot parity 유지
+- 80종 패널: 양수 42 / 음수 38, Spearman 0.8917 → 0.8933
+- 전체 pytest 및 수동 snapshot/cash-gate 하네스
+- 푸시 전 정리: cash fixture 생성기 → `scripts/fixtures/`; 손상된 `scan_results/.gitkeep`
+  복구; production docstring·하네스 README·SSOT 문서 동기화
+
+## [4.6.1] - 2026-07-30
+
+### 수정
+
+- **현금성 ETF FMS 과대평가**: v4.6.0이 저수익·초저변동·고R² 경로에 무위험형 품질 보너스를 과도하게 부여하던 문제
+  - `cash_like_strength = low_return(R_3M) × ultra_low_vol(Vol20_Ann) × high_smooth(R2_3M)`
+  - `R_3M`을 제외한 품질 축의 **양의 기여분만** `(1 - strength)`로 축소 (감점·`R_3M` 항 불변)
+  - 경계: R_3M 1%~5%, Vol20_Ann 0.5%~3%, R2_3M 0.95~0.99 (`smoothstep`)
+  - SSOT: `core/fms_features.py` (`cash_like_strength`, `production_axis_contributions`)
+
+### 검증 하네스
+
+- `tests/unit/test_fms_cash_like_gate.py` — 현금성 억제 · 장기채/주식 불변 · 경계 연속성 · 골든 순위
+- `tests/fixtures/cash_like_paths_prices_krw.csv` + 생성기
+- `harness/compare_cash_like_gate.py` — old/new 기여분·영향 비교
+- 80종 캘리브레이션 패널: FMS bit-identical (Spearman/inversion 불변)
+- 푸시 전: `python -m pytest` · `python -m harness.run_fms_snapshot`
+
 ## [4.6.0] - 2026-07-29
 
 ### 변경

@@ -1,9 +1,9 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.6.0
+# KRW Momentum Radar - v4.7.0
 # 
 # 주요 기능:
-# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v4.6.0 3M-window sparse-linear)
+# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v4.7.0 watchlist-relative sparse-linear)
 # - 다국가 시장 통합 분석 (미국, 한국, 일본)
 # - 수익률-변동성 이동맵 (정적/애니메이션 모드)
 # - 실시간 데이터 업데이트 및 시각화
@@ -98,7 +98,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.6.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.7.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -721,8 +721,9 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     
     st.markdown(f"""
     **현재 적용 상태:**
-    - 아래 설명은 앱·배치가 실제 사용하는 **production v4.6.0 FMS**입니다.
-    - 2026-07-29 최신 80종 정답셋으로 0점에서 재피팅한 sparse-linear 후보가 승인되어 승격되었습니다.
+    - 아래 설명은 앱·배치가 실제 사용하는 **production v4.7.0 FMS**입니다.
+    - 10축 sparse-linear + **현재 계좌 관심종목 상대 Z-score** +
+      **현금성 경로 양의 품질 보너스 게이트**가 적용됩니다.
 
     **개요:**
     - FMS는 사용자가 본 **최근 3개월(63거래일) 가격 경로**에서 추세 품질·회복·연속성을 평가합니다.
@@ -742,17 +743,24 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     - **STALE_AGE**: 과거 급등 뒤 고점 갱신 없이 정체된 기간이 길수록 감점
     - **RANGE_COMPRESSION_20D**: 최근 20일 변동 범위가 과도하게 압축되어 동력이 소진된 경로 감점
 
+    **현금성 게이트**
+    - 저수익(`R_3M`) ∧ 초저변동(`Vol20_Ann`) ∧ 고R²가 **동시에** 나타나면,
+      `R_3M`을 제외한 품질 축의 **양의 기여분만** `(1 - cash_strength)`로 축소합니다.
+    - 기존 감점과 `R_3M` 항은 그대로 두어, 금리·머니마켓형 ETF가 상위권을 독점하지 않게 합니다.
+    - 충분한 수익률의 장기채 랠리·일반 주식 경로는 영향받지 않습니다.
+
     **정규화**
-    - 승인된 development fit의 **고정 median·mean·표준편차**를 사용하고 Z값을 ±4로 제한합니다.
-      따라서 관심종목 구성 변경만으로 동일 종목의 점수가 흔들리지 않습니다.
+    - 각 축을 **현재 계좌모드 관심종목의 median·mean·표준편차**로 상대 정규화하고 Z값을 ±4로 제한합니다.
+    - 앱은 현재 관심종목끼리 비교하고, 배치는 신규 후보를 현재 관심종목 분포와 비교합니다.
+      따라서 관심종목 구성이 바뀌면 FMS도 함께 바뀌며, 0점은 현재 관심종목 기준선입니다.
 
     **추가 필터 (거래 적합성)**  
     - True Range 기반 **치명적 변동성 30% 초과** 또는  
       **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
 
     **한 줄 요약:**
-    - **“최근 3개월의 매끄러운 상승·회복·단기 연속성”을 선호하고,
-      “단발성 점프·EMA20 아래 장기 체류·급등 후 정체·동력 소진”을 감점하는 재피팅 점수입니다.**
+    - **“실제 모멘텀이 있는 매끄러운 상승·회복”을 선호하고,
+      “단발성 점프·정체·동력 소진”과 “저수익·초저변동 현금성 경로의 무위험형 보너스”를 억제하는 점수입니다.**
     """)
     
     st.markdown("---")
@@ -1078,7 +1086,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.6.0")
+st.title("⚡ KRW Momentum Radar v4.7.0")
 
 
 

@@ -66,11 +66,11 @@ def test_momentum_now_and_delta_rank_order_matches_golden(
         assert result.loc[symbol, "FMS"] == pytest.approx(expected)
 
 
-def test_reference_panel_does_not_change_production_fms(
+def test_reference_panel_changes_production_fms(
     synthetic_prices_krw: pd.DataFrame,
     synthetic_ohlc: pd.DataFrame,
 ) -> None:
-    """v4.6 frozen normalization ignores ``reference_prices_krw`` composition."""
+    """Production FMS must normalize against the supplied current watchlist."""
     symbols = list(synthetic_prices_krw.columns)
     with_ref = compute_fms_snapshot(
         synthetic_prices_krw,
@@ -85,14 +85,30 @@ def test_reference_panel_does_not_change_production_fms(
         ohlc_data=synthetic_ohlc,
         symbols=symbols,
     )
-    without_ref = compute_fms_snapshot(
+    assert not np.allclose(with_ref["FMS"], with_alt_ref["FMS"])
+
+
+def test_missing_reference_defaults_to_target_watchlist(
+    synthetic_prices_krw: pd.DataFrame,
+    synthetic_ohlc: pd.DataFrame,
+) -> None:
+    """Omitting reference uses the target panel itself, matching app semantics."""
+    symbols = list(synthetic_prices_krw.columns)
+    explicit = compute_fms_snapshot(
+        synthetic_prices_krw,
+        reference_prices_krw=synthetic_prices_krw,
+        ohlc_data=synthetic_ohlc,
+        symbols=symbols,
+    )
+    implicit = compute_fms_snapshot(
         synthetic_prices_krw,
         reference_prices_krw=None,
         ohlc_data=synthetic_ohlc,
         symbols=symbols,
     )
-    pd.testing.assert_series_equal(with_ref["FMS"], with_alt_ref["FMS"], check_names=False)
-    pd.testing.assert_series_equal(with_ref["FMS"], without_ref["FMS"], check_names=False)
+    pd.testing.assert_series_equal(
+        explicit["FMS"], implicit["FMS"], check_names=False
+    )
 
 
 def test_compute_fms_snapshot_matches_momentum_fms_column(

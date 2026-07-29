@@ -122,9 +122,9 @@ class FmsScoreParams:
 def production_fms_score_params() -> FmsScoreParams:
     """Archived pre-v4.6 weights / transition widths (legacy tune path only).
 
-    v4.6 production scoring uses ``score_production_fms_features`` /
-    ``score_fms_from_feature_frame`` with frozen sparse-linear constants in
-    ``core/fms_features.py``. These params remain for
+    Production scoring uses ``score_production_fms_features`` /
+    ``score_fms_from_feature_frame`` with sparse-linear weights and
+    watchlist-relative Z in ``core/fms_features.py``. These params remain for
     ``score_legacy_fms_from_feature_frame`` and offline tune scripts.
     """
     return FmsScoreParams(
@@ -451,15 +451,16 @@ def score_fms_from_feature_frame(
     reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set] = None,
 ) -> pd.Series:
-    """Score the promoted sparse-linear production FMS.
+    """Score production FMS relative to the current account watchlist.
 
-    The approved model uses frozen development-set normalization, so
-    ``reference_features`` remains accepted only for API compatibility and
-    does not alter scores.
+    ``reference_features`` supplies the watchlist distribution used for every
+    axis' mean/standard deviation. When omitted, the target frame is its own
+    reference (the app's current-watchlist behavior).
     """
-    del reference_features
     return score_production_fms_features(
-        features, disqualified_symbols=disqualified_symbols
+        features,
+        reference_features=reference_features,
+        disqualified_symbols=disqualified_symbols,
     )
 
 
@@ -470,9 +471,6 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     prices_krw = mask_non_positive_prices(prices_krw)
     if reference_prices_krw is not None:
         reference_prices_krw = mask_non_positive_prices(reference_prices_krw)
-    # ``reference_prices_krw`` is retained for public API compatibility only;
-    # v4.6 production scoring uses frozen development-set normalization.
-
     disqualification_flags: Dict[str, bool] = {}
     filter_reasons: Dict[str, str] = {}
     if ohlc_data is not None and symbols is not None:
@@ -489,8 +487,17 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
     production_features = build_panel_feature_frame(
         prices_krw, symbols=feature_symbols
     )
+    if reference_prices_krw is None:
+        reference_features = production_features
+    else:
+        reference_features = build_panel_feature_frame(
+            reference_prices_krw,
+            symbols=list(reference_prices_krw.columns),
+        )
     FMS = score_fms_from_feature_frame(
-        production_features, disqualified_symbols=disqualified_symbols
+        production_features,
+        reference_features=reference_features,
+        disqualified_symbols=disqualified_symbols,
     )
     filter_reasons_series = pd.Series(
         filter_reasons, name="Filter_Status"

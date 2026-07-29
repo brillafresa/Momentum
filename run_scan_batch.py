@@ -82,9 +82,12 @@ def main() -> int:
             print("[Batch] ⚠️ Failed to download watchlist OHLC data; skipping disqualification filtering for reference data")
     
     ref_prices = build_prices_krw_from_symbols("1Y", watchlist)
-    if ref_prices.empty:
-        print("[Batch] ⚠️ Reference watchlist prices are empty; proceeding without reference baseline.")
-        ref_prices = None
+    if ref_prices.empty or ref_prices.shape[1] < 2:
+        print(
+            "[Batch] ❌ Current account watchlist reference requires at least "
+            "2 valid price series; aborting relative-FMS scan."
+        )
+        return 1
 
     print(f"[Batch] 📂 Loading universe symbols ({mode_label})...")
     ok, all_symbols, msg = load_universe_file(mode=mode)

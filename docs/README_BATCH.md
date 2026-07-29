@@ -51,6 +51,9 @@
 - 개발 시 Finviz 갱신 생략: `python run_scan_batch.py --skip-universe-update`
 - Finviz Overview가 티커 첫 글자를 중복하는 경우(예: `AAPL`→`AAAPL`) 자동 보정합니다.
 - 앱과 동일한 FMS/거래 적합성 필터 로직(`analysis_utils.py`)을 사용합니다.
+- **v4.7.0 상대 FMS**: 후보 점수는 **현재 계좌모드 관심종목** mean/std로 정규화됩니다.
+  유효 관심종목 가격 시리즈가 2개 미만이면 스캔을 중단합니다.
+  `DEFAULT_FMS_THRESHOLD=0.0`은 “현재 관심종목 기준선 이상”을 뜻합니다.
 - **가격은 Adj Close(배당 조정) 기준**입니다. OHLC 거래적합성 필터는 원시 High/Low/Close를 사용합니다.
 - yfinance 레이트리밋(`Too Many Requests` / `shared._ERRORS`)은 지수 백오프(최대 ~40회, 대기 상한 120초)로 재시도합니다.
 - 청크 간 대기·outer batch로 전체 유니버스 커버리지를 우선합니다(속도보다 완료).

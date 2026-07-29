@@ -18,8 +18,9 @@ HORIZON_DAYS_3M = 63
 HORIZON_DAYS_4M = 84
 VISIBLE_WINDOW_3M = HORIZON_DAYS_3M
 
-# Promoted 2026-07-29 scratch model. Constants are frozen from the approved
-# development fit so scoring is stable across app/batch peer-set composition.
+# Promoted 2026-07-29 scratch model weights. Since v4.7.0, each feature is
+# normalized against the current account watchlist rather than frozen fit
+# statistics; the weights and feature directions remain the approved model.
 PRODUCTION_FMS_COLUMNS = (
     "R2_3M",
     "DD_RECOVERY",
@@ -44,42 +45,143 @@ PRODUCTION_FMS_WEIGHTS = {
     "TREND_EFFICIENCY_REWARD_15D": 0.10776592373907062,
     "RANGE_COMPRESSION_20D": 0.10416888196208451,
 }
-PRODUCTION_FMS_MEDIANS = {
-    "R2_3M": 0.8352543449520893,
-    "DD_RECOVERY": 0.6643035889404665,
-    "TREND_QUALITY_21D": 0.00091647480412345,
-    "JUMP_DISCONTINUITY_3M": 0.05468108452358465,
-    "UNDER_EMA20_DAYS": 8.0,
-    "R_3M": 0.41548493960236277,
-    "STALE_AGE": 0.3295732726744802,
-    "UP_STREAK_5D": 1.0,
-    "TREND_EFFICIENCY_REWARD_15D": 0.25503352104579935,
-    "RANGE_COMPRESSION_20D": 0.7201582916335658,
-}
-PRODUCTION_FMS_MEANS = {
-    "R2_3M": 0.7950150409752298,
-    "DD_RECOVERY": 0.663785299908631,
-    "TREND_QUALITY_21D": 0.0019688894572815613,
-    "JUMP_DISCONTINUITY_3M": 0.06367881333930969,
-    "UNDER_EMA20_DAYS": 9.390625,
-    "R_3M": 0.43566472679969265,
-    "STALE_AGE": 0.40298524301352723,
-    "UP_STREAK_5D": 1.59375,
-    "TREND_EFFICIENCY_REWARD_15D": 0.2544042787253949,
-    "RANGE_COMPRESSION_20D": 0.8673743653042431,
-}
-PRODUCTION_FMS_SCALES = {
-    "R2_3M": 0.16520174648250016,
-    "DD_RECOVERY": 0.309333572309615,
-    "TREND_QUALITY_21D": 0.0032219253502398723,
-    "JUMP_DISCONTINUITY_3M": 0.041124318302813774,
-    "UNDER_EMA20_DAYS": 6.788356731151877,
-    "R_3M": 0.22369998919101597,
-    "STALE_AGE": 0.36875260949700633,
-    "UP_STREAK_5D": 0.9636964965693297,
-    "TREND_EFFICIENCY_REWARD_15D": 0.18819198919865585,
-    "RANGE_COMPRESSION_20D": 0.6188434821411432,
-}
+# Cash-like path gate (v4.6.1): suppress positive quality bonuses only when
+# low 3M return, ultra-low volatility, and near-perfect R² occur together.
+# Thresholds are decimals (0.01 = 1%). ``R_3M`` itself is never gated.
+CASH_R3M_FULL = 0.01
+CASH_R3M_NONE = 0.05
+CASH_VOL_FULL = 0.005
+CASH_VOL_NONE = 0.03
+CASH_R2_NONE = 0.95
+CASH_R2_FULL = 0.99
+CASH_GATED_AXES = tuple(col for col in PRODUCTION_FMS_COLUMNS if col != "R_3M")
+
+
+def smoothstep_series(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
+    """C1-continuous 0..1 transition (Hermite smoothstep)."""
+    x = x.astype(float)
+    if edge1 == edge0:
+        return pd.Series(0.0, index=x.index, dtype=float)
+    t = ((x - edge0) / (edge1 - edge0)).clip(lower=0.0, upper=1.0)
+    return (t * t * (3.0 - 2.0 * t)).astype(float)
+
+
+def _vol20_ann_series(features: pd.DataFrame) -> pd.Series:
+    """Resolve annualized vol column; missing → NaN (fail-open cash gate)."""
+    if "Vol20_Ann" in features.columns:
+        return features["Vol20_Ann"].astype(float)
+    if "Vol20(ann)" in features.columns:
+        return features["Vol20(ann)"].astype(float)
+    return pd.Series(np.nan, index=features.index, dtype=float)
+
+
+def cash_like_strength(features: pd.DataFrame) -> pd.Series:
+    """Return 0..1 cash-like strength from R_3M × Vol20_Ann × R2_3M.
+
+    Missing vol fails open (strength 0). Each factor uses smoothstep edges
+    ``CASH_*`` constants; strength is high only when all three fire together.
+    """
+    r3m = features["R_3M"].astype(float).replace([np.inf, -np.inf], np.nan)
+    r2 = features["R2_3M"].astype(float).replace([np.inf, -np.inf], np.nan)
+    vol = _vol20_ann_series(features).replace([np.inf, -np.inf], np.nan)
+
+    low_return = 1.0 - smoothstep_series(r3m.fillna(CASH_R3M_NONE), CASH_R3M_FULL, CASH_R3M_NONE)
+    ultra_low_vol = 1.0 - smoothstep_series(
+        vol.fillna(CASH_VOL_NONE), CASH_VOL_FULL, CASH_VOL_NONE
+    )
+    # Missing vol → fill to NONE edge so ultra_low_vol becomes 0 (fail open).
+    high_smooth = smoothstep_series(r2.fillna(CASH_R2_NONE), CASH_R2_NONE, CASH_R2_FULL)
+    strength = (low_return * ultra_low_vol * high_smooth).clip(lower=0.0, upper=1.0)
+    # If vol was entirely missing, force zero (fail open).
+    if "Vol20_Ann" not in features.columns and "Vol20(ann)" not in features.columns:
+        strength = pd.Series(0.0, index=features.index, dtype=float)
+    else:
+        strength = strength.where(vol.notna(), 0.0)
+    return strength.rename("cash_like_strength")
+
+
+def _axis_raw_contribution(
+    features: pd.DataFrame,
+    reference_features: pd.DataFrame,
+    col: str,
+    *,
+    reference_excluded_symbols: Optional[set[str]] = None,
+) -> pd.Series:
+    """Weighted relative-Z contribution for one production axis.
+
+    The reference frame is the current account watchlist. Missing target values
+    use that watchlist's median. An axis with fewer than two valid reference
+    values or effectively zero dispersion contributes zero because it carries
+    no relative ranking information.
+    """
+    target = features[col].astype(float).replace([np.inf, -np.inf], np.nan)
+    reference = (
+        reference_features[col]
+        .astype(float)
+        .replace([np.inf, -np.inf], np.nan)
+    )
+    if reference_excluded_symbols:
+        reference = reference.drop(
+            index=reference.index.intersection(reference_excluded_symbols),
+            errors="ignore",
+        )
+    valid_reference = reference.dropna()
+    if len(valid_reference) < 2:
+        return pd.Series(0.0, index=features.index, dtype=float)
+
+    median = float(valid_reference.median())
+    mean = float(valid_reference.mean())
+    scale = float(np.nanstd(valid_reference.to_numpy(dtype=float), ddof=0))
+    if not np.isfinite(scale) or scale <= 1e-12:
+        return pd.Series(0.0, index=features.index, dtype=float)
+
+    standardized = ((target.fillna(median) - mean) / scale).clip(-4.0, 4.0)
+    direction = float(FEATURE_DIRECTION[col])
+    return (PRODUCTION_FMS_WEIGHTS[col] * standardized * direction).astype(float)
+
+
+def production_axis_contributions(
+    features: pd.DataFrame,
+    *,
+    reference_features: Optional[pd.DataFrame] = None,
+    reference_excluded_symbols: Optional[set[str]] = None,
+    apply_cash_gate: bool = True,
+) -> pd.DataFrame:
+    """Per-axis relative FMS contributions using the current watchlist.
+
+    When ``reference_features`` is omitted, ``features`` is its own reference;
+    this is the app/watchlist behavior. Batch discovery supplies current
+    account-watchlist features while scoring separate candidate rows.
+    """
+    missing = [col for col in PRODUCTION_FMS_COLUMNS if col not in features.columns]
+    if missing:
+        raise KeyError(f"production FMS missing columns: {missing}")
+    reference = features if reference_features is None else reference_features
+    ref_missing = [
+        col for col in PRODUCTION_FMS_COLUMNS if col not in reference.columns
+    ]
+    if ref_missing:
+        raise KeyError(f"reference FMS missing columns: {ref_missing}")
+
+    strength = cash_like_strength(features) if apply_cash_gate else pd.Series(
+        0.0, index=features.index, dtype=float
+    )
+    keep = (1.0 - strength).clip(lower=0.0, upper=1.0)
+    cols: Dict[str, pd.Series] = {}
+    for col in PRODUCTION_FMS_COLUMNS:
+        raw = _axis_raw_contribution(
+            features,
+            reference,
+            col,
+            reference_excluded_symbols=reference_excluded_symbols,
+        )
+        if apply_cash_gate and col in CASH_GATED_AXES:
+            positive = raw.clip(lower=0.0)
+            negative = raw.clip(upper=0.0)
+            cols[col] = negative + keep * positive
+        else:
+            cols[col] = raw
+    return pd.DataFrame(cols, index=features.index)
 
 
 def _log_slope_and_r2(series: pd.Series, window: int) -> tuple[float, float]:
@@ -421,32 +523,29 @@ def build_panel_feature_frame(
 def score_production_fms_features(
     features: pd.DataFrame,
     *,
+    reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set[str]] = None,
+    apply_cash_gate: bool = True,
 ) -> pd.Series:
     """Score the approved sparse-linear production FMS from feature rows.
 
-    Missing values use the frozen development median, then each axis is
-    standardized with its frozen mean/scale and clipped to ±4 exactly as in
-    the approved scratch fit. Negative-direction axes are sign-flipped before
-    applying their non-negative fitted weights.
-    """
-    missing = [col for col in PRODUCTION_FMS_COLUMNS if col not in features.columns]
-    if missing:
-        raise KeyError(f"production FMS missing columns: {missing}")
+    Each axis is standardized against the current account watchlist's
+    mean/standard deviation and clipped to ±4. Missing values use the current
+    watchlist median. Negative-direction axes are sign-flipped before applying
+    their non-negative fitted weights.
 
-    score = pd.Series(0.0, index=features.index, name="FMS")
-    for col in PRODUCTION_FMS_COLUMNS:
-        values = (
-            features[col]
-            .astype(float)
-            .replace([np.inf, -np.inf], np.nan)
-            .fillna(PRODUCTION_FMS_MEDIANS[col])
-        )
-        standardized = (
-            (values - PRODUCTION_FMS_MEANS[col]) / PRODUCTION_FMS_SCALES[col]
-        ).clip(-4.0, 4.0)
-        direction = float(FEATURE_DIRECTION[col])
-        score = score + PRODUCTION_FMS_WEIGHTS[col] * standardized * direction
+    When ``apply_cash_gate`` is True (default), positive contributions on
+    quality axes other than ``R_3M`` are scaled by ``(1 - cash_like_strength)``
+    so low-return / ultra-low-vol / high-R² cash paths cannot dominate ranks.
+    Existing penalties and the ``R_3M`` term are never reduced by the gate.
+    """
+    contrib = production_axis_contributions(
+        features,
+        reference_features=reference_features,
+        reference_excluded_symbols=disqualified_symbols,
+        apply_cash_gate=apply_cash_gate,
+    )
+    score = contrib.sum(axis=1).astype(float).rename("FMS")
 
     if disqualified_symbols:
         score.loc[score.index.intersection(disqualified_symbols)] = -999.0

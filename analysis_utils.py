@@ -545,7 +545,14 @@ def calculate_fms_for_batch(
             initial_sleep=YF_RATE_LIMIT_INITIAL_SLEEP, threads=False,
         )
 
-    outer = max(int(outer_batch_size), 1)
+    # Self-reference means "the complete current watchlist", never each outer
+    # chunk independently. Account-universe scans supply an explicit watchlist
+    # reference and retain normal coverage-first outer batching.
+    outer = (
+        len(symbols_batch)
+        if reference_prices_krw is None
+        else max(int(outer_batch_size), 1)
+    )
     parts: List[pd.DataFrame] = []
     n_outer = (len(symbols_batch) + outer - 1) // outer
     t0 = time.time()

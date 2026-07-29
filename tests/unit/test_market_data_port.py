@@ -87,6 +87,55 @@ def test_batch_with_fixture_adapter_matches_direct_scoring_offline(
     assert list(batch.index) == list(direct.index)  # same FMS-descending order
 
 
+def test_batch_scores_candidates_against_account_watchlist_reference(
+    synthetic_prices_krw: pd.DataFrame,
+    fixture_adapter: FixtureAdapter,
+) -> None:
+    """Batch reference is the current account watchlist, not each outer chunk."""
+    symbols = list(synthetic_prices_krw.columns)
+    weak_reference = synthetic_prices_krw[["FLAT", "CRASHY"]]
+    strong_reference = synthetic_prices_krw[["TREND_UP", "MILD_UP"]]
+
+    weak_ref_scores = calculate_fms_for_batch(
+        symbols,
+        reference_prices_krw=weak_reference,
+        market_data=fixture_adapter,
+    )
+    strong_ref_scores = calculate_fms_for_batch(
+        symbols,
+        reference_prices_krw=strong_reference,
+        market_data=fixture_adapter,
+    )
+
+    assert not weak_ref_scores["FMS"].sort_index().equals(
+        strong_ref_scores["FMS"].sort_index()
+    )
+
+
+def test_self_referenced_batch_does_not_normalize_per_outer_chunk(
+    synthetic_prices_krw: pd.DataFrame,
+    synthetic_ohlc: pd.DataFrame,
+    fixture_adapter: FixtureAdapter,
+) -> None:
+    """Watchlist reassessment uses one full self-reference even with outer=2."""
+    symbols = list(synthetic_prices_krw.columns)
+    batch = calculate_fms_for_batch(
+        symbols,
+        reference_prices_krw=None,
+        outer_batch_size=2,
+        market_data=fixture_adapter,
+    )
+    direct = momentum_now_and_delta(
+        synthetic_prices_krw,
+        reference_prices_krw=synthetic_prices_krw,
+        ohlc_data=synthetic_ohlc,
+        symbols=symbols,
+    )
+    pd.testing.assert_series_equal(
+        batch["FMS"].sort_index(), direct["FMS"].sort_index(), check_names=False
+    )
+
+
 def test_yfinance_adapter_delegates_with_configured_settings() -> None:
     """YFinanceAdapter must call analysis_utils download helpers with its config."""
     adapter = YFinanceAdapter(chunk=7, chunk_sleep=0.9, max_retries=3)

@@ -11,10 +11,12 @@ Mock 가격·OHLC·피처 CSV를 **생성하거나 변환**하는 스크립트�
 | Script | Purpose |
 |--------|---------|
 | `generate_synthetic_panel.py` | seed=42 합성 KRW/OHLC를 `tests/fixtures/`에 기록 |
+| `generate_cash_like_panel.py` | 현금성/채권/주식 경로 fixture (`cash_like_paths_prices_krw.csv`) |
 
 ```bash
 python scripts/fixtures/generate_synthetic_panel.py
-python -m pytest tests/unit/test_fms_scoring.py -q
+python scripts/fixtures/generate_cash_like_panel.py
+python -m pytest tests/unit/test_fms_scoring.py tests/unit/test_fms_cash_like_gate.py -q
 ```
 
 ## Evidence dumps (checked in)

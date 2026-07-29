@@ -4,23 +4,24 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-29 (KST) · 제품 버전 v4.6.0
+최종 갱신: 2026-07-30 (KST) · 제품 버전 v4.7.0
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.6.0)
+## 0. 현재 구축된 검증 하네스 (v4.7.0)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
-| `core/fms_features.py` (`PRODUCTION_FMS_*` / `score_production_fms_features` / `build_panel_feature_frame`) | **v4.6 production 피처·가중치·고정 정규화 SSOT** | `tests/unit/test_fms_features.py` |
+| `core/fms_features.py` (`PRODUCTION_FMS_*` / `score_production_fms_features` / `cash_like_strength`) | **v4.7 production 피처·가중치·관심종목 상대 Z + 현금성 양의 보너스 게이트 SSOT** | `tests/unit/test_fms_features.py` / `test_fms_cash_like_gate.py` |
 | `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS | fixture; `analysis_utils` 셔임 |
 | `core/fms.py` (`score_legacy_fms_from_feature_frame` / `FmsScoreParams`) | **pre-v4.6 archived formula** (tune 스크립트·회귀만) | `test_fms_params` / `test_fms_vol_tune` / `test_fms_recent_continuation` |
 | `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` / `mask_non_positive_prices` | `tests/unit/test_indicators.py` |
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
-| `tests/unit/test_fms_scoring.py` | 골든 순위 / `-999` / **reference_panel 불변** / 결측 / yfinance 미호출 | `python -m pytest` |
+| `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 현금성 게이트·relative-Z |
+| `tests/unit/test_fms_scoring.py` | 골든 순위 / `-999` / **reference_panel 상대평가** / 결측 / yfinance 미호출 | `python -m pytest` |
 | `tests/unit/test_fms_recalib_parity.py` | feature-frame scorer ≡ snapshot FMS (동일 패널) | (pytest 포함) |
 | `tests/unit/test_fms_features.py` | 3M visible-window 피처 방향성·결측 안전 | (pytest 포함) |
 | `tests/unit/test_calibration_session.py` | `saved_at` 기준 최신 완료 세션 선택 (mtime 금지) | (pytest 포함) |
@@ -33,18 +34,35 @@
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
+| `harness/compare_cash_like_gate.py` | 현금성 게이트 old/new 기여·영향 비교 | `python -m harness.compare_cash_like_gate` |
 | `harness/diagnose_fms_outlier.py` | 단일 티커 FMS 극단치 원인 LIVE 점검 | `python -m harness.diagnose_fms_outlier SYMBOL` |
 | `harness/check_relative_ranks.py` | 관심종목 상대순위 LIVE 점검 | `python -m harness.check_relative_ranks` |
-| `scripts/fixtures/generate_synthetic_panel.py` | fixture 재생성기 | 필요 시만 |
+| `scripts/fixtures/generate_synthetic_panel.py` | 합성 골든 fixture 재생성기 | 필요 시만 |
+| `scripts/fixtures/generate_cash_like_panel.py` | 현금성/채권/주식 경로 fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/prefilter_band_sample_fms.csv` | Finviz 사전필터 경계 밴드 실측 증거 (LIVE 산출) | 수동 참고 |
 | `scripts/analyze_prefilter_impact.py` | Finviz 사전필터 tightness 실측 (LIVE; 운영 미import) | `python scripts/analyze_prefilter_impact.py` |
 
-**v4.6 검증 요약 (어떻게 확인했는가)**
+**v4.7.0 검증 요약 (현재 관심종목 상대 Z-score)**
+
+1. 앱: target=current watchlist, reference=current watchlist; 축별 ungated 기여 평균 0.
+2. 배치: target=신규 후보, reference=현재 계좌모드 watchlist.
+3. reference 변경 시 FMS 변경; reference 미지정 시 target self-reference.
+4. 유효 reference 2개 미만 또는 표준편차 0인 축은 기여 0.
+5. 80종 패널 양수 42 / 음수 38; Spearman 0.8917 → 0.8933.
+
+**v4.6.1 검증 요약 (현금성 게이트, 당시 고정 Z 기준)**
+
+1. 합성 현금성 경로 FMS ≈ 2.72 → ≈ −0.58; 주식/장기채/고수익 매끄러운 경로 점수 불변.
+2. 승인 80종 캘리브레이션 패널: old/new bit-identical (Spearman/inversion 불변).
+3. `cash_strength = low_return × ultra_low_vol × high_smooth`; 양의 품질 보너스만 축소.
+4. 계약: `tests/unit/test_fms_cash_like_gate.py` + `harness/compare_cash_like_gate.py`.
+
+**v4.6 검증 요약 (역사적 고정 Z 계약; v4.7.0에서 폐기)**
 
 1. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` (`test_fms_scoring` + `harness.run_fms_snapshot`).
-2. `reference_prices_krw` / peer 구성 변경해도 finite FMS 불변 (`test_reference_panel_does_not_change_production_fms`).
+2. ~~reference/peer 구성 불변~~ → v4.7.0에서 사용자 의도에 따라 관심종목 상대평가로 변경.
 3. `build_panel_feature_frame` → `score_fms_from_feature_frame` ≡ snapshot FMS (`test_fms_recalib_parity`).
-4. 승인 후보 JSON의 frozen median/mean/scale/weights가 `core/fms_features.py` 상수와 일치 (승격 시 이식).
+4. 승인 후보 JSON의 frozen median/mean/scale은 v4.6 승격 증거로만 보존; production은 가중치만 유지.
 5. 앱·배치는 동일 `momentum_now_and_delta` 경로만 사용; `tests/`·`harness/`를 import하지 않음.
 
 ### 배치 I/O · 유니버스 (네트워크 없이 단위 검증)
@@ -72,6 +90,23 @@
 - `screened_universe.csv`  
 운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.
 
+### 2026-07-30 세션 — 현금성 ETF 과대평가 게이트 (v4.6.1)
+
+1. **원인**: v4.6.0 고정 정규화가 저수익·초저변동·고R² 현금성 경로에 무위험형 품질 보너스를 부여.
+2. **수정**: `cash_like_strength`로 양의 품질 기여만 억제; `R_3M`·감점·`-999` 불변.
+3. **영향**: 80종 캘리브레이션 점수 불변; IRP 스캔 기준 현금성 strength>0.9 약 30종 억제 대상.
+4. **회귀**: `test_fms_cash_like_gate.py`; 골든 순위 유지.
+
+### 2026-07-30 세션 — 현재 관심종목 상대 Z-score 복원 (v4.7.0)
+
+1. **의도 복원**: FMS 0을 고정 development 기준이 아니라 현재 계좌 관심종목 기준선으로 정의.
+2. **앱**: 관심종목 self-reference; **배치**: 신규 후보를 계좌 watchlist reference와 비교.
+3. **안전 처리**: reference 유효값 <2 또는 std≈0이면 해당 축 기여 0; Z ±4 clip 유지.
+4. **영향**: 관심종목 구성·계좌모드에 따라 동일 종목 FMS가 달라지는 것이 의도된 동작.
+5. **회귀**: reference sensitivity/self fallback/centering/zero variance/batch parity.
+6. **푸시 전 정리**: cash fixture 생성기 → `scripts/fixtures/`; `.gitkeep` 인코딩 복구;
+   프로덕션 docstring·하네스 README·SSOT 문서 동기화; pytest/import 스모크.
+
 ### 2026-07-29 세션 — FMS 원점 재피팅 production 승격 (v4.6.0)
 
 1. **정답셋**: JSON `saved_at` 기준 최신 완료 세션 하나만 사용한다. 과거 세션과 합치지 않는다.
@@ -79,7 +114,8 @@
 3. **후보군**: sparse linear / monotone GAM / 제한 상호작용; fold 내부 정규화·L1 선택.
 4. **검증**: nested holdout(부분집합 rank를 1…n으로 재서열화), bootstrap, LOO, review label 전 변형.
 5. **산출물**: 승인 전 `candidate_only_not_promoted`, 승인 후 `promoted_to_production` 상태를 기록한다.
-6. **승격**: 사용자 승인 후 10개 축 sparse-linear 수식과 고정 normalization을 `core/fms_features.py` SSOT에 반영했다.
+6. **승격 당시**: 사용자 승인 후 10개 축 sparse-linear 수식과 고정 normalization을 반영했다.
+   고정 normalization은 v4.7.0에서 관심종목 상대 Z로 대체되었고 가중치만 유지된다.
 7. **상세 절차**: `docs/FMS_RECALIBRATION_WORKFLOW.md`가 재보정 운영 문서 SSOT이다.
 
 ### 2026-07-29 세션 — production FMS 최근 우상향 튜닝 (v4.5.1)
@@ -92,8 +128,8 @@
 
 ### 2026-07-20 세션에서 확정된 FMS 검증 요약
 
-1. **순수 스코어 SSOT** = `core/fms_features.py` (피처·가중치·고정 정규화) + `core/fms.py` (스냅샷 orchestration · `-999` · ΔFMS).
-2. **정규화** = development fit frozen median/mean/std + Z ±4 clip. `reference_prices_krw`는 API 호환만.
+1. **순수 스코어 SSOT** = `core/fms_features.py` (피처·가중치·관심종목 상대 Z) + `core/fms.py` (reference orchestration · `-999` · ΔFMS).
+2. **정규화** = 현재 계좌 watchlist median/mean/std + Z ±4 clip. `reference_prices_krw`가 실제 기준 패널이다.
 3. **레거시 수식** = `score_legacy_fms_from_feature_frame` / `FmsScoreParams` (tune·회귀 전용; production 경로 아님).
 4. **회귀**: 합성 패널 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)`.
 5. **사전필터**: Finviz `Quarter Up` / `Half Up` + 로컬 `Perf > 0` (구 Q+10/H+20 폐기).
@@ -165,9 +201,9 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
   - 테스트: CSV·픽클 `FixtureAdapter` (`tests/fixtures/`, `scripts/fixtures/`)
 - 체크인 fixture는 **gitignore 스냅샷에만 의존하지 않는다.**  
   (`fms_calibration_snapshots/`는 로컬 자산일 수 있음)
-- Z-score 재현: **production v4.6**는 development fit의 **고정 median/mean/std**를 사용하므로
-  `reference_prices_krw`는 API 호환 인자일 뿐 점수를 바꾸지 않는다.
-  legacy tune 경로(`score_legacy_fms_from_feature_frame`)는 `reference_features`로 분포를 고정한다.
+- Z-score 재현: **production v4.7**은 현재 계좌 watchlist의 median/mean/std를 사용한다.
+  앱은 target self-reference, 배치는 전달된 `reference_prices_krw`를 기준으로 한다.
+  동일 fixture에서 target과 reference를 함께 고정해야 점수가 재현된다.
 
 ### 2.4 격리된 자동 테스트 하네스
 
@@ -176,8 +212,8 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
   - 극단 변동성 / True Range 실격 → FMS = `-999`
   - 결측·전 구간 NaN 컬럼
   - OHLC 없음(필터 스킵) vs OHLC 있음
-  - production v4.6: 참조 패널 변경해도 FMS 불변 (frozen normalization)
-  - legacy tune: `reference_features` 변경 시 점수 변동
+  - production v4.7: reference 변경 시 점수 변동, 미지정 시 target self-reference
+  - reference 유효값 부족/zero variance 축은 기여 0
 - `core/` 네트워크 import 금지는 `tests/contract/`로 강제한다.
 - **Finviz 사전필터 ≤ 로컬 후처리**: 사전필터는 배치 I/O를 줄이기 위한 early cut이다.
   동일 Perf 축에서 Finviz exclusive floor가 로컬보다 높으면(더 엄격하면) 안 된다.

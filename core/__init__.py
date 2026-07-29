@@ -3,7 +3,8 @@
 Migrated so far:
 - ``core.indicators`` — ``ema``, ``returns_pct``, ``r_squared_3m``, ``ytd_return``, ``last_vol_annualized``
 - ``core.tradeability`` — ``calculate_tradeability_filters``
-- ``core.fms_features`` — production v4.6 feature builder + frozen sparse scorer
+- ``core.fms_features`` — production feature builder + watchlist-relative sparse scorer
+  (+ cash-like positive-bonus gate)
 - ``core.fms`` — ``compute_fms_snapshot``, ``momentum_now_and_delta``, ``score_fms_from_feature_frame``,
   ``score_legacy_fms_from_feature_frame`` (archived), ``FmsScoreParams`` (legacy tune only)
 

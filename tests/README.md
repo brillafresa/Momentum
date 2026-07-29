@@ -12,28 +12,22 @@ tests/
 ├── fixtures/            # 체크인 Mock 데이터 (버전 관리)
 │   ├── synthetic_prices_krw.csv
 │   ├── synthetic_ohlc.csv
-│   └── golden_fms_ranks.json
+│   ├── golden_fms_ranks.json
+│   └── cash_like_paths_prices_krw.csv
 ├── unit/                # 순수 로직·헬퍼 단위 테스트
-│   ├── test_fms_scoring.py
-│   ├── test_fms_recent_continuation.py
+│   ├── test_fms_scoring.py          # 골든 순위 · reference 상대평가
+│   ├── test_fms_cash_like_gate.py   # 현금성 게이트 · relative-Z centering
 │   ├── test_fms_recalib_parity.py
 │   ├── test_fms_features.py
-│   ├── test_calibration_session.py
-│   ├── test_short_horizon_features.py
-│   ├── test_short_horizon_screen.py
-│   ├── test_indicators.py
-│   ├── test_tradeability.py
-│   ├── test_market_data_port.py
-│   ├── test_yf_rate_limit_retry.py
-│   ├── test_finviz_ticker_normalize.py
-│   ├── test_finviz_screener_pagination.py
-│   ├── test_hk_classify.py
-│   ├── test_hk_fx_conversion.py
-│   └── test_hk_universe_loader.py
+│   ├── test_market_data_port.py     # FixtureAdapter 배치 = 직접 scorer
+│   └── …
 └── contract/            # 아키텍처 계약 (예: core 네트워크 금지)
-    ├── test_no_network_in_core.py
-    └── test_prefilter_not_stricter_than_local.py
 ```
+
+Fixture **재생성기**는 `scripts/fixtures/`에 둔다 (운영 코드 미import):
+
+- `python scripts/fixtures/generate_synthetic_panel.py`
+- `python scripts/fixtures/generate_cash_like_panel.py`
 
 ## 실행
 
@@ -42,6 +36,7 @@ tests/
 python -m pytest
 python -m pytest tests/unit/ -q
 python -m harness.run_fms_snapshot
+python -m harness.compare_cash_like_gate
 ```
 
 ## 규칙
@@ -50,7 +45,10 @@ python -m harness.run_fms_snapshot
 - fixture는 재현 가능해야 하며, 의도된 공식 변경이 아니면 golden을 함부로 바꾸지 않는다.
 - 네트워크가 필요한 검사는 단위 테스트에 넣지 않는다 (별도 smoke / 운영 배치).
 - `app.py` / `run_scan_batch.py`는 이 디렉터리를 import하지 않는다.
-- 재보정 하네스: `test_calibration_session.py`(saved_at 선택), `test_fms_features.py`(visible-window 피처),
-  `test_fms_scoring.py`(골든 순위 · reference_panel 불변), `test_fms_recalib_parity.py`(feature≡snapshot).
+- 재보정·상대평가 하네스: `test_calibration_session.py`(saved_at 선택),
+  `test_fms_features.py`(visible-window 피처),
+  `test_fms_scoring.py`(골든 순위 · reference 상대평가),
+  `test_fms_recalib_parity.py`(feature≡snapshot),
+  `test_fms_cash_like_gate.py`(현금성 게이트 · self-reference centering · zero variance).
 - legacy 수식 회귀: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune` /
   `test_short_horizon_*` (`score_legacy_fms_from_feature_frame` 경로).

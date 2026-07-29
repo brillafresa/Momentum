@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.6.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v4.7.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -157,7 +157,8 @@ streamlit run app.py --server.port 8501
 
 #### 최신 3개월 경로 기반 sparse-linear 전략
 
-v4.6.0 FMS는 최신 80종 A/B 정답 순위로 **0점에서 재피팅**한 점수입니다.
+v4.7.0 FMS는 최신 80종 A/B 정답 순위로 **0점에서 재피팅**한 가중치를 사용하고,
+각 축은 현재 계좌모드의 관심종목 평균·표준편차로 상대 정규화합니다.
 사용자가 본 최근 3개월(63거래일) 경로에서 다음 10개 축만 사용합니다.
 
 \[
@@ -177,7 +178,9 @@ v4.6.0 FMS는 최신 80종 A/B 정답 순위로 **0점에서 재피팅**한 점�
   5D 상승 streak, 15D 상승 추세 효율성
 - 감점: 3M 단발 점프 지배도, EMA20 아래 체류일, 급등 후 정체,
   20D range compression
-- \(z(\cdot)\): 승인된 development fit의 고정 median/mean/std로 정규화 후 ±4 clip
+- \(z(\cdot)\): 현재 계좌 관심종목의 median/mean/std로 상대 정규화 후 ±4 clip
+- 앱은 관심종목끼리 비교하고, 배치는 신규 후보를 현재 관심종목 분포와 비교합니다.
+- 저수익∧초저변동∧고R² 현금성 경로는 양의 품질 보너스만 억제합니다.
 - 거래적합성 필터의 `FMS=-999` 정책은 기존과 동일합니다.
 
 ## 🔁 FMS 재보정(원점 재피팅)
@@ -240,7 +243,21 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v4.6.0 (현재)
+### v4.7.0 (현재)
+
+- **관심종목 상대 Z-score 복원**: 각 축을 현재 계좌모드 관심종목의 평균·표준편차로 정규화
+- 앱은 현재 관심종목끼리, 배치는 신규 후보를 현재 관심종목 기준으로 평가
+- `FMS=0`은 고정 development 기준이 아니라 현재 관심종목의 상대 기준선
+- reference 변경·자기 참조 centering·배치 port parity 회귀 하네스 추가
+
+### v4.6.1
+
+- **현금성 경로 게이트**: 저수익 ∧ 초저변동 ∧ 고R²일 때 품질 축의 양의 보너스만 억제 (`R_3M`·감점 불변)
+- KOFR/CD금리/머니마켓 ETF가 v4.6.0에서 상위권을 독점하던 분포 외삽 수정
+- 승인 80종 캘리브레이션 패널 점수는 bit-identical 유지
+- 하네스: `test_fms_cash_like_gate.py`, `harness/compare_cash_like_gate.py`
+
+### v4.6.0
 
 - 최신 80종 정답셋의 zero-based sparse-linear FMS를 production으로 승격
 - 10개 3M-window 축, 고정 normalization, ±4 clip을 `core/fms_features.py` SSOT로 적용

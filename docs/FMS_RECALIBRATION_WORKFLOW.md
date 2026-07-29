@@ -1,10 +1,15 @@
 # FMS 재보정 워크플로우
 
-> 최종 갱신: 2026-07-29 (KST)
-> 현재 상태: 최신 80종 정답셋의 **원점 재피팅 후보가 v4.6.0 production으로 승격 완료**
+> 최종 갱신: 2026-07-30 (KST)
+> 현재 상태: v4.6.0 승격 가중치 + v4.7.0 현재 관심종목 상대 Z-score
 
 이 문서는 사용자가 A/B 차트 비교로 만든 순위를 바탕으로, 그래프에서 설명 가능한
 피처를 발견하고 FMS를 원점부터 다시 피팅하는 현재 표준 절차를 정의한다.
+
+Production normalization은 후보 피팅 당시의 frozen 통계가 아니라 현재 계좌
+관심종목의 median/mean/std를 사용한다. 앱은 관심종목 self-reference, 배치는
+신규 후보를 현재 계좌 watchlist reference와 비교한다. 후보 평가에서도 production과
+동일한 reference를 명시적으로 주입해야 한다.
 
 ---
 
@@ -354,6 +359,7 @@ holdout·audit의 pair-delta와 Spearman을 계산할 때 원래 1~80 rank를 �
 - one-standard-error 선택: **sparse linear**
 - 상태: `promoted_to_production`
 - 승격 버전: `v4.6.0`
+- normalization 정책: v4.7.0부터 현재 관심종목 상대 Z (가중치는 아래와 동일)
 
 ```text
 + 0.846427 × Z(R2_3M)
