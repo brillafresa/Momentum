@@ -25,6 +25,7 @@ from core.fms import (
     compute_fms_snapshot,
     production_fms_score_params,
     score_fms_from_feature_frame,
+    score_legacy_fms_from_feature_frame,
 )
 from core.indicators import returns_pct
 from fms_recalib_tune_weights_and_transitions import baseline_params, fms_score
@@ -48,8 +49,8 @@ def test_production_params_match_default_scoring(
 ) -> None:
     """Explicit production params must equal the no-params path."""
     feat, _ = _feature_frame_from_prices(synthetic_prices_krw)
-    default = score_fms_from_feature_frame(feat)
-    explicit = score_fms_from_feature_frame(feat, params=production_fms_score_params())
+    default = score_legacy_fms_from_feature_frame(feat)
+    explicit = score_legacy_fms_from_feature_frame(feat, params=production_fms_score_params())
     pd.testing.assert_series_equal(
         default.sort_index(),
         explicit.sort_index(),
@@ -62,9 +63,9 @@ def test_production_params_match_default_scoring(
 def test_production_params_match_snapshot_fms(
     synthetic_prices_krw: pd.DataFrame,
 ) -> None:
-    """Parameterized feature scorer remains parity with snapshot FMS."""
+    """Archived parameter scorer remains internally stable; production parity is tested separately."""
     feat, expected = _feature_frame_from_prices(synthetic_prices_krw)
-    got = score_fms_from_feature_frame(feat, params=production_fms_score_params())
+    got = score_fms_from_feature_frame(feat)
     pd.testing.assert_series_equal(
         got.sort_index(),
         expected.sort_index(),
@@ -79,9 +80,9 @@ def test_mapping_params_override_changes_score(
 ) -> None:
     """Dict overrides must be accepted and change at least one finite score."""
     feat, _ = _feature_frame_from_prices(synthetic_prices_krw)
-    base = score_fms_from_feature_frame(feat)
+    base = score_legacy_fms_from_feature_frame(feat)
     tweaked = dataclasses.replace(production_fms_score_params(), w_r3=0.05, w_r4=0.05)
-    alt = score_fms_from_feature_frame(feat, params=tweaked)
+    alt = score_legacy_fms_from_feature_frame(feat, params=tweaked)
     finite = base.replace(-999.0, pd.NA).dropna()
     assert not finite.empty
     assert not alt.reindex(finite.index).equals(finite)
@@ -94,8 +95,8 @@ def test_mapping_dict_coerces_to_params(
     feat, _ = _feature_frame_from_prices(synthetic_prices_krw)
     p = production_fms_score_params()
     as_dict = dataclasses.asdict(p)
-    via_dict = score_fms_from_feature_frame(feat, params=as_dict)
-    via_obj = score_fms_from_feature_frame(feat, params=p)
+    via_dict = score_legacy_fms_from_feature_frame(feat, params=as_dict)
+    via_obj = score_legacy_fms_from_feature_frame(feat, params=p)
     pd.testing.assert_series_equal(
         via_dict.sort_index(),
         via_obj.sort_index(),
@@ -113,7 +114,7 @@ def test_tune_fms_score_delegates_to_core(
     p = baseline_params()
     pd.testing.assert_series_equal(
         fms_score(feat, p).sort_index(),
-        score_fms_from_feature_frame(feat, params=p).sort_index(),
+        score_legacy_fms_from_feature_frame(feat, params=p).sort_index(),
         check_names=False,
         rtol=1e-12,
         atol=1e-12,

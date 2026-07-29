@@ -1,6 +1,8 @@
-"""
-FMS 재보정: 수정 전 vs 수정 후만 비교.
-- Spearman ρ, 쌍별 순위차 오차
+"""Legacy incremental FMS metric reporter.
+
+Compares production ``current`` vs production ``proposed`` alias on a feature
+CSV. Not the zero-based scratch-refit validation path — use
+``calibration/fms_recalib_refit.py`` and ``fms_recalib_scratch_candidate.json``.
 """
 
 import numpy as np

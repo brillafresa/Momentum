@@ -1,7 +1,11 @@
-"""
-FMS 재보정: 수정 전 vs 수정 후만 비교.
+"""Legacy incremental FMS comparison helper.
+
+현재 원점 재피팅 경로는 ``fms_recalib_refit.py``이다. 이 모듈의
+``current``/``proposed``는 모두 production scorer를 호출하므로 scratch
+candidate를 평가하거나 승격하지 않는다.
+
 - 입력: fms_recalib_features.csv
-- 출력: current(현재 적용) vs proposed(수정 제안)의 역전 비율
+- 출력: production current vs production proposed alias의 역전 비율
 
 Harness note
 ------------

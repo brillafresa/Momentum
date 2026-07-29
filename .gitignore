@@ -161,8 +161,20 @@ scan_results/*.csv
 symbol_names_cache.json
 # FMS 재보정 세션/스냅샷/피처 (로컬 생성물, fms_recalib_build_features.py로 재생성 가능)
 fms_recalib_features.csv
+fms_recalib_short_horizon_screen.csv
+fms_recalib_latest_fit.json
+# Legacy incremental experiments (not the v4.6.0 promoted scratch candidate)
+fms_recalib_refit_result.json
+fms_recalib_residual_pairs.csv
 fms_calibration_sessions/
 fms_calibration_snapshots/
+
+# Promoted v4.6.0 evidence (TRACKED — do not ignore):
+#   fms_recalib_scratch_candidate.json
+#   fms_recalib_scratch_scores.csv
+#   fms_recalib_scratch_residual_pairs.csv
+#   fms_recalib_scratch_residual_charts.png
+#   fms_recalib_manifest.json
 
 # watchlist_free.csv, watchlist_irp.csv는 버전 관리에 포함 (기본 관심종목 목록 제공)
 # watchlist.csv는 레거시 파일 (자동 마이그레이션됨)

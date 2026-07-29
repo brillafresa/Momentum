@@ -5,6 +5,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.6.0] - 2026-07-29
+
+### 변경
+
+- 최신 완료 재보정 세션 하나를 `saved_at` 기준으로 선택하고 manifest/hash/audit split 고정
+- production FMS를 benchmark로만 사용하며 0점에서 sparse/GAM/제한 상호작용 후보 피팅
+- nested holdout·bootstrap·LOO·review label variants와 잔차 차트 검토 추가
+- one-standard-error 규칙으로 선택한 10개 축 sparse-linear 모델을 production으로 승격
+- 승인 fit의 median/mean/std 고정 정규화와 Z-score ±4 clip으로 peer-set 구성 변화에 대한 점수 안정성 확보
+- `core/fms_features.py` 순수 feature/scorer를 앱·배치·feature-frame 공용 SSOT로 연결
+- 기존 거래적합성 필터의 `FMS=-999` 및 ΔFMS 경로 유지
+- 재보정 워크플로우·README·HARNESS_RULES·TODO·좌측 도움말을 v4.6.0 수식에 맞게 동기화
+- 푸시 전 정리: unreachable legacy `_mom_snapshot` 본문·미사용 peer 가중치·미사용 zscore 헬퍼 제거,
+  app 중복 지표 헬퍼 정리, `DEFAULT_FMS_THRESHOLD=0.0`을 배치 저장 임계값에 연결,
+  LIVE 상대순위 점검을 `harness/check_relative_ranks.py`로 이동, 승격 증거 파일 tracked / legacy incremental JSON gitignore
+
+### 검증 하네스
+
+- `tests/unit/test_fms_scoring.py` — 골든 순위 · `-999` · **reference_panel 불변**
+- `tests/unit/test_fms_features.py` / `test_fms_recalib_parity.py` / `test_calibration_session.py`
+- legacy 회귀 유지: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune_params`
+- 수동: `python -m harness.run_fms_snapshot` · `python -m harness.check_relative_ranks`
+- 푸시 전: `python -m pytest` · app/batch import 스모크
+
 ## [4.5.1] - 2026-07-29
 
 ### 변경

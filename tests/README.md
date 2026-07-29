@@ -17,6 +17,10 @@ tests/
 │   ├── test_fms_scoring.py
 │   ├── test_fms_recent_continuation.py
 │   ├── test_fms_recalib_parity.py
+│   ├── test_fms_features.py
+│   ├── test_calibration_session.py
+│   ├── test_short_horizon_features.py
+│   ├── test_short_horizon_screen.py
 │   ├── test_indicators.py
 │   ├── test_tradeability.py
 │   ├── test_market_data_port.py
@@ -46,3 +50,7 @@ python -m harness.run_fms_snapshot
 - fixture는 재현 가능해야 하며, 의도된 공식 변경이 아니면 golden을 함부로 바꾸지 않는다.
 - 네트워크가 필요한 검사는 단위 테스트에 넣지 않는다 (별도 smoke / 운영 배치).
 - `app.py` / `run_scan_batch.py`는 이 디렉터리를 import하지 않는다.
+- 재보정 하네스: `test_calibration_session.py`(saved_at 선택), `test_fms_features.py`(visible-window 피처),
+  `test_fms_scoring.py`(골든 순위 · reference_panel 불변), `test_fms_recalib_parity.py`(feature≡snapshot).
+- legacy 수식 회귀: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune` /
+  `test_short_horizon_*` (`score_legacy_fms_from_feature_frame` 경로).

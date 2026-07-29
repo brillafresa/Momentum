@@ -46,6 +46,7 @@ from core.fms import (  # noqa: F401
     momentum_now_and_delta,
     production_fms_score_params,
     score_fms_from_feature_frame,
+    score_legacy_fms_from_feature_frame,
 )
 
 # Batch-friendly Yahoo download defaults (time over failed coverage)

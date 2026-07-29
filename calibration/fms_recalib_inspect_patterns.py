@@ -11,7 +11,26 @@ import numpy as np
 
 def main() -> None:
     df = pd.read_csv("fms_recalib_features.csv", index_col=0)
-    cols = ["R_1M", "R_3M", "R_4M", "R2_3M", "AboveEMA50", "Vol20_Ann", "MaxDD_Pct"]
+    # All feature columns from build_features (base + short-horizon), excluding rank.
+    preferred = [
+        "R_1M",
+        "R_3M",
+        "R_4M",
+        "R2_3M",
+        "AboveEMA50",
+        "Vol20_Ann",
+        "MaxDD_Pct",
+        "R_10D",
+        "R_5D",
+        "EMA20_SLOPE_10D",
+        "EMA20_CURV_20D",
+        "UNDER_EMA20_DEPTH",
+        "UNDER_EMA20_DAYS",
+        "DOWN_STREAK_5D",
+    ]
+    cols = [c for c in preferred if c in df.columns]
+    if not cols:
+        cols = [c for c in df.columns if c != "rank"]
 
     n = len(df)
     third = max(1, n // 3)

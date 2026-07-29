@@ -72,13 +72,13 @@ def fms_score_with_vol_params(df: pd.DataFrame, *, q_pct: float, hard_power: flo
     """
     from dataclasses import asdict
 
-    from core.fms import production_fms_score_params, score_fms_from_feature_frame
+    from core.fms import production_fms_score_params, score_legacy_fms_from_feature_frame
 
     params = asdict(production_fms_score_params())
     params["vol_q_pct"] = float(q_pct)
     params["vol_hard_power"] = float(hard_power)
     params["vol_hard_scale"] = float(hard_scale)
-    return score_fms_from_feature_frame(df, params=params)
+    return score_legacy_fms_from_feature_frame(df, params=params)
 
 
 @dataclass(frozen=True)

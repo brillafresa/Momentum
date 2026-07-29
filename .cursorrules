@@ -33,7 +33,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 - **문서화**: 모든 함수와 클래스에 docstring 추가
 
 ## 주요 기능
-1. **FMS (Fast Momentum Score)**: 다차원 모멘텀 지표 종합 점수 (관심종목 기준 Z-score 정규화, R² 기반 급등주 필터링)
+1. **FMS (Fast Momentum Score)**: 3M-window 10축 sparse-linear 점수 (고정 normalization, peer-set 구성과 무관)
 2. **거래 적합성 필터**: True Range 기반 치명적 변동성 및 반복적 하방리스크 감지로 부적합 종목 자동 실격 (디버그 로깅 지원, 당일 고가/저가 0인 경우 전일 데이터로 대체)
 3. **동적 컬럼 재정렬**: FMS 전략에 맞춰 결과 테이블 컬럼 순서 자동 조정
 4. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
@@ -59,7 +59,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v4.5.1, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v4.6.0, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -104,7 +104,7 @@ Momentum/
 - **`core/`**: FMS·지표·거래적합성 등 순수 비즈니스 로직. **yfinance / finvizfinance / requests / streamlit import 금지**.
 - **`adapters/`**: 시장 데이터·유니버스·영속화 등 외부 I/O. `MarketDataPort` 프로토콜로 주입 가능하게 설계.
 - **엔트리포인트** (`app.py`, `run_scan_batch.py`): orchestration만. 다운로드는 adapter, 스코어는 core.
-- **`calibration/`**: 재보정·튜닝. production FMS와 **동일 공식**(`core.fms` / `compute_fms_snapshot`)만 사용. `f_current` 등 공식 복제 금지.
+- **`calibration/`**: 재보정·튜닝. production 평가는 `core.fms`를 직접 호출하고, 원점 재피팅 후보는 공유 순수 피처에서 **0점으로 독립 피팅**한다. 후보 scorer를 production처럼 노출하거나 승인 전에 `core.fms`에 섞지 않는다.
 - **과도기**: 기존 `analysis_utils.py` 등은 re-export 셔임으로 호환 유지. 물리 이동은 파일 단위로 점진 진행 (big-bang 금지).
 - **루트 엔트리 유지**: Streamlit Cloud / CLI 호환을 위해 `app.py`, `run_scan_batch.py`는 루트에 둔다.
 
@@ -122,7 +122,7 @@ Momentum/
 
 ### 4. FMS 단일 소스 오브 트루스
 - 스냅샷 스코어: `compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame` (**구현: `core/fms.py`**, `analysis_utils`는 re-export 셔임).
-- 재보정·튜닝 스크립트는 위 API 또는 공유 feature→score 경로만 호출한다.
+- production baseline·미세조정은 위 API를 직접 호출한다. 원점 후보는 `core.fms_features`의 순수 피처와 별도 candidate artifact를 사용하며, 사용자 승인 후에만 production SSOT로 승격한다.
 - I/O가 섞인 `calculate_fms_for_batch`는 단위 테스트 타깃으로 쓰지 말고, 다운로드와 스코어를 분리한 뒤 스코어만 하네스한다.
 
 ### 5. 첫 하네스 타깃 (기준선)
@@ -153,27 +153,22 @@ Momentum/
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
 
 ## FMS 계산 로직 (중요!)
-- **전략 개요**:  
-  - 긍정 축: 3M/4M 수익률(`R_3M`, `R_4M`), 3M R²(`R2_3M`), EMA50 상대위치(`AboveEMA50`), 조건부 1M 수익률(`R_1M`)  
-  - 부정 축: 최대 드로우다운(`MaxDD_Pct`), 20일 변동성(`Vol20_Ann`), 조건부 1M 이벤트성 급등(`R_1M`)  
-  - FMS = (긍정 축의 비선형 가산) - (부정 축의 비선형 감산)
-- **R² 기반 추세 필터링**: 3개월 로그 수익률의 결정계수(R²)가
-  - 0.7/0.9 임계점의 “계단식 점프”를 피하기 위해 **임계값 주변에서 부드럽게 전이(smoothstep)** 하도록 비선형 가중을 적용합니다.
-  - **추세상승 게이트(연속형)**: R² 가산은 R_3M≈5%, R_4M≈5.3%를 기준으로 작동하되, 경계에서 부드럽게 켜지고/꺼지도록(단절 없음) 적용합니다. (평평한 그래프 억제)
-  - **튜닝(가중치/전이폭)**: 수식 구조는 유지하면서, 정답셋 기준 설명력 지표(inversion/spearman/pair_delta_error)가 개선되도록 가중치/전이폭을 탐색(몬테카를로)해 미세조정할 수 있습니다. (관련 스크립트는 `docs/FMS_RECALIBRATION_WORKFLOW.md` 참고)
-- **드로우다운 패널티**: 최대 드로우다운이 -30%까지는 완만한 패널티, 그 이후(-50%~-80% 등)는 제곱 항으로 기울기를 키워 급격히 강한 패널티를 부여합니다.
-- **변동성 패널티**: 20일 연율화 변동성은 중간 수준까지는 완만한 패널티, 상위 변동성 구간에서 제곱 항으로 급격히 강한 패널티를 적용합니다.
-- **조건부 1M 수익률 처리**:
- - R² soft quality(≈0.80) + 3M/4M 추세가 받쳐주는 높은 1M 수익률은 “건강한 가속”으로 가산,
- - 추세·최근 연속성(R_10D·EMA20 기울기)이 받쳐주지 않을 때의 높은 1M 수익률은 “이벤트성 급등”으로 감점 요인으로 사용합니다.
- - 단기 연속 축(`w_recent`, `w_ema_shape`)으로 1개월 이내 꾸준한 우상향을 중·장기 잔존 수익과 구분합니다.
-- **Z-score 정규화 기준**: 관심종목 집합(또는 참조 가격 집합)을 기준으로 각 축을 정규화합니다.
-- **참조 데이터 시스템**: `reference_prices_krw` 매개변수로 Z-score 계산 기준(분포)을 지정하여, 배치/앱 모두 일관된 FMS 값을 계산합니다.
+- **v4.6.0 전략**: 최신 80종 정답셋으로 0점에서 재피팅한 3M-window sparse-linear 모델.
+- **가산 축**: `R2_3M`, `DD_RECOVERY`, `TREND_QUALITY_21D`, `R_3M`,
+  `UP_STREAK_5D`, `TREND_EFFICIENCY_REWARD_15D`.
+- **감점 축**: `JUMP_DISCONTINUITY_3M`, `UNDER_EMA20_DAYS`, `STALE_AGE`,
+  `RANGE_COMPRESSION_20D`.
+- **정규화**: 승인 development fit의 median 결측 대체, 고정 mean/std Z-score,
+  ±4 clip. 현재 관심종목/참조 패널 구성은 점수를 바꾸지 않는다.
+- **SSOT**: 피처·가중치·normalization은 `core/fms_features.py`,
+  production orchestration과 `-999` 적용은 `core/fms.py`.
+- **재보정**: `saved_at` 기준 최신 완료 정답셋 하나만 사용하고, 다음 후보도
+  사용자 승인 전에는 production에 반영하지 않는다. (상세: `docs/FMS_RECALIBRATION_WORKFLOW.md`)
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
   - 치명적 변동성: 63거래일 내 True Range 기반 일일 변동폭 30% 초과 시 실격(가격 갭 포함)
   - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
   - 당일 고가/저가 0 처리: 국장 개장 시간(9시~9시 20분) Yahoo Finance 데이터 이슈 대응 (전일 고가/저가로 대체)
-- **Z-score 계산 최적화**: -999 패널티 종목은 Z-score 평균/표준편차 계산에서 제외해 왜곡을 방지합니다.
+- **고정 Z-score**: peer 평균/표준편차를 사용하지 않으므로 실격 종목이 다른 종목의 점수를 왜곡하지 않습니다.
 - **API 제한 대응**: 청크 슬립·outer batch·`shared._ERRORS` 레이트리밋 감지 후 지수 백오프(배치 기본 재시도 상한·대기 상한은 `analysis_utils` 상수). 상장폐지/`no data`는 스킵.
 - **가격 계열**: 수익/FMS는 Adj Close(배당 반영), 거래적합성은 raw High/Low/Close.
 

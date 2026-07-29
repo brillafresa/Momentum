@@ -16,20 +16,20 @@ from typing import Dict, List, Mapping, Optional, Union
 import numpy as np
 import pandas as pd
 
+from core.fms_features import (
+    PRODUCTION_FMS_COLUMNS,
+    build_panel_feature_frame,
+    score_production_fms_features,
+)
 from core.indicators import (
-    ema,
-    last_vol_annualized,
     mask_non_positive_prices,
     returns_pct,
-    r_squared_3m,
     ytd_return,
 )
 from core.tradeability import calculate_tradeability_filters
 
 
-# Calendar-aligned trading-day horizons (1M=21, 3M=63, 4M=84; legacy 6M=126).
-HORIZON_DAYS_1M = 21
-HORIZON_DAYS_3M = 63
+# Calendar-aligned trading-day horizons (4M=84; legacy 6M=126 for mapping helpers).
 HORIZON_DAYS_4M = 84
 HORIZON_DAYS_LEGACY_6M = 126
 
@@ -74,11 +74,10 @@ R1_QUALITY_HARD_FLOOR = 0.5
 
 @dataclass(frozen=True)
 class FmsScoreParams:
-    """Tunable FMS weights / transition widths (reference-panel / feature-frame path).
+    """Archived pre-v4.6 FMS weights / transition widths (legacy tune path only).
 
-    Production defaults live in ``production_fms_score_params()``. Offline Monte-Carlo
-    search (tune scripts) must call ``score_fms_from_feature_frame(..., params=...)``
-    instead of forking the formula body.
+    Production v4.6 scoring does **not** use these params. Offline legacy Monte-Carlo
+    scripts call ``score_legacy_fms_from_feature_frame(..., params=...)``.
     """
 
     w_r3: float
@@ -121,10 +120,12 @@ class FmsScoreParams:
 
 
 def production_fms_score_params() -> FmsScoreParams:
-    """Production weights / transition widths (reference-panel path).
+    """Archived pre-v4.6 weights / transition widths (legacy tune path only).
 
-    2026-07-29: modest bump to ``w_ema_shape`` / ``w_recent`` so intra-month
-    continuation competes better with stale 3M/4M residue (see HARNESS / CHANGELOG).
+    v4.6 production scoring uses ``score_production_fms_features`` /
+    ``score_fms_from_feature_frame`` with frozen sparse-linear constants in
+    ``core/fms_features.py``. These params remain for
+    ``score_legacy_fms_from_feature_frame`` and offline tune scripts.
     """
     return FmsScoreParams(
         w_r3=0.46869,
@@ -158,16 +159,6 @@ def production_fms_score_params() -> FmsScoreParams:
         vol_hard_power=1.5,
         vol_hard_scale=1.0,
     )
-
-
-# Peer-set path (no external reference panel) primary weights — shared extended
-# axes still come from ``production_fms_score_params()``.
-_PEER_W_R3 = 0.519348
-_PEER_W_R4 = 0.430148
-_PEER_W_R2 = 0.519626
-_PEER_W_EMA = 0.398466
-_PEER_W_DD = 0.265056
-_PEER_W_VOL = 0.218807
 
 
 def _resolve_fms_score_params(
@@ -272,22 +263,21 @@ def _normalize_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def score_fms_from_feature_frame(
+def score_legacy_fms_from_feature_frame(
     features: pd.DataFrame,
     *,
     reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set] = None,
     params: Optional[Union[FmsScoreParams, Mapping[str, float]]] = None,
 ) -> pd.Series:
-    """Score FMS from a precomputed feature table (recalib / harness entrypoint).
+    """Score the pre-v4.6 FMS from a feature table for archived tuning.
 
-    Implements the **production reference-panel formula** used when
-    ``compute_fms_snapshot(..., reference_prices_krw=...)`` runs. When
+    Implements the legacy reference-panel formula. When
     ``reference_features`` is omitted, the target frame is used as its own
     reference (same as ``reference_prices_krw=prices_krw`` in the app).
 
     ``params`` overrides weights / transition widths for offline search. Omit
-    (or pass ``production_fms_score_params()``) for the shipped formula.
+    (or pass ``production_fms_score_params()``) for the archived formula.
 
     Required columns (either ``Vol20_Ann`` or ``Vol20(ann)``):
     ``R_1M``, ``R_3M``, ``R_4M``, ``R2_3M``, ``AboveEMA50``, ``Vol20_*``,
@@ -316,7 +306,7 @@ def score_fms_from_feature_frame(
     ]
     missing = [c for c in required if c not in feat.columns]
     if missing:
-        raise KeyError(f"score_fms_from_feature_frame missing columns: {missing}")
+        raise KeyError(f"score_legacy_fms_from_feature_frame missing columns: {missing}")
 
     r_1m = feat["R_1M"].astype(float)
     r_3m = feat["R_3M"].astype(float)
@@ -455,134 +445,39 @@ def score_fms_from_feature_frame(
     return (pos - neg).rename("FMS")
 
 
+def score_fms_from_feature_frame(
+    features: pd.DataFrame,
+    *,
+    reference_features: Optional[pd.DataFrame] = None,
+    disqualified_symbols: Optional[set] = None,
+) -> pd.Series:
+    """Score the promoted sparse-linear production FMS.
+
+    The approved model uses frozen development-set normalization, so
+    ``reference_features`` remains accepted only for API compatibility and
+    does not alter scores.
+    """
+    del reference_features
+    return score_production_fms_features(
+        features, disqualified_symbols=disqualified_symbols
+    )
+
+
 def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                   ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:
     # Yahoo Adj Close can contain long negative stretches (KR ETF glitches).
-    # Mask before EMA/return features so AboveEMA50 / FMS cannot explode.
+    # Mask before feature extraction so EMA/return features cannot explode.
     prices_krw = mask_non_positive_prices(prices_krw)
     if reference_prices_krw is not None:
         reference_prices_krw = mask_non_positive_prices(reference_prices_krw)
+    # ``reference_prices_krw`` is retained for public API compatibility only;
+    # v4.6 production scoring uses frozen development-set normalization.
 
-    # 기본 수익률/지표
-    r_1m = returns_pct(prices_krw, 21)
-    r_3m = returns_pct(prices_krw, 63)
-    r2_3m = r_squared_3m(prices_krw).rename('R2_3M')
-    vol20 = last_vol_annualized(prices_krw, 20).rename('Vol20(ann)')
-
-    # 단기/EMA 기반 파생 변수들 (재보정 피처와 동일 구조)
-    r_10d = returns_pct(prices_krw, 10)
-    r_5d = returns_pct(prices_krw, 5)
-
-    above_ema50: Dict[str, float] = {}
-    ema20_slope_10d: Dict[str, float] = {}
-    ema20_curv_20d: Dict[str, float] = {}
-    under_ema20_depth: Dict[str, float] = {}
-    under_ema20_days: Dict[str, int] = {}
-    down_streak_5d: Dict[str, float] = {}
-
-    for c in prices_krw.columns:
-        s = prices_krw[c].dropna()
-        if s.empty:
-            above_ema50[c] = np.nan
-            ema20_slope_10d[c] = np.nan
-            ema20_curv_20d[c] = np.nan
-            under_ema20_depth[c] = np.nan
-            under_ema20_days[c] = np.nan
-            down_streak_5d[c] = np.nan
-            continue
-
-        e50 = ema(s, 50)
-        above_ema50[c] = (s.iloc[-1] / e50.iloc[-1] - 1.0) if e50.iloc[-1] > 0 else np.nan
-
-        e20 = ema(s, 20)
-
-        # EMA20 기울기 (최근 10일, 로그 회귀; 0/음수는 NaN 처리해 log 경고 방지)
-        if len(e20) >= 10:
-            last10 = e20.iloc[-10:]
-            x10 = np.arange(len(last10), dtype=float)
-            y10 = np.log(last10.where(last10 > 0)).dropna()
-            if len(y10) == len(x10):
-                ema20_slope_10d[c] = float(np.polyfit(x10, y10, 1)[0])
-            else:
-                ema20_slope_10d[c] = np.nan
-        else:
-            ema20_slope_10d[c] = np.nan
-
-        # EMA20 곡률 (최근 20일 앞/뒤 10일 기울기 차이)
-        if len(e20) >= 20:
-            first10 = e20.iloc[-20:-10]
-            last10 = e20.iloc[-10:]
-            x_seg = np.arange(10, dtype=float)
-
-            def _slope(seg: pd.Series) -> float:
-                y = np.log(seg.where(seg > 0)).dropna()
-                if len(y) != len(x_seg):
-                    return np.nan
-                return float(np.polyfit(x_seg, y, 1)[0])
-
-            s_first = _slope(first10)
-            s_last = _slope(last10)
-            if np.isnan(s_first) or np.isnan(s_last):
-                ema20_curv_20d[c] = np.nan
-            else:
-                ema20_curv_20d[c] = s_last - s_first
-        else:
-            ema20_curv_20d[c] = np.nan
-
-        # 최근 60일 EMA20 아래 이탈 깊이/일수
-        tail60 = s.iloc[-60:] if len(s) >= 60 else s
-        e20_60 = e20.reindex(tail60.index)
-        mask_under = tail60 < e20_60
-        if not mask_under.any():
-            under_ema20_depth[c] = 0.0
-            under_ema20_days[c] = 0
-        else:
-            rel = tail60[mask_under] / e20_60[mask_under] - 1.0
-            under_ema20_depth[c] = float(rel.min())
-            under_ema20_days[c] = int(mask_under.sum())
-
-        # 최근 5일 연속 하락 최대 길이
-        if len(s) >= 5:
-            last5 = s.iloc[-5:]
-            diff = last5.diff()
-            is_down = diff < 0
-            max_run = 0
-            cur = 0
-            for v in is_down.iloc[1:]:
-                if bool(v):
-                    cur += 1
-                    max_run = max(max_run, cur)
-                else:
-                    cur = 0
-            down_streak_5d[c] = int(max_run)
-        else:
-            down_streak_5d[c] = np.nan
-
-    above_ema50_ser = pd.Series(above_ema50, name='AboveEMA50')
-    ema20_slope_10d_ser = pd.Series(ema20_slope_10d, name='EMA20_SLOPE_10D')
-    ema20_curv_20d_ser = pd.Series(ema20_curv_20d, name='EMA20_CURV_20D')
-    under_ema20_depth_ser = pd.Series(under_ema20_depth, name='UNDER_EMA20_DEPTH')
-    under_ema20_days_ser = pd.Series(under_ema20_days, name='UNDER_EMA20_DAYS')
-    down_streak_5d_ser = pd.Series(down_streak_5d, name='DOWN_STREAK_5D')
-
-    # 최대 드로우다운(%)
-    mdict: Dict[str, float] = {}
-    for c in prices_krw.columns:
-        s = prices_krw[c].dropna()
-        if s.empty:
-            mdict[c] = np.nan
-            continue
-        roll_max = s.cummax()
-        dd = (s / roll_max - 1.0) * 100.0
-        mdict[c] = float(dd.min())
-    max_dd = pd.Series(mdict, name='MaxDD_Pct')
-
-    # 거래 적합성 필터 먼저 확인
     disqualification_flags: Dict[str, bool] = {}
     filter_reasons: Dict[str, str] = {}
     if ohlc_data is not None and symbols is not None:
         disqualification_flags, filter_reasons = calculate_tradeability_filters(ohlc_data, symbols)
-    
+
     disqualified_symbols = set()
     if disqualification_flags:
         disqualified_symbols = {
@@ -590,287 +485,38 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             if is_disq and sym in prices_krw.columns
         }
 
-    # Scoring helpers / weights: ``production_fms_score_params()`` shared with
-    # ``score_fms_from_feature_frame`` — do not reintroduce local weight forks.
-    p = production_fms_score_params()
-
-    if reference_prices_krw is not None:
-        # 참조 데이터 기반 분포
-        ref_r_1m = returns_pct(reference_prices_krw, 21)
-        ref_r_3m = returns_pct(reference_prices_krw, 63)
-        ref_r_4m = returns_pct(reference_prices_krw, HORIZON_DAYS_4M)
-        ref_r2_3m = r_squared_3m(reference_prices_krw).rename('R2_3M')
-        ref_above_ema50 = {}
-        for c in reference_prices_krw.columns:
-            s = reference_prices_krw[c].dropna()
-            if s.empty:
-                ref_above_ema50[c] = np.nan
-                continue
-            e50 = ema(s, 50)
-            ref_above_ema50[c] = (s.iloc[-1] / e50.iloc[-1] - 1.0) if e50.iloc[-1] > 0 else np.nan
-        ref_above_ema50 = pd.Series(ref_above_ema50, name='AboveEMA50')
-        ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename('Vol20(ann)')
-        ref_r_10d = returns_pct(reference_prices_krw, 10)
-        ref_ema20_slope_10d: Dict[str, float] = {}
-        for c in reference_prices_krw.columns:
-            s = reference_prices_krw[c].dropna()
-            if s.empty:
-                ref_ema20_slope_10d[c] = np.nan
-                continue
-            e20 = ema(s, 20)
-            if len(e20) >= 10:
-                last10 = e20.iloc[-10:]
-                x10 = np.arange(len(last10), dtype=float)
-                y10 = np.log(last10.where(last10 > 0)).dropna()
-                if len(y10) == len(x10):
-                    ref_ema20_slope_10d[c] = float(np.polyfit(x10, y10, 1)[0])
-                else:
-                    ref_ema20_slope_10d[c] = np.nan
-            else:
-                ref_ema20_slope_10d[c] = np.nan
-        ref_ema20_slope_10d = pd.Series(ref_ema20_slope_10d, name='EMA20_SLOPE_10D')
-
-        # 참조용 MaxDD
-        ref_md: Dict[str, float] = {}
-        for c in reference_prices_krw.columns:
-            s = reference_prices_krw[c].dropna()
-            if s.empty:
-                ref_md[c] = np.nan
-                continue
-            roll_max = s.cummax()
-            dd = (s / roll_max - 1.0) * 100.0
-            ref_md[c] = float(dd.min())
-        ref_max_dd = pd.Series(ref_md, name='MaxDD_Pct')
-
-        # R2 비선형 가중 + 추세상승 게이트 (평평한 그래프 억제)
-        r_4m = returns_pct(prices_krw, HORIZON_DAYS_4M)
-        r2_gate = _smoothstep(r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
-            r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
-        )
-        ref_r2_gate = _smoothstep(ref_r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
-            ref_r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
-        )
-        r2_level = _smoothstep(r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(r_4m, R_4M_GATE_CENTER, p.level_r4_hi)
-        ref_r2_level = _smoothstep(ref_r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(
-            ref_r_4m, R_4M_GATE_CENTER, p.level_r4_hi
-        )
-        r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
-        ref_r2_strength = ref_r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * ref_r2_level)
-
-        r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
-        w_high = _smoothstep(r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
-        r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high  # 0.2 -> 0.6 -> 1.2
-        r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
-
-        ref_r2_clip = ref_r2_3m.clip(lower=0.0, upper=1.0)
-        ref_w_mid = _smoothstep(ref_r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
-        ref_w_high = _smoothstep(ref_r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
-        ref_r2_mult = 0.2 + 0.4 * ref_w_mid + 0.6 * ref_w_high
-        ref_r2_eff_gated = pd.Series((ref_r2_mult * ref_r2_clip) * ref_r2_strength, index=ref_r2_3m.index)
-
-        r2_term = _z_ref(r2_eff_gated, ref_r2_eff_gated)
-
-        # MaxDD 패널티 (참조 분포 기준)
-        dd_mag = (-max_dd).clip(lower=0.0)
-        ref_dd_mag = (-ref_max_dd).clip(lower=0.0)
-        dd_soft = dd_mag.clip(upper=30.0)
-        dd_hard = ((dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
-        dd_combined = dd_soft + dd_hard
-        ref_dd_soft = ref_dd_mag.clip(upper=30.0)
-        ref_dd_hard = ((ref_dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
-        ref_dd_combined = ref_dd_soft + ref_dd_hard
-        dd_penalty = _z_ref(dd_combined, ref_dd_combined)
-
-        # Vol20 패널티 (참조 분포 기준)
-        v = vol20.clip(lower=0.0)
-        v_ref = ref_vol20.clip(lower=0.0)
-        q_ref = np.nanpercentile(v_ref, p.vol_q_pct) if not v_ref.dropna().empty else np.nan
-        if np.isnan(q_ref):
-            q_ref = np.nanpercentile(v, p.vol_q_pct) if not v.dropna().empty else 0.0
-        v_soft = v.clip(upper=q_ref)
-        v_hard = p.vol_hard_scale * ((v - q_ref).clip(lower=0.0) ** p.vol_hard_power)
-        v_combined = v_soft + v_hard
-        v_ref_soft = v_ref.clip(upper=q_ref)
-        v_ref_hard = p.vol_hard_scale * ((v_ref - q_ref).clip(lower=0.0) ** p.vol_hard_power)
-        v_ref_combined = v_ref_soft + v_ref_hard
-        vol_penalty = _z_ref(v_combined, v_ref_combined)
-
-        # 주요 양의 축들
-        r4_full = returns_pct(prices_krw, HORIZON_DAYS_4M)
-        r3_term = _z_ref(r_3m, ref_r_3m)
-        r4_term = _z_ref(r4_full, ref_r_4m)
-        ema_term = _z_ref(above_ema50_ser, ref_above_ema50)
-
-        # R1 조건부 처리 (soft R² + recent-continuation exemption)
-        r1_good, r1_bad = _r1_conditional_series(
-            r_1m, r_3m, r4_full, r2_3m, r_10d, ema20_slope_10d_ser, p
-        )
-        ref_r1_good, ref_r1_bad = _r1_conditional_series(
-            ref_r_1m,
-            ref_r_3m,
-            ref_r_4m,
-            ref_r2_3m,
-            ref_r_10d,
-            ref_ema20_slope_10d,
-            p,
-        )
-        r1_pos = _z_ref(r1_good, ref_r1_good)
-        r1_neg = _z_ref(r1_bad, ref_r1_bad)
-
-        # EMA20 shape + 단기/이탈 변수는 참조 분포 없이 현재 집합 기준으로만 정규화
-        slope_term = _z_peer(ema20_slope_10d_ser, disqualified_symbols)
-        curv_penalty_raw = ema20_curv_20d_ser.clip(lower=0.0)
-        curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
-        curv_penalty = _z_peer(curv_penalty_raw, disqualified_symbols)
-        curv_reward = _z_peer(curv_reward_raw, disqualified_symbols)
-        ema_shape_term = (
-            p.w_ema_slope_base * slope_term
-            + p.w_ema_curv_reward_base * curv_reward
-            - p.w_ema_curv_penalty_base * curv_penalty
-        )
-
-        recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
-        quality_w = _r1_quality_weight(r2_3m, r_3m, r4_full, p)
-        recent_break_raw = pd.Series(
-            np.where((quality_w >= R1_QUALITY_HARD_FLOOR) & (r_10d < 0.0), -r_10d, 0.0),
-            index=r_10d.index,
-        )
-        recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)
-        depth_term = _z_peer(under_ema20_depth_ser, disqualified_symbols)
-        days_term = _z_peer(under_ema20_days_ser.astype(float), disqualified_symbols)
-        down5_term = _z_peer(down_streak_5d_ser.astype(float), disqualified_symbols)
-
-        Pos = (
-            p.w_r3 * r3_term
-            + p.w_r4 * r4_term
-            + p.w_r2 * r2_term
-            + p.w_ema * ema_term
-            + p.w_ema_shape * ema_shape_term
-            + p.w_recent * recent_accel_term
-            + p.w_r1_pos * r1_pos
-        )
-        Neg = (
-            p.w_dd * dd_penalty
-            + p.w_vol * vol_penalty
-            + p.w_r1_neg * r1_neg
-            + p.w_break * recent_break_term
-            + p.w_down5 * down5_term
-            + p.w_under_depth * depth_term
-            + p.w_under_days * days_term
-        )
-        FMS = Pos - Neg
-
-    else:
-        # 참조 데이터가 없을 때: 현재 집합 분포 기준
-        r_4m = returns_pct(prices_krw, HORIZON_DAYS_4M)
-        r2_gate = _smoothstep(r_3m, R_3M_GATE_CENTER - p.gate_r3_w, R_3M_GATE_CENTER + p.gate_r3_w) * _smoothstep(
-            r_4m, R_4M_GATE_CENTER - p.gate_r4_w, R_4M_GATE_CENTER + p.gate_r4_w
-        )
-        r2_level = _smoothstep(r_3m, R_3M_GATE_CENTER, p.level_r3_hi) * _smoothstep(r_4m, R_4M_GATE_CENTER, p.level_r4_hi)
-        r2_strength = r2_gate * (p.r2_floor + (1.0 - p.r2_floor) * r2_level)
-        r2_clip = r2_3m.clip(lower=0.0, upper=1.0)
-        w_mid = _smoothstep(r2_clip, 0.70 - p.r2_transition_w, 0.70 + p.r2_transition_w)
-        w_high = _smoothstep(r2_clip, 0.90 - p.r2_transition_w, 0.90 + p.r2_transition_w)
-        r2_mult = 0.2 + 0.4 * w_mid + 0.6 * w_high
-        r2_eff_gated = pd.Series((r2_mult * r2_clip) * r2_strength, index=r2_3m.index)
-        r2_term = _z_peer(r2_eff_gated, disqualified_symbols)
-
-        dd_mag = (-max_dd).clip(lower=0.0)
-        dd_soft = dd_mag.clip(upper=30.0)
-        dd_hard = ((dd_mag - 30.0).clip(lower=0.0) ** 2) / (70.0 ** 2) * 70.0
-        dd_combined = dd_soft + dd_hard
-        dd_penalty = _z_peer(dd_combined, disqualified_symbols)
-
-        v = vol20.clip(lower=0.0)
-        q = np.nanpercentile(v, p.vol_q_pct) if not v.dropna().empty else 0.0
-        v_soft = v.clip(upper=q)
-        v_hard = p.vol_hard_scale * ((v - q).clip(lower=0.0) ** p.vol_hard_power)
-        v_combined = v_soft + v_hard
-        vol_penalty = _z_peer(v_combined, disqualified_symbols)
-
-        r4_full = returns_pct(prices_krw, HORIZON_DAYS_4M)
-        r3_term = _z_peer(r_3m, disqualified_symbols)
-        r4_term = _z_peer(r4_full, disqualified_symbols)
-        ema_term = _z_peer(above_ema50_ser, disqualified_symbols)
-
-        r1_good, r1_bad = _r1_conditional_series(
-            r_1m, r_3m, r4_full, r2_3m, r_10d, ema20_slope_10d_ser, p
-        )
-        r1_pos = _z_peer(r1_good, disqualified_symbols)
-        r1_neg = _z_peer(r1_bad, disqualified_symbols)
-
-        slope_term = _z_peer(ema20_slope_10d_ser, disqualified_symbols)
-        curv_penalty_raw = ema20_curv_20d_ser.clip(lower=0.0)
-        curv_reward_raw = (-ema20_curv_20d_ser).clip(lower=0.0)
-        curv_penalty = _z_peer(curv_penalty_raw, disqualified_symbols)
-        curv_reward = _z_peer(curv_reward_raw, disqualified_symbols)
-        ema_shape_term = (
-            p.w_ema_slope_base * slope_term
-            + p.w_ema_curv_reward_base * curv_reward
-            - p.w_ema_curv_penalty_base * curv_penalty
-        )
-
-        recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
-        quality_w = _r1_quality_weight(r2_3m, r_3m, r4_full, p)
-        recent_break_raw = pd.Series(
-            np.where((quality_w >= R1_QUALITY_HARD_FLOOR) & (r_10d < 0.0), -r_10d, 0.0),
-            index=r_10d.index,
-        )
-        recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)
-        depth_term = _z_peer(under_ema20_depth_ser, disqualified_symbols)
-        days_term = _z_peer(under_ema20_days_ser.astype(float), disqualified_symbols)
-        down5_term = _z_peer(down_streak_5d_ser.astype(float), disqualified_symbols)
-
-        Pos = (
-            _PEER_W_R3 * r3_term
-            + _PEER_W_R4 * r4_term
-            + _PEER_W_R2 * r2_term
-            + _PEER_W_EMA * ema_term
-            + p.w_ema_shape * ema_shape_term
-            + p.w_recent * recent_accel_term
-            + p.w_r1_pos * r1_pos
-        )
-        Neg = (
-            _PEER_W_DD * dd_penalty
-            + _PEER_W_VOL * vol_penalty
-            + p.w_r1_neg * r1_neg
-            + p.w_break * recent_break_term
-            + p.w_down5 * down5_term
-            + p.w_under_depth * depth_term
-            + p.w_under_days * days_term
-        )
-        FMS = Pos - Neg
-
-    # 실격 종목은 FMS = -999 적용
-    if disqualification_flags:
-        for symbol in FMS.index:
-            if symbol in disqualification_flags and disqualification_flags[symbol]:
-                FMS[symbol] = -999.0
-
-    filter_reasons_series = pd.Series(filter_reasons, name='Filter_Status').reindex(FMS.index, fill_value='정상')
-    snap = pd.concat(
-        [
-            r_1m.rename('R_1M'),
-            r_3m.rename('R_3M'),
-            r2_3m,
-            above_ema50_ser,
-            vol20,
-            max_dd,
-            r_10d.rename('R_10D'),
-            r_5d.rename('R_5D'),
-            ema20_slope_10d_ser,
-            ema20_curv_20d_ser,
-            under_ema20_depth_ser,
-            under_ema20_days_ser,
-            down_streak_5d_ser,
-            FMS.rename('FMS'),
-            filter_reasons_series,
-        ],
-        axis=1,
+    feature_symbols = symbols if symbols is not None else list(prices_krw.columns)
+    production_features = build_panel_feature_frame(
+        prices_krw, symbols=feature_symbols
     )
+    FMS = score_fms_from_feature_frame(
+        production_features, disqualified_symbols=disqualified_symbols
+    )
+    filter_reasons_series = pd.Series(
+        filter_reasons, name="Filter_Status"
+    ).reindex(production_features.index, fill_value="정상")
+    display_columns = [
+        "R_1M",
+        "R_3M",
+        "R2_3M",
+        "AboveEMA50",
+        "Vol20_Ann",
+        "MaxDD_Pct",
+        "R_10D",
+        "R_5D",
+        "EMA20_SLOPE_10D",
+        "EMA20_CURV_20D",
+        "UNDER_EMA20_DEPTH",
+        "UNDER_EMA20_DAYS",
+        "DOWN_STREAK_5D",
+        *PRODUCTION_FMS_COLUMNS,
+    ]
+    display_columns = list(dict.fromkeys(display_columns))
+    snap = production_features.reindex(columns=display_columns).copy()
+    snap = snap.rename(columns={"Vol20_Ann": "Vol20(ann)"})
+    snap["FMS"] = FMS
+    snap["Filter_Status"] = filter_reasons_series
     return snap
-
 
 def compute_fms_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.DataFrame] = None,
                          ohlc_data: Optional[pd.DataFrame] = None, symbols: Optional[List[str]] = None) -> pd.DataFrame:

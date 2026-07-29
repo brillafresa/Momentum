@@ -132,15 +132,56 @@ def load_session(session_id: str) -> Dict[str, Any]:
         return json.load(f)
 
 
+def _session_saved_at(session_id: str) -> datetime | None:
+    """Return the recorded ``saved_at`` timestamp for a session file.
+
+    Returns ``None`` when ``saved_at`` is missing or unparsable. Recalibration
+    selection must not fall back to filesystem mtime.
+    """
+    path = session_path(session_id)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        raw = payload.get("saved_at")
+        if raw:
+            return datetime.fromisoformat(str(raw))
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        pass
+    return None
+
+
 def list_sessions() -> List[str]:
     if not os.path.exists(SESSION_ROOT_DIR):
         return []
-    out = []
+    out: List[Tuple[datetime, float, str]] = []
     for fn in os.listdir(SESSION_ROOT_DIR):
-        if fn.endswith(".json"):
-            out.append(fn[:-5])
-    out.sort(reverse=True)
-    return out
+        if not fn.endswith(".json"):
+            continue
+        # build_features writes `<session_id>__baseline_metrics.json`; not a session.
+        if fn.endswith("__baseline_metrics.json"):
+            continue
+        session_id = fn[:-5]
+        path = os.path.join(SESSION_ROOT_DIR, fn)
+        saved_at = _session_saved_at(session_id)
+        if saved_at is None:
+            continue
+        out.append((saved_at, os.path.getmtime(path), session_id))
+    out.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return [session_id for _, _, session_id in out]
+
+
+def latest_completed_session() -> Tuple[str, Dict[str, Any]]:
+    """Return the most recently saved session with ``phase == done`` and a final ranking.
+
+    Recalibration fitting uses this session only. A newer in-progress session
+    (``sorting`` / ``review``) must not displace a completed ground-truth set.
+    """
+    for session_id in list_sessions():
+        session = load_session(session_id)
+        ranking = session.get("final_ranking") or []
+        if session.get("phase") == "done" and ranking:
+            return session_id, session
+    raise RuntimeError("No completed calibration session with final_ranking found")
 
 
 def mergesort_estimated_max_comparisons(n: int) -> int:

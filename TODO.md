@@ -1,13 +1,28 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-29** (KST) · 제품 버전 **v4.5.1**
+> 최종 갱신: **2026-07-29** (KST) · 제품 버전 **v4.6.0**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-29 — v4.6.0 (FMS 원점 재피팅 production 승격)
+
+- [x] 최신 완료 세션 하나를 `saved_at` 기준으로 고정하고 manifest/hash 생성
+- [x] 기존 FMS를 benchmark로만 두고 0점 출발 sparse/GAM/제한 상호작용 후보 피팅
+- [x] nested holdout·bootstrap·LOO·review label 전 변형 검증
+- [x] development 잔차 차트 검토 및 일반화 피처 추가 검토
+- [x] `fms_recalib_scratch_candidate.json` 후보 보고 생성
+- [x] 사용자 후보 검토·승인 (`promoted_to_production`)
+- [x] 10개 축 sparse-linear 공식·고정 정규화·±4 clip을 production SSOT에 승격
+- [x] 앱·배치·feature-frame parity, 거래적합성 `-999`, UI 도움말 동기화
+- [x] 푸시 전 정리: dead code(`_PEER_W_*`, unused zscore helpers, app 중복 지표), harness 경계,
+  승격 증거 tracked / legacy incremental JSON gitignore, docs SSOT, pytest/import 스모크
+
+---
 
 ### 2026-07-29 — v4.5.1 (FMS 최근 우상향 가중 튜닝)
 

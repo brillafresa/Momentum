@@ -10,10 +10,18 @@ Production note
 검증용 설정은 ``tests/`` · ``harness/`` · ``scripts/`` 에 둔다.
 """
 
-# FMS 전략 정의 (비선형 추세/위치/리스크 결합)
-# FMS = (중·장기 수익률 + R² + EMA50 상대위치 + 조건부 1M 수익률) - (비선형 드로우다운 패널티 + 비선형 20일 변동성 패널티 + 조건부 1M 이벤트성 급등 패널티)
-# 조건부 R_1M: R² soft quality(≈0.80) + 최근 연속성(R_10D·EMA20 slope) 확인 시 이벤트 급등 감점 면제
-FMS_FORMULA = "FMS = Σ[추세·위치·매끄러움(R_3M,R_4M,R2_3M,EMA50,EMA20기울기/곡률,단기수익률,조건부 R_1M)] - Σ[리스크(MaxDD,Vol20,EMA20이탈,5일연속하락,단기추세붕괴,조건부 R_1M 이벤트성 급등)]"
+# Production v4.6.0 — approved zero-based sparse-linear refit.
+# Frozen training normalization: median fill → (x - mean) / std → clip[-4, 4].
+FMS_FORMULA = (
+    "FMS = +0.846427*Z(R2_3M) +0.601307*Z(DD_RECOVERY) "
+    "+0.354317*Z(TREND_QUALITY_21D) -0.279017*Z(JUMP_DISCONTINUITY_3M) "
+    "-0.196604*Z(UNDER_EMA20_DAYS) +0.186983*Z(R_3M) "
+    "-0.181753*Z(STALE_AGE) +0.107915*Z(UP_STREAK_5D) "
+    "+0.107766*Z(TREND_EFFICIENCY_REWARD_15D) "
+    "-0.104169*Z(RANGE_COMPRESSION_20D)"
+)
 
 # 기본 설정
-DEFAULT_FMS_THRESHOLD = 2.0
+# Batch / scan save threshold used by run_scan_batch (FMS ≥ this value).
+# App batch-result viewer may expose its own slider; keep this as the CLI default.
+DEFAULT_FMS_THRESHOLD = 0.0

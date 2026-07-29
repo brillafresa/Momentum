@@ -33,6 +33,7 @@ from analysis_utils import (
     build_prices_krw_from_symbols,
     calculate_fms_for_batch,
 )
+from config import DEFAULT_FMS_THRESHOLD
 
 
 def main() -> int:
@@ -109,8 +110,10 @@ def main() -> int:
         print("[Batch] ❌ No results were produced.")
         return 1
 
-    print(f"[Batch] ✅ Scored {len(results)} symbols; saving FMS ≥ 0.0 ({mode_label})...")
-    save_success, save_msg, saved_count = save_scan_results(results, fms_threshold=0.0, mode=mode)
+    print(f"[Batch] ✅ Scored {len(results)} symbols; saving FMS ≥ {DEFAULT_FMS_THRESHOLD} ({mode_label})...")
+    save_success, save_msg, saved_count = save_scan_results(
+        results, fms_threshold=DEFAULT_FMS_THRESHOLD, mode=mode
+    )
     print(f"[Batch] {save_msg}")
     
     if save_success:

@@ -1,13 +1,13 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.5.1**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v4.6.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
 ### 📊 가속 보드
 
 - FMS(Fast Momentum Score) 기반 실시간 모멘텀 분석
-- **R² 기반 급등주 필터링 전략**: 3개월 로그 수익률의 결정계수(R²)로 횡보 후 급등/계단식 급등 패턴 감지
+- **3M 경로 품질 전략**: R²·drawdown 회복·21D 추세 품질·점프 불연속·정체/압축을 결합한 재피팅 점수
 - 1일/5일 가속도 변화량 추적
 - 상위 N개 종목의 모멘텀 랭킹
 
@@ -143,7 +143,7 @@ streamlit run app.py --server.port 8501
 
 - 배치 스캔은 정확도 중심의 오프라인 계산입니다. 실행/상태 확인은 앱 사이드바의 "📦 배치 스캔 관리"에서 가능합니다.
 - Windows 작업 스케줄러 설정 방법은 [`docs/README_BATCH.md`](docs/README_BATCH.md)를 참조하세요.
-- 앱/배치 모두 동일한 단일 FMS/필터 로직(`analysis_utils.py`)을 사용합니다.
+- 앱/배치 모두 동일한 단일 FMS/필터 로직(`core/fms.py` · `core/fms_features.py`)을 사용합니다.
 - yfinance 레이트리밋 발생 시 지수 백오프로 최대 10회 재시도하며, 상장폐지/데이터 없음은 건너뜁니다.
 - **다국가 스캔**: USA(Finviz 스크리닝) + Korea(KOSPI 200 + KOSDAQ 150 + 국내 지수 ETF 1배/인버스) 통합 스캔 지원
 - **계좌 모드별 스캔**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드별로 다른 유니버스 스캔
@@ -155,148 +155,80 @@ streamlit run app.py --server.port 8501
 
 ### FMS (Fast Momentum Score)
 
-#### 비선형 추세·위치·리스크 결합 전략 (요약 수식)
+#### 최신 3개월 경로 기반 sparse-linear 전략
 
-FMS는 **중·장기 추세·위치·매끄러움(긍정 요인)** 에 가중합을 주고,  
-**드로우다운·변동성·이탈·단기 붕괴(부정 요인)** 를 빼는 비선형 점수입니다.
+v4.6.0 FMS는 최신 80종 A/B 정답 순위로 **0점에서 재피팅**한 점수입니다.
+사용자가 본 최근 3개월(63거래일) 경로에서 다음 10개 축만 사용합니다.
 
 \[
 \begin{aligned}
-\mathrm{FMS} =&\ 
-w_{R3}\,z(R_{3M})
-+ w_{R4}\,z(R_{4M})
-+ w_{R2}\,z\bigl(R_{2,\mathrm{eff}}(R_{3M}, R_{4M}, R2_{3M})\bigr)
-+ w_{E50}\,z(E_{50}) \\
-&+ w_{\mathrm{shape}}\,z\bigl(\Phi_{\mathrm{EMA20}}(\mathrm{slope}_{20}, \mathrm{curv}_{20})\bigr)
-+ w_{\mathrm{accel}}\,z\bigl(\Psi_{\mathrm{recent}}(R_{10D}, R_{5D})\bigr)
-+ w_{R1+}\,z(R_{1M}^{+}) \\
-&- \Bigl[
-w_{DD}\,z(D_{DD})
-+ w_{V}\,z(D_{\mathrm{vol}})
-+ w_{R1-}\,z(R_{1M}^{-})
-+ w_{\mathrm{break}}\,z(B_{\mathrm{recent}}) \\
-&\qquad\qquad
-+ w_{\mathrm{down5}}\,z(N_{\mathrm{down5}})
-+ w_{D\mathrm{under}}\,z(D_{\mathrm{under}})
-+ w_{N\mathrm{under}}\,z(N_{\mathrm{under}})
-\Bigr]
+\mathrm{FMS} =&\
+0.846427z(R2_{3M}) + 0.601307z(DD_{\mathrm{recovery}})
++ 0.354317z(Q_{21D}) \\
+&- 0.279017z(Jump_{3M}) - 0.196604z(UnderDays_{20})
++ 0.186983z(R_{3M}) \\
+&- 0.181753z(StaleAge) + 0.107915z(UpStreak_{5D})
++ 0.107766z(EffReward_{15D}) \\
+&- 0.104169z(RangeCompression_{20D})
 \end{aligned}
 \]
 
-- \(R_{1M}, R_{3M}, R_{4M}\): 1/3/4개월 수익률  
-- \(R2_{3M}\): 3개월 로그 수익률의 결정계수(R²),  
-  \(R_{2,\mathrm{eff}}\) 는 0.7/0.9 및 \(R_{3M}, R_{4M}\) 임계값(≈5%, ≈5.3%) 주변에서 smoothstep으로  
-  부드럽게 가중·게이트한 비선형 함수입니다.
-- \(E_{50}\): EMA50 대비 현재가 상대 위치  
-- \(\Phi_{\mathrm{EMA20}}(\mathrm{slope}_{20}, \mathrm{curv}_{20})\):  
-  EMA20의 최근 10일 기울기와 20일 곡률(위/아래 볼록)을 조합한 함수  
-- \(\Psi_{\mathrm{recent}}(R_{10D}, R_{5D})\):  
-  장기 추세·R²가 좋은 종목에서만 최근 10/5일 수익률을 가산하는 단기 가속 함수  
-- \(R_{1M}^{+}, R_{1M}^{-}\):  
-  장기 추세·R²가 좋은 경우의 1M 수익률(가산) /  
-  그렇지 않은 경우의 이벤트성 급등(감점)  
-- \(D_{DD}\): 드로우다운 크기(–30%까지 완만, 이후 제곱으로 tail 패널티)  
-- \(D_{\mathrm{vol}}\): 20일 변동성(70% 분위수까지 완만, 이후 \(^{1.5}\) tail 패널티)  
-- \(B_{\mathrm{recent}}\): 장기 추세가 좋은 종목에서 최근 10일이 마이너스로 꺾인 “추세 붕괴”  
-- \(N_{\mathrm{down5}}\): 최근 5일 연속 하락 최대 길이  
-- \(D_{\mathrm{under}}, N_{\mathrm{under}}\): 최근 60일 EMA20 아래 이탈 깊이/일수  
-- \(z(\cdot)\): 현재(또는 참조) 종목 집합 기준 Z-score 정규화  
-- \(w_\bullet\): 정답셋 기준으로 몬테카를로 튜닝된 가중치들입니다.
+- 가산: 3M R², drawdown 회복률, 21D 추세 품질, 3M 수익률,
+  5D 상승 streak, 15D 상승 추세 효율성
+- 감점: 3M 단발 점프 지배도, EMA20 아래 체류일, 급등 후 정체,
+  20D range compression
+- \(z(\cdot)\): 승인된 development fit의 고정 median/mean/std로 정규화 후 ±4 clip
+- 거래적합성 필터의 `FMS=-999` 정책은 기존과 동일합니다.
 
-## 🔁 FMS 재보정(직관 기반) 절차
+## 🔁 FMS 재보정(원점 재피팅)
 
-FMS는 사용자의 **차트 직관**을 더 잘 반영하도록, 주기적으로 재보정할 수 있도록 설계되어 있습니다.
+재보정은 **최종 `saved_at`이 가장 최신인 완료 세션 하나**만 사용합니다.
+과거 정답셋을 합치지 않으며, production FMS는 benchmark로만 사용합니다.
+새 후보 점수는 0에서 시작합니다.
 
-### 1단계: UI에서 정답셋 수집 (A/B 그래프 비교)
+### 1. UI에서 정답셋 수집
 
-1. 앱을 실행합니다:
+1. 앱의 **FMS 재보정** 섹션에서 새 세션을 시작해 가격 snapshot을 고정합니다.
+2. Rebased 100 로그 차트와 Drawdown을 비교해 merge sort를 완료합니다.
+3. 인접 순위 약 10%를 재검토하고 세션이 `phase == "done"`이 될 때까지 저장합니다.
 
-   ```bash
-   cd Momentum
-   streamlit run app.py --server.port 8501
-   ```
-
-2. 좌측 사이드바에서 **“FMS 재보정 — A/B 그래프 비교 정렬 (스냅샷 고정)”** 섹션으로 이동합니다.
-3. `🧪 재보정 세션 관리` 안에서:
-   - **“✅ 새 세션 시작”** 을 눌러, **현재 화면의 가격 데이터로 스냅샷을 고정**합니다.  
-     - 생성되는 ID 예:
-       - 세션: `cal_fms_YYYYMMDD_HHMMSS`
-       - 스냅샷: `fms_YYYYMMDD_HHMMSS`
-4. A/B 비교 UI에서 두 종목의 **Rebased 100 로그 차트 + Drawdown 차트**를 보며,
-   - 어느 쪽이 더 직관적으로 “좋은 그래프”인지 선택합니다.
-   - 비교는 병합정렬(merge sort) 방식으로 효율적으로 진행되며, 진행률이 표시됩니다.
-5. 모든 비교가 끝나고, **10% 정도의 인접 등수 재검토**까지 완료되면:
-   - 섹션 하단의 **최종 랭킹 테이블**에서
-     - **“📥 최종 순서 CSV 다운로드”** 로 `*_final_ranking.csv`를 저장하거나,
-   - 세션 JSON(`fms_calibration_sessions/<session_id>.json`)의 `final_ranking` 배열을 그대로 정답셋으로 사용합니다.
-
-> 이 단계까지가 “내가 눈으로 본 그래프 직관에 따른 정답 순위”를 만드는 과정입니다.
-
-### 2단계: 콘솔에서 지표 계산 및 수식 평가
-
-이후 작업은 **스냅샷 기준 데이터만 사용**하며, yfinance 등으로 최신 데이터를 다시 받지 않습니다.
-
-#### 2-1. 피처 테이블 생성
+### 2. 최신 세션 manifest와 피처 생성
 
 ```bash
-cd Momentum
 python fms_recalib_build_features.py
 ```
 
-- 최신 세션(`fms_calibration_sessions/`)과 해당 스냅샷(`fms_calibration_snapshots/`)을 읽어,
-- 각 종목에 대해 다음 컬럼을 가진 `fms_recalib_features.csv`를 생성합니다:
-  - `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
-  - `rank`: 1단계에서 만든 정답 순서
+- JSON `saved_at` 기준 최신 완료 세션 선택
+- ranking/snapshot hash와 development/audit split 기록
+- 사용자가 본 3M window에서 해석 가능한 피처 생성
 
-#### 2-2. FMS 수정 전/후 비교 (역전 비율)
-
-```bash
-python fms_recalib_evaluate_formulas.py
-```
-
-- **current(현재 적용)** vs **proposed(수정 제안)** 비교:
-  - **순서쌍 역전 비율(inversion_rate)** 을 계산합니다.
-  - 분모: 전체 순서쌍 수 \(\binom{n}{2}\)
-  - 분자: 정답에서는 A가 B보다 상위인데, 점수 기준으로는 B가 A보다 상위가 되는 쌍의 개수
-  - 값이 **작을수록** 정답셋에 더 가깝습니다.
-
-#### 2-3. 추가 랭크 품질 지표 (Spearman + 쌍별 순위차 오차)
+### 3. 원점 후보 피팅
 
 ```bash
-python fms_recalib_rank_metrics.py
+python fms_recalib_refit.py
 ```
 
-- current vs proposed에 대해:
-  - **Spearman 상관계수(`spearman_rho`)**:
-    - 정답 rank vs 모델 rank 의 랭크 상관
-    - 1에 가까울수록 순서가 잘 맞음
-  - **쌍별 순위차 오차(`pair_delta_error`)**:
-    - 모든 쌍 (i, j)에 대해  
-      - 정답 순위차: \(d_{\text{true}} = rank_j - rank_i\)
-      - 모델 순위차: \(d_{\text{model}} = rank^{(model)}_j - rank^{(model)}_i\)
-      - 오차: \(|d_{\text{true}} - d_{\text{model}}|\)
-    - 이 값을 **전체 쌍에 대해 평균** 낸 값 (작을수록 좋음).
+- sparse linear, monotone GAM, 제한 상호작용 모델 비교
+- fold 내부 정규화·L1 선택과 pairwise ordering loss
+- one-standard-error 규칙으로 단순 모델 우선
+- nested holdout, symbol bootstrap, LOO, 모든 review label 변형 검증
 
-#### 2-4. 새 FMS 수식을 교체할지 여부를 판단하는 기준
+개발 잔차는 다음 명령으로 고정 snapshot 차트를 확인합니다.
 
-새 FMS 후보를 적용하기 전에는, 최소한 다음 **세 가지 기준을 모두 만족할 때만** 실제 코드에 반영합니다.
+```bash
+python -m calibration.fms_recalib_plot_residuals
+```
 
-- **역전 비율(inversion_rate)**: 기존 FMS 대비 **감소해야** 함
-- **Spearman ρ**: 기존 FMS 대비 **증가해야** 함
-- **쌍별 순위차 오차(pair_delta_error)**: 기존 FMS 대비 **감소해야** 함
+### 4. 후보와 production의 분리
 
-위 지표 중 하나라도 나빠졌다면,  
-→ 해당 FMS 후보는 코드에 반영하지 않고, 수식을 다시 조정하거나 다른 후보를 시도합니다.
+- 후보 산출물: `fms_recalib_scratch_candidate.json`
+- 2026-07-29 승인 후보는 v4.6.0 production으로 승격되었습니다.
+- 다음 재보정에서도 `status=candidate_only_not_promoted`인 동안에는 당시 production을 계속 사용합니다.
+- inversion↓, Spearman↑, pair-delta↓와 안정성 검증을 모두 보고한 뒤
+  사용자 컨펌을 받아야만 `core/fms.py`에 승격합니다.
 
-이 규칙을 따르면 “정답셋을 더 나쁘게 설명하는 FMS”가 실수로 배포되는 것을 방지할 수 있습니다.
-
-### 주요 지표
-
-- **R_1M**: 1개월 수익률
-- **R_3M**: 3개월 수익률
-- **R2_3M**: 3개월 로그 수익률의 결정계수 (R², 0~1 사이)
-- **AboveEMA50**: EMA50 대비 현재가 위치
-- **Vol20**: 20일 변동성 (연율화)
+전체 절차와 현재 후보 수식·검증 한계는
+[`docs/FMS_RECALIBRATION_WORKFLOW.md`](docs/FMS_RECALIBRATION_WORKFLOW.md)를 참고하십시오.
 
 ## 🛠️ 기술 스택
 
@@ -308,7 +240,14 @@ python fms_recalib_rank_metrics.py
 
 ## 📝 버전 히스토리
 
-### v4.5.1 (현재)
+### v4.6.0 (현재)
+
+- 최신 80종 정답셋의 zero-based sparse-linear FMS를 production으로 승격
+- 10개 3M-window 축, 고정 normalization, ±4 clip을 `core/fms_features.py` SSOT로 적용
+- 앱·배치·feature-frame scorer parity와 거래적합성 `-999` 유지
+- 좌측 도움말과 재보정 문서를 실제 production 수식에 맞게 갱신
+
+### v4.5.1
 
 - **FMS 최근 우상향 튜닝**: 연속 상승 시 `r1_bad` 면제, R² quality soft gate(0.80), `w_recent`/`w_ema_shape` 소폭 상향
 - **UI**: 좌측 [도구 및 도움말] FMS 설명을 동일 게이트/단기 연속 축에 맞춤

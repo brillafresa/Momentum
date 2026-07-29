@@ -113,9 +113,9 @@ def fms_score(df: pd.DataFrame, p: Dict[str, float]) -> pd.Series:
     (default production params). Promote winning ``p`` into
     ``production_fms_score_params()`` before shipping.
     """
-    from core.fms import score_fms_from_feature_frame
+    from core.fms import score_legacy_fms_from_feature_frame
 
-    return score_fms_from_feature_frame(df, params=p)
+    return score_legacy_fms_from_feature_frame(df, params=p)
 
 
 def baseline_params() -> Dict[str, float]:

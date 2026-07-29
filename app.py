@@ -1,9 +1,9 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.5.1
+# KRW Momentum Radar - v4.6.0
 # 
 # 주요 기능:
-# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
+# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v4.6.0 3M-window sparse-linear)
 # - 다국가 시장 통합 분석 (미국, 한국, 일본)
 # - 수익률-변동성 이동맵 (정적/애니메이션 모드)
 # - 실시간 데이터 업데이트 및 시각화
@@ -98,7 +98,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.5.1", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.6.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -120,11 +120,6 @@ if 'account_mode' not in st.session_state:
 if 'watchlist' not in st.session_state:
     default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
     st.session_state.watchlist = load_watchlist(default_symbols, mode=st.session_state.account_mode)
-
-# 현재 관심종목을 기존 변수명으로 매핑 (하위 호환성)
-USD_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "USA"]
-KRW_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "KOR"]
-JPY_SYMBOLS = [str(s) for s in st.session_state.watchlist if classify(s) == "JPN"]
 
 # ------------------------------
 # 데이터 다운로드 및 처리 함수들
@@ -326,40 +321,12 @@ def log(msg):
     st.session_state["LOG"].append(f"[{ts}] {msg}")
 
 # ------------------------------
-# 유틸리티 함수들
+# 지표 헬퍼 (차트 렌더링용; FMS 스코어는 analysis_utils / core.fms SSOT)
 # ------------------------------
-def warn_to_log(fn, *args, **kwargs):
-    with warnings.catch_warnings(record=True) as wlist:
-        result = fn(*args, **kwargs)
-        for w in wlist:
-            st.session_state["LOG"].append(f"WARNING: {w.category.__name__}: {str(w.message)}")
-        return result
+def ema(s, span):
+    """EMA for detail-chart overlays (not used by production FMS scoring)."""
+    return s.ewm(span=span, adjust=False).mean()
 
-# ------------------------------
-# 지표/점수 계산 함수들
-# ------------------------------
-def ema(s, span): return s.ewm(span=span, adjust=False).mean()
-
-def returns_pct(df, n):
-    if df.shape[0] <= n: 
-        return pd.Series(index=df.columns, dtype=float)
-    dff = df.ffill()
-    r = warn_to_log(dff.pct_change, periods=n, fill_method=None).iloc[-1]
-    return r
-
-def ytd_return(df):
-    if df.empty: return pd.Series(dtype=float)
-    dff = df.ffill()
-    last = dff.index[-1]
-    y0 = pd.Timestamp(datetime(last.year, 1, 1))
-    start_idx = dff.index.get_indexer([y0], method='nearest')[0]
-    return dff.iloc[-1] / dff.iloc[start_idx] - 1.0
-
-def last_vol_annualized(df, window=20):
-    rets = warn_to_log(df.ffill().pct_change, fill_method=None).dropna()
-    if rets.empty: return pd.Series(index=df.columns, dtype=float)
-    vol = rets.rolling(window).std().iloc[-1] * np.sqrt(252.0)
-    return vol
 
 # ------------------------------
 # 중앙화된 FMS/필터 로직으로 오버라이드
@@ -753,38 +720,39 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     st.markdown("**📊 FMS (Fast Momentum Score)**")
     
     st.markdown(f"""
-    **개요:**  
-    - FMS는 **중·장기 우상향(3M/4M 수익률)**, **추세의 매끄러움(3M R²)**, **현재 위치(EMA50 대비)**,  
-      **단기 연속성(EMA20 기울기·곡률, 10D/5D 수익률)**, 그리고 **건강한 추세에서의 최근 가속(조건부 1M)** 을 가산하고,  
-      **깊은 드로우다운**, **과도한 20일 변동성**, **추세·연속성이 받쳐주지 않는 1M 이벤트성 급등**을 감점하는 **비선형 점수**입니다.
+    **현재 적용 상태:**
+    - 아래 설명은 앱·배치가 실제 사용하는 **production v4.6.0 FMS**입니다.
+    - 2026-07-29 최신 80종 정답셋으로 0점에서 재피팅한 sparse-linear 후보가 승인되어 승격되었습니다.
 
-    **긍정 요인 (가산)**  
-    - **R_3M, R_4M**: 3개월/4개월 수익률이 높을수록 가산  
-    - **R2_3M (3M R²)**:  
-      - 0.7/0.9 같은 임계값에서 **계단식으로 점수가 튀지 않도록**, 경계 주변을 **부드러운 곡선(smoothstep)** 으로 전이  
-      - **추세상승 게이트(연속형)**: R²는 R_3M≈5%, R_4M≈5.3%를 기준으로 가산되되, 경계에서 **부드럽게 켜지고/꺼지도록** 적용  
-    - **AboveEMA50**: 현재가가 EMA50 위에 있고, 충분히 위에 있을수록 가산  
-    - **EMA20 기울기/곡률 · R_10D/R_5D**: 최근 수 주~1개월 안쪽의 **꾸준한 우상향·가속**을 가산 (계단식 상승 후 평탄한 패턴보다 최근 연속 상승을 선호)  
-    - **조건부 R_1M (좋은 경우)**: R² soft quality(≈0.80 중심 smoothstep) + R_3M/R_4M이 받쳐주는 종목에서  
-      최근 1개월 수익률이 높으면 추가 가산 (견고한 추세의 가속으로 해석)
+    **개요:**
+    - FMS는 사용자가 본 **최근 3개월(63거래일) 가격 경로**에서 추세 품질·회복·연속성을 평가합니다.
+    - 기존 v4.5.1 수식에 항을 더한 것이 아니라, 아래 10개 축만으로 완전히 다시 피팅한 선형 점수입니다.
 
-    **부정 요인 (감점)**  
-    - **MaxDD_Pct (최대 드로우다운)**:  
-      - -30%까지는 완만한 패널티  
-      - -30% 이후(-50%~-80% 등)는 제곱 항으로 급격히 강한 패널티 (깊게 빠진 뒤 회복이 미진한 종목을 강하게 감점)  
-    - **Vol20_Ann (20일 변동성)**:  
-      - 중간 수준의 변동성까지는 완만한 패널티  
-      - 상위 변동성 구간에서 제곱 항으로 급격히 강한 패널티 (과도하게 요동치는 종목 기피)  
-    - **조건부 R_1M (나쁜 경우)**: quality가 낮고 1M만 크게 오른 경우를 이벤트성 급등으로 감점.  
-      단, **R_10D>0 이고 EMA20 기울기>0**이면(최근 연속 상승 확인) 이벤트 급등 감점에서 **면제**
+    **긍정 요인 (가산)**
+    - **R2_3M**: 3개월 로그 추세가 직선에 가깝고 매끄러울수록 가산
+    - **DD_RECOVERY**: 3개월 최대 낙폭에서 현재가가 많이 회복했을수록 가산
+    - **TREND_QUALITY_21D**: 최근 21일 로그 기울기 × R²가 높을수록 가산
+    - **R_3M**: 3개월 절대 수익률 가산
+    - **UP_STREAK_5D**: 최근 5일 내 연속 상승 최대 길이 가산
+    - **TREND_EFFICIENCY_REWARD_15D**: 최근 15일 상승 경로의 방향 효율성 가산
+
+    **부정 요인 (감점)**
+    - **JUMP_DISCONTINUITY_3M**: 하루 점프가 3개월 전체 진행을 과도하게 지배하면 감점
+    - **UNDER_EMA20_DAYS**: 최근 60일 중 EMA20 아래에 머문 날이 많을수록 감점
+    - **STALE_AGE**: 과거 급등 뒤 고점 갱신 없이 정체된 기간이 길수록 감점
+    - **RANGE_COMPRESSION_20D**: 최근 20일 변동 범위가 과도하게 압축되어 동력이 소진된 경로 감점
+
+    **정규화**
+    - 승인된 development fit의 **고정 median·mean·표준편차**를 사용하고 Z값을 ±4로 제한합니다.
+      따라서 관심종목 구성 변경만으로 동일 종목의 점수가 흔들리지 않습니다.
 
     **추가 필터 (거래 적합성)**  
     - True Range 기반 **치명적 변동성 30% 초과** 또는  
       **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
 
-    **한 줄 요약:**  
-    - **“중·장기 우상향 + 최근 구간까지 이어지는 꾸준한 가속”을 선호하고,  
-      “계단식 급등 후 정체 / 깊은 손실 / 과도한 변동 / 연속성 없는 이벤트 급등”을 배제하는 비선형 모멘텀 점수입니다.**
+    **한 줄 요약:**
+    - **“최근 3개월의 매끄러운 상승·회복·단기 연속성”을 선호하고,
+      “단발성 점프·EMA20 아래 장기 체류·급등 후 정체·동력 소진”을 감점하는 재피팅 점수입니다.**
     """)
     
     st.markdown("---")
@@ -1110,7 +1078,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.5.1")
+st.title("⚡ KRW Momentum Radar v4.6.0")
 
 
 
@@ -1689,9 +1657,8 @@ def generate_dynamic_column_order(fms_formula, available_columns):
     # 3. FMS 공식에서 사용된 변수들을 순서대로 추출
     fms_variables = []
     
-    # 공식에서 변수명 추출 (정규식 사용)
-    # 예: "0.4 * Z('1M수익률') + 0.3 * Z('3M수익률')" -> ['1M수익률', '3M수익률']
-    variable_pattern = r"Z\('([^']+)'\)"
+    # 공식에서 Z(...) 변수명을 순서대로 추출
+    variable_pattern = r"Z\(([^)]+)\)"
     matches = re.findall(variable_pattern, fms_formula)
     
     # 변수명을 실제 컬럼명으로 매핑
@@ -1700,10 +1667,21 @@ def generate_dynamic_column_order(fms_formula, available_columns):
         '3M수익률': 'R_3M',
         '3M_R2': 'R2_3M',
         'EMA50상대위치': 'AboveEMA50',
-        '20일변동성': 'Vol20(ann)'
+        '20일변동성': 'Vol20(ann)',
+        'R2_3M': 'R2_3M',
+        'DD_RECOVERY': 'DD_RECOVERY',
+        'TREND_QUALITY_21D': 'TREND_QUALITY_21D',
+        'JUMP_DISCONTINUITY_3M': 'JUMP_DISCONTINUITY_3M',
+        'UNDER_EMA20_DAYS': 'UNDER_EMA20_DAYS',
+        'R_3M': 'R_3M',
+        'STALE_AGE': 'STALE_AGE',
+        'UP_STREAK_5D': 'UP_STREAK_5D',
+        'TREND_EFFICIENCY_REWARD_15D': 'TREND_EFFICIENCY_REWARD_15D',
+        'RANGE_COMPRESSION_20D': 'RANGE_COMPRESSION_20D',
     }
     
     for var_name in matches:
+        var_name = var_name.strip().strip("'\"")
         if var_name in variable_mapping:
             col_name = variable_mapping[var_name]
             if col_name in available_columns and col_name not in column_order:
@@ -1752,6 +1730,11 @@ st.dataframe(disp_reordered, use_container_width=True)
 # ⑤-1 FMS 재보정 (A/B 그래프 비교, 스냅샷 고정)
 # ==============================
 st.subheader("FMS 재보정")
+st.info(
+    "이 UI는 고정 snapshot에서 사람의 A/B 정답 순서를 수집합니다. "
+    "재보정은 saved_at 기준 최신 완료 세션 하나만 사용해 0점에서 별도 후보를 피팅하며, "
+    "후보 생성만으로 현재 production FMS가 변경되지는 않습니다."
+)
 
 def _slice_series_by_period(s_full: pd.Series, period_key: str) -> pd.Series:
     win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
@@ -1913,7 +1896,16 @@ if active_session_id and state:
             st.session_state.fms_calibration = {"active_session_id": None, "state": None}
             st.rerun()
     with top_col3:
-        st.caption(f"세션: {active_session_id} | snapshot: {snap_id} | phase: {state.get('phase')}")
+        st.caption(
+            f"세션: {active_session_id} | snapshot: {snap_id} | "
+            f"phase: {state.get('phase')} | saved_at: {state.get('saved_at', '—')}"
+        )
+
+    if state.get("phase") == "done":
+        st.warning(
+            "완료 세션을 다시 저장하면 saved_at이 갱신되어 "
+            "'최신 완료 세션' 피팅 대상이 바뀔 수 있습니다."
+        )
 
     # 진행률 표시 (정렬 단계에서만)
     if state.get("phase") == "sorting":
@@ -2032,7 +2024,13 @@ if active_session_id and state:
             csv = df_rank.to_csv(index=False, encoding="utf-8-sig")
             st.download_button("📥 최종 순서 CSV 다운로드", data=csv, file_name=f"{active_session_id}_final_ranking.csv", mime="text/csv")
 
-        st.info("다음 단계(2단계): 이 정답 순서를 기준으로 설명 변수/수식을 구성하고 설명력을 평가하며 FMS를 재설계합니다.")
+        st.info(
+            "다음 단계: 이 정답 순서로 CLI에서 **후보**를 생성합니다. "
+            "산출물은 candidate-only이며 production FMS는 자동으로 변경되지 않습니다.\n\n"
+            "1. `python fms_recalib_build_features.py`\n"
+            "2. `python fms_recalib_refit.py`\n"
+            "3. `python -m calibration.fms_recalib_plot_residuals`"
+        )
 
 # ------------------------------
 # ⑥ 디버그/진단

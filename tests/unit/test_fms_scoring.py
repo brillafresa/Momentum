@@ -66,6 +66,35 @@ def test_momentum_now_and_delta_rank_order_matches_golden(
         assert result.loc[symbol, "FMS"] == pytest.approx(expected)
 
 
+def test_reference_panel_does_not_change_production_fms(
+    synthetic_prices_krw: pd.DataFrame,
+    synthetic_ohlc: pd.DataFrame,
+) -> None:
+    """v4.6 frozen normalization ignores ``reference_prices_krw`` composition."""
+    symbols = list(synthetic_prices_krw.columns)
+    with_ref = compute_fms_snapshot(
+        synthetic_prices_krw,
+        reference_prices_krw=synthetic_prices_krw,
+        ohlc_data=synthetic_ohlc,
+        symbols=symbols,
+    )
+    alt_ref = synthetic_prices_krw.iloc[:, :2]
+    with_alt_ref = compute_fms_snapshot(
+        synthetic_prices_krw,
+        reference_prices_krw=alt_ref,
+        ohlc_data=synthetic_ohlc,
+        symbols=symbols,
+    )
+    without_ref = compute_fms_snapshot(
+        synthetic_prices_krw,
+        reference_prices_krw=None,
+        ohlc_data=synthetic_ohlc,
+        symbols=symbols,
+    )
+    pd.testing.assert_series_equal(with_ref["FMS"], with_alt_ref["FMS"], check_names=False)
+    pd.testing.assert_series_equal(with_ref["FMS"], without_ref["FMS"], check_names=False)
+
+
 def test_compute_fms_snapshot_matches_momentum_fms_column(
     synthetic_prices_krw: pd.DataFrame,
     synthetic_ohlc: pd.DataFrame,

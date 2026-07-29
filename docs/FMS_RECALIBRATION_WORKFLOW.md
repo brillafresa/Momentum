@@ -1,324 +1,491 @@
-# FMS 재보정(직관 기반) 워크플로우
+# FMS 재보정 워크플로우
 
-이 문서는 **FMS(Fast Momentum Score) 수식/조건을 “사용자 직관(차트 패턴 판단)”에 더 일치하도록 개선**하기 위한 표준 워크플로우를 정의합니다.  
-이 문서의 목적은 (1) 전체 맥락을 고정하고 (2) 단계별로 하나씩 완성하며 (3) 이후에도 같은 프로세스를 반복 가능하게 **기능화**하는 것입니다.
+> 최종 갱신: 2026-07-29 (KST)
+> 현재 상태: 최신 80종 정답셋의 **원점 재피팅 후보가 v4.6.0 production으로 승격 완료**
 
----
-
-## 기준 시점(문서 작성 시각)
-
-- **작성 시점**: 2026-03-10 14:54:56 (시스템 시간 기준, 화요일)
-- 본 문서/로그/결과 파일에 기록되는 날짜는 이 시점을 기준으로 작성합니다.
+이 문서는 사용자가 A/B 차트 비교로 만든 순위를 바탕으로, 그래프에서 설명 가능한
+피처를 발견하고 FMS를 원점부터 다시 피팅하는 현재 표준 절차를 정의한다.
 
 ---
 
-## 핵심 원칙(최우선)
+## 1. 핵심 원칙
 
-- **소스코드가 최우선 진실**입니다. 문서화가 덜 되었더라도 실제 동작/정의는 코드에 따릅니다.
-- 상충 시 우선순위: **1) 소스코드 → 2) `.cursorrules` → 3) `HARNESS_RULES.md` / `docs/*.md`**.
-- FMS 변경·튜닝은 [`HARNESS_RULES.md`](../HARNESS_RULES.md)의 단일 소스·오프라인 하네스 규칙을 따른다 (공식 복제 금지).
-- FMS의 “정답”은 **사용자의 직관**입니다. 사용자는 차트를 눈으로 보고 “더 좋은 그래프 패턴”을 판단합니다.
-- 본 작업은 “학습으로 맞추기”가 목적이 아니라, 사용자의 직관을 구성하는 **해석 가능한 변수(수익률 기간, R², 변동성, EMA 위치 등)** 를 찾아 수식/조건으로 반영하는 것이 목적입니다.
+### 1.1 진실과 오류 수정
 
----
+- 실제 동작 확인은 **소스코드가 최우선 진실**이다.
+- 우선순위는 `실제 동작 소스코드 → .cursorrules → HARNESS_RULES.md / docs`다.
+- 다만 소스에서 부호, 뺄셈 순서, 계산창 등 명백한 의미 오류가 발견되면
+  현재 동작을 정확히 기록한 뒤 **피처 의미에 맞게 수정하고 테스트한다**.
+- 문서와 과거 수식은 보존 대상이 아니라 재현·검증을 위한 근거다.
 
-## 주의사항(절대 생략 금지)
+### 1.2 정답의 의미
 
-### 1) 정답 데이터의 의미
+- 정답은 사용자가 고정된 차트를 보고 결정한 **서열(rank)** 이다.
+- 등수 간 간격이 동일하다고 가정하지 않는다.
+- 학습 목표는 점수 회귀가 아니라 “A가 B보다 위”라는 **pairwise ordering**이다.
+- 사용자 메모는 피처 아이디어의 원천이지만, 설명과 실제 정렬이 충돌하면
+  **최종 정렬 결과를 우선**한다.
+- 재검토에서 판단이 바뀐 쌍은 오류로 삭제하지 않고 label uncertainty로 검증한다.
 
-- 사용자가 제공하는 것은 **순서(rank)** 입니다.
-- **등수 간 점수 간격이 균일하지 않습니다.**
-  - 어떤 인접 등수는 변별이 매우 미세할 수 있고,
-  - 어떤 구간은 확실한 격차가 있을 수 있습니다.
-- 순위 라벨은 직관 기반이므로 **완벽하지 않을 수 있습니다.**
-  - 따라서 “한 번의 판단”만으로 끝내지 않고 **재검토/불일치 피드백**을 반드시 포함합니다.
+### 1.3 최신 정답셋 하나만 사용
 
-### 2) 데이터 고정(스냅샷) 원칙
+- 피팅·모델 선택·평가에는 JSON `saved_at`이 가장 최신인
+  `phase == "done"` 완료 세션 **하나만** 사용한다.
+- 파일명 순서나 filesystem mtime으로 최신 세션을 선택하지 않는다.
+- 과거 세션은 합치거나 외부 검증셋으로 재사용하지 않는다.
+- 현재 기준 정답셋:
+  - session: `20260729_recent1m`
+  - snapshot: `fms_20260729_154752`
+  - symbols: 80
+  - chart period: `3M`
+  - review inconsistencies: 3
 
-- 비교/정렬 작업이 시작되면 **데이터를 1회 고정**하고 작업이 끝날 때까지 **최신 데이터로 갱신하지 않습니다.**
-- 정렬의 대상은 “실제 종목” 자체가 아니라, **특정 시점의 차트(데이터 스냅샷)** 입니다.
-- 작업 중 차트가 바뀌면 이전 비교의 의미가 깨지므로, **고정된 스냅샷**이 필수입니다.
+### 1.4 데이터와 평가 누수 금지
 
-### 3) ML/모델링 방식에 대한 제한
+- A/B 비교 시작 시 가격 데이터를 한 번 고정하고 세션 종료까지 갱신하지 않는다.
+- 정규화 통계, 결측 대체값, 상관 피처 제거, L1 선택은 각 학습 fold 안에서만 계산한다.
+- 모델에 종목명, 국가, 개별 종목 예외 규칙을 넣지 않는다.
+- 최신 정답셋의 20%를 rank-stratified audit symbols로 잠그고, development 80%에서
+  피처 발견·모델 선택·잔차 분석을 끝낸 후 audit을 한 번만 평가한다.
+- audit 결과를 보고 수식을 변경하면 그 audit은 더 이상 미관측 검증셋이 아니다.
+  변경 후보는 nested holdout으로만 평가하고, 새 정답셋에서 다시 외부 검증해야 한다.
 
-- 단순히 모델을 학습해서 순위를 맞추는 방식(블랙박스)은 지양합니다.
-- 목표는 “왜 이 패턴이 좋은지”를 설명하는 **변수/조건 기반 수식**을 만드는 것입니다.
+### 1.5 해석 가능성과 production 경계
 
----
-
-## 작업 개요(1~4단계)
-
-### 1단계: 두 종목 비교 UI + 효율적 정렬 로직
-
-사용자가 **두 종목의 ‘세부 보기’ 차트**를 비교해 “어느 쪽이 더 우수한 그래프인지” 빠르게 피드백할 수 있는 기능을 구현합니다.
-
-#### UI 요구사항(세부)
-
-- **차트 소스**: 현재 앱의 `세부 보기`에서 제공하는 차트/지표/기준을 그대로 사용합니다.
-- **가격 차트는 리베이스+로그 스케일(중요)**:
-  - `비교 차트`와 동일하게 **x축 시작값을 100으로 리베이스**한 뒤 **로그 스케일**로 표시합니다.
-  - 목적: 절대 KRW 값이 아니라 **상대 상승률(패턴)** 비교에 집중하기 위함.
-- **Y축 스케일 고정(중요)**: 두 종목을 비교할 때 **두 차트의 y축 스케일을 동일하게** 맞춥니다.
-  - 특히 가격 차트는 로그 스케일이므로 **동일한 로그 y축 범위**를 공유해야 합니다.
-  - 자동 스케일이면 비교가 왜곡될 수 있음 → 반드시 고정.
-- **UX 최소 클릭**:
-  - A/B 중 선택 + 확정하면 **즉시 다음 비교쌍**으로 진행
-  - 불필요한 화면 이동/추가 버튼/중복 확인을 최소화
-- **효율적 비교쌍 선택 로직**:
-  - 무작위 쌍 반복이 아니라, 100개에 대해 100×99 같은 비효율을 피하고
-  - 전체를 효과적으로 정렬하기 위한 **비교쌍 선택 전략**을 사용합니다.
-- **진척도 표시**:
-  - “정렬 완료까지 얼마나 남았는지”를 사용자에게 명확히 보여줍니다.
-- **상태 저장/복원**:
-  - 중간에 멈추더라도 다음 실행에서 이어서 할 수 있어야 합니다.
-  - 저장 대상: 데이터 스냅샷 식별자, 비교 기록, 현재 정렬 상태, 남은 작업량, 재검토 큐 등.
-- **완료 후 재검토(오버샘플 10%)**:
-  - 100% 정렬 후 즉시 종료하지 않고,
-  - 인접 등수 중심으로 **전체 작업량의 약 10%**를 추가로 재제시하여 중복 검토합니다.
-  - 재검토 결과가 최초 판단과 다르면:
-    - **불일치가 있었다고 명시적으로 피드백**
-    - 사용자가 심사숙고하여 최종 순서를 확정하도록 유도
-
-#### 1단계 완료 기준
-
-- 사용자가 비교 UI로 충분히 빠르게 판단할 수 있고(클릭 최소),
-- 전체 정렬이 효율적인 비교 횟수 내에 수렴하며,
-- 진행 상태를 저장/복원할 수 있고,
-- 데이터가 스냅샷으로 고정되어 작업 중 변하지 않으며,
-- 최종 10% 재검토 및 불일치 피드백이 동작해야 합니다.
+- 후보는 UI에 표시된 가격·EMA·Drawdown에서 설명 가능한 피처만 사용한다.
+- production FMS는 **benchmark일 뿐**, 원점 피팅의 입력·초기값·가산항이 아니다.
+- 원점 후보 점수는 반드시 0에서 시작한다.
+- 거래적합성 `FMS=-999`는 raw OHLC 기반 안전정책으로, 가격 순위 피팅과 분리한다.
+- 후보 보고와 production 승격은 별도 단계다. 사용자 컨펌 전에는
+  `core/fms.py`, 앱, 배치, 버전을 변경하지 않는다.
 
 ---
 
-### 2단계: 정렬 결과로부터 패턴(설명 변수) 발견 → 새 FMS 수식 설계
+## 2. 현재 구현 구조
 
-정렬 결과(사용자 정답 순서)를 설명하는 **해석 가능한 변수들**을 구성하고, 조합/가중치/조건을 설계해 새로운 FMS를 만듭니다.
+### 정답셋·스냅샷
 
-#### 요구사항
+- `calibration/session.py`
+  - 세션 저장·복원, merge sort, 10% 인접 재검토
+  - `latest_completed_session()`은 JSON `saved_at` 기준으로 최신 완료 세션 선택
+- `calibration/manifest.py`
+  - session/snapshot ID, 80종 순서, ranking hash, prices hash 기록
+  - development/audit symbol split 고정
+- `fms_recalib_manifest.json`
+  - 현재 실행에 사용한 재현 manifest
 
-- FMS는 **UI에 표시된 그래프에서 추출 가능한 변수들만**으로 설명 가능한 식이어야 합니다.
-  - 사용자는 오직 UI의 그래프만 보고 분류했으므로, 사용자가 접하지 못한 정보(숨겨진 데이터, 외부 피처 등)로 수식을 구성하는 것은 지양합니다.
-  - 예: 리베이스된 가격 곡선, EMA(20/50/200), Drawdown, 기간별 수익률, 변동성, 기울기/곡률 등 그래프에서 직접 해석 가능한 요소.
-- “설명력(정답 순서를 얼마나 잘 설명하는가)”을 정량화해 평가합니다.
-- 평가 후 다음을 반복적으로 수행하여 설명력을 높입니다:
-  - 변수 추가/제거
-  - 가중치 조정
-  - 구간별 조건(필터) 도입/수정
-- 무한 반복은 하지 않고, **실용적인 반복 횟수/수렴 조건**을 두고 마무리합니다.
+### 피처
 
-#### 설명 방식(중요)
+- `core/fms_features.py`
+  - 네트워크 없는 순수 DataFrame 입력형 feature builder
+  - 3M visible window 기반 후보 피처
+  - 피처 방향성(`FEATURE_DIRECTION`)과 reference normalization 헬퍼
+- `calibration/fms_recalib_build_features.py`
+  - 최신 manifest와 snapshot을 검증하고 `fms_recalib_features.csv` 생성
+  - production baseline metrics 저장
 
-- 먼저 **정렬된 종목들을 눈으로 관찰**하여, 발견되는 패턴을 **텍스트로 설명**합니다.
-  - 예: “장기간 완만한 우상향 + 드로우다운이 완만한 종목이 상위에 몰려 있다”, “급격한 급등 후 급락 패턴은 하위에 배치된다” 등.
-- 이어서, 각 패턴이 **어떤 강도로 작동하는지**도 말로 정리합니다.
-  - 예: “3M 수익률이 높더라도 드로우다운이 깊으면 강하게 감점된다”, “R²가 일정 임계값 이상일 때만 강하게 가산된다” 등.
-- 비선형 요소(임계값, 구간별 다른 행동, 제곱/제곱근, min/max 등)가 있다면, 먼저 **자연어로 행동을 설명**한 뒤 수식으로 옮깁니다.
-  - 단, 임계값을 조건문으로 “딱 끊어” 적용하면 경계에서 계단식 점프가 생겨 불합리해질 수 있으므로, 가능하면 **연속적인 전이(예: sigmoid/smoothstep/softplus)** 형태를 우선 고려합니다.
+### 원점 피팅·검증
 
-#### 개선 반복(한 번에 하나씩)
+- `calibration/fms_recalib_refit.py`
+  - sparse linear / monotone GAM / limited interaction 비교
+  - pairwise loss, nested holdout, bootstrap, LOO, label variants
+- `calibration/ranking_metrics.py`
+  - inversion, Spearman, pair-delta, top-quintile recall
+- `calibration/fms_recalib_plot_residuals.py`
+  - development의 큰 역전 종목을 고정 3M 차트로 출력
 
-- 여러 요소를 동시에 바꾸면 무엇이 성능에 영향을 줬는지 분리하기 어렵습니다.  
-  따라서 **한 번의 Iteration에서는 하나의 변화만**(예: “R² 가산/게이트를 연속화”) 적용하고, 지표로 개선 여부를 확인한 뒤 다음으로 넘어갑니다.
-- 새 아이디어를 낼 때도 **현재 FMS가 반영하고 있는 교훈을 이해/존중**한 뒤(왜 이렇게 설계됐는지), 그 위에 작은 개선을 쌓는 방식이 기본입니다.
+### 생성되는 산출물
 
-#### 수식 형태에 대한 가이드
+- `fms_recalib_features.csv` (build 실행 시)
+- `fms_recalib_scratch_candidate.json`
+- `fms_recalib_scratch_scores.csv`
+- `fms_recalib_scratch_residual_pairs.csv`
+- `fms_recalib_scratch_residual_charts.png`
 
-- FMS는 지금과 같은 **가중합 형태**가 될 수도 있지만, 실제로는 **비선형적인 수식**(조건문, 구간별 다른 가중, 변환 함수 등)일 가능성이 높습니다.
-- 결과 수식이 다소 복잡해지는 것은 허용되지만, **블랙박스 수준(내부 동작을 사람이 설명할 수 없는 수준)** 이 되어서는 안 됩니다.
-- 목표는 “정답셋을 잘 설명하는 FMS 함수”이므로, 필요하다면 여기 적힌 접근보다 더 좋은 아이디어나 과학적인 방법을 채택할 수 있습니다. 단, **해석 가능성**은 유지해야 합니다.
-
-#### 2단계 산출물
-
-- 새 FMS 후보 수식(버전/날짜 포함)
-- 설명력 지표(어떤 기준으로 계산했는지 포함)
-- 기존 FMS 대비 개선점 요약(어떤 패턴을 더 잘 반영하는지)
-
-#### 과적합 방지 및 평가 기준
-
-- 목표는 **정답셋을 100% 그대로 재현하는 것**이 아니라, 직관과 충돌하는 **순서쌍(역전된 페어)** 을 최소화하는 것입니다.
-  - 예: 정답 순서에서 A가 B보다 위인데, FMS 순서에서 B가 A보다 위로 가는 경우를 “역전된 순서쌍”으로 보고 그 수를 최소화.
-- 가능하다면 다음과 같은 방식으로 과적합을 완화합니다:
-  - 정답셋을 **하나의 덩어리로만 맞추지 않고**, 일부 구간/조건이 바뀌어도 직관적으로 납득되는지 확인
-  - 너무 세밀한 커스텀 규칙으로 “개별 종목”에 맞추지 않고, **패턴 단위**로 규칙을 설계
-  - 필요하면 간단한 검증 세트(부분 집합)를 따로 두고, 그 집합에서의 순서쌍 역전 수를 추가로 확인
-- 평가지표 예시:
-  - **순서쌍 오류율(pairwise inversion rate)**: 가능한 모든 (i, j) 쌍 중, 정답과 순서가 다른 쌍의 비율
-  - 상위/하위 구간(예: 상위 20%, 하위 20%)에서의 오류율 또는 “완전히 뒤집힌 사례”가 있는지 여부
-
-#### 가중치/파라미터 미세조정(튜닝)
-
-- 수식 구조를 정한 뒤에는 “감으로 잡은 초기 가중치”에서 멈추지 않고, **가중치/임계값 주변 폭(전이 폭)** 같은 파라미터를 조금씩 바꿔보며 지표 개선 방향을 확인합니다.
-- 구현 방식 예시:
-  - **그리드/랜덤(몬테카를로) 탐색**: 합리적인 범위 내에서 파라미터를 샘플링해 inversion rate / Spearman / pair delta error를 함께 최적화
-  - **제약 포함 탐색**: “해석 가능성 유지”, “단조성(좋은 R²가 나쁜 R²보다 불리해지지 않음)” 같은 제약을 둔 채 탐색
+`fms_recalib_latest_fit.json`과 과거 `production_fms + addon` 결과는
+incremental 실험 기록일 뿐, 전면 재피팅 후보가 아니다.
 
 ---
 
-### 3단계: 새 FMS를 실제 앱/배치에 적용(교체 업그레이드)
+## 3. 1단계 — UI에서 정답셋 수집
 
-- 새 FMS 수식/조건을 `analysis_utils.py` 중심으로 반영합니다.
-- 앱(`app.py`) 및 배치(`run_scan_batch.py`)에서 동일한 로직이 사용되도록 유지합니다.
-- 버전 규칙에 따라 `app.py`/`README.md`/`CHANGELOG.md` 등 버전 일관성을 맞춥니다. (`.cursorrules` 규칙 준수)
+### 3.1 새 세션 시작
 
----
+1. 앱을 실행한다.
+2. 본문의 **FMS 재보정** 섹션으로 이동한다.
+3. 새 세션을 시작해 현재 가격 패널을 snapshot으로 고정한다.
+4. 세션 ID와 snapshot ID를 확인한다.
 
-### 4단계: 재실행 가능한 “기능”으로 견고화
+### 3.2 차트 비교 기준
 
-향후에도 FMS를 개선하고 싶을 때 동일한 프로세스를 다시 수행할 수 있도록, 임시 코드가 아니라 제품 기능으로 남깁니다.
+- 가격은 시작값 100으로 리베이스한 로그 스케일을 사용한다.
+- A/B 차트의 y축 범위를 동일하게 유지한다.
+- 사용자는 “오늘 이후 상승추세가 얼마간 지속될 가능성”을 기준으로 선택한다.
+- 비교 시 주로 관찰하는 패턴:
+  - 최근 2~3주의 기울기와 매끄러움
+  - 최근 3일의 추세 훼손·회복
+  - 이전 추세가 최근 상승을 지지하는 정도
+  - EMA20 위치·기울기·곡률과 미회복 기간
+  - 하락 변동성, drawdown, 회복 속도
+  - 정체 기간과 고점 이후 동력 소진
+  - 급등 자체가 아니라 급등 후 진행·정체·급락 경로
 
-#### 기능화 범위(최소)
+### 3.3 정렬과 재검토
 
-- 비교 UI (A/B 선택, 다음으로 자동 진행)
-- 효율적 비교쌍 선택 로직
-- 데이터 스냅샷 고정/식별/로드
-- 진행 상태 저장/복원
-- 최종 재검토(10%) 및 불일치 처리 UX
-- 정답셋(순서) 저장 포맷 및 재사용
-- 2단계 분석(설명력 계산, 변수/가중치 탐색) 실행 도구화
-
----
-
-## 재실행 절차(제품 기능으로 정리)
-
-### A. UI에서 하는 일 (정답셋 수집)
-
-1. **앱 실행** 후 사이드바의 **“FMS 재보정 — A/B 그래프 비교 정렬 (스냅샷 고정)”** 섹션으로 이동합니다.
-2. `🧪 재보정 세션 관리`에서:
-   - **“✅ 새 세션 시작”** 을 눌러 현재 화면의 가격 데이터로 스냅샷을 고정합니다.  
-     - 이때 생성되는 세션/스냅샷 ID 예:  
-       - 세션: `cal_fms_YYYYMMDD_HHMMSS`  
-       - 스냅샷: `fms_YYYYMMDD_HHMMSS`
-3. A/B 비교 UI에서 **모든 비교가 끝나고, 10% 인접 재검토까지 완료**되면:
-   - 동일 섹션 하단에 표시되는 **최종 랭킹 테이블**에서  
-     **“📥 최종 순서 CSV 다운로드”** 버튼으로 `*_final_ranking.csv`를 내려받거나,
-   - 세션 JSON(`fms_calibration_sessions/<session_id>.json`)의 `final_ranking` 배열을 그대로 사용합니다.
-
-> 이 단계까지가 1–2단계의 “정답셋 수집” 절차이며, 이후는 CLI/AI 보조를 활용한 분석입니다.
+- merge sort 상태 머신으로 필요한 비교만 수행한다.
+- 비교 직후 상태를 저장해 중단 후 재개할 수 있어야 한다.
+- 정렬 완료 후 인접 쌍 약 10%를 다시 비교한다.
+- 최초·재검토 선택이 다르면 `inconsistencies`에 두 판단을 모두 기록한다.
+- review queue가 끝나 `phase == "done"`이고 `final_ranking`이 있어야 정답셋으로 인정한다.
 
 ---
 
-### B. 콘솔에서 하는 일 (지표 계산 + 수식 평가)
+## 4. 2단계 — manifest와 피처 테이블 고정
 
-프로젝트 루트 `Momentum/`에서 다음 스크립트들을 사용합니다.
-
-#### 1. 피처 테이블 생성 (스냅샷 기준)
+프로젝트 루트에서:
 
 ```bash
-cd Momentum
 python fms_recalib_build_features.py
 ```
 
-- 입력: 최신 세션(`fms_calibration_sessions/`) 및 해당 스냅샷(`fms_calibration_snapshots/`) 자동 사용
-- 출력:
-  - `fms_recalib_features.csv`  
-    - 컬럼: `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank`
-    - **rank**: 당신이 정렬한 최종 순서(정답셋)
+이 명령은 다음을 수행한다.
 
-#### 2. FMS 수정 전 vs 수정 후 비교
+1. `saved_at` 기준 최신 완료 세션 하나 선택
+2. ranking과 snapshot columns의 exact alignment 확인
+3. ranking/prices hash와 audit split 기록
+4. 3M visible-window 피처 생성
+5. production FMS를 benchmark로만 계산
 
-```bash
-python fms_recalib_evaluate_formulas.py
+### 4.1 visible-window 정책
+
+- 이번 세션의 차트 기간은 3M이므로 후보는 원칙적으로 63거래일 안에서 계산한다.
+- `R_4M`은 production baseline scorer 호환을 위해 테이블에 있을 수 있지만
+  원점 후보 목록에서는 제외한다.
+- `MaxDD_Pct` 후보는 전체 history가 아니라 visible 3M window에서 계산한다.
+- 미래 데이터, live API 갱신, 사용자가 보지 못한 외부 정보는 사용하지 않는다.
+
+### 4.2 피처 카탈로그
+
+초기 목록은 확정 수식이 아니라 탐색 후보군이다.
+
+- 최근성: 3/5/10/15/21/42/63일 수익·로그기울기·R²
+- 추세 질: slope×R², trend efficiency, monotonicity
+- EMA: EMA20/50 위치, 기울기, 곡률, 이탈 깊이·일수·연속기간
+- 회복: 최근 조정 후 3일 회복, drawdown 회복률, 재돌파
+- 하방 위험: downside RMS, 최악 일수익, 연속 하락
+- 비대칭성: upside/downside RMS와 변동성 비대칭
+- 정체: 고점 이후 경과일, range compression, stale age
+- 급등 후 경로: post-spike stall, jump discontinuity
+- 연속성: 최근 상승 streak, 15일 positive efficiency
+- 제한 상호작용: 최근 추세×과거 신뢰도, 회복×하방위험,
+  급등×follow-through
+
+각 피처에는 다음이 명시되어야 한다.
+
+- 자연어 의미
+- 계산창과 단위
+- 좋은 방향/나쁜 방향
+- 결측 처리
+- clip·정규화 정책
+- synthetic fixture에서 기대되는 동작
+
+---
+
+## 5. 3단계 — development에서 피처 발견
+
+### 5.1 먼저 자연어 패턴을 설명
+
+- 상·중·하위 그룹의 공통 패턴을 정리한다.
+- 사용자 메모를 기계적으로 수식화하지 않고 실제 rank와 대조한다.
+- 같은 직관을 여러 수치 표현으로 만들되, 상관 피처는 대표 하나만 남긴다.
+
+### 5.2 잔차 차트 반복
+
+1. development에서 초기 모델을 피팅한다.
+2. 큰 rank-gap 역전, 상위 false negative/positive를 추출한다.
+3. snapshot의 동일한 3M 리베이스 가격·EMA 차트를 직접 확인한다.
+4. “왜 기존 피처가 이 패턴을 구분하지 못했는가”를 자연어로 기록한다.
+5. 여러 종목에 반복되는 패턴만 새 피처로 일반화한다.
+6. synthetic 의미 테스트를 추가하고 nested holdout을 다시 실행한다.
+
+2026-07-29 잔차 검토에서는 다음을 추가했다.
+
+- `JUMP_DISCONTINUITY_3M`
+  - 상승분이 짧은 급등에 집중되고 최근 20일 follow-through가 약할수록 증가
+  - 높은 값은 감점 방향
+- `RECENT_3D_VS_21D_TREND`
+  - 최근 3일 일평균 로그수익과 21일 로그기울기의 차이
+  - 최근 추세 훼손·회복 후보
+
+BLFS·LXP 유형의 과대평가는 완전히 제거되지 않았으므로 잔여 한계로 보고한다.
+
+---
+
+## 6. 4단계 — 원점 모델 피팅
+
+### 6.1 전처리
+
+각 학습 fold 안에서만:
+
+1. 결측·무한값을 train median으로 대체
+2. train mean/std로 Z-score
+3. 극단값을 `[-4, 4]`로 clip
+4. 감점 피처는 부호를 반전해 “값이 높을수록 좋은 축”으로 통일
+5. 상관계수 절댓값 0.94 이상인 후보는 rank 연관성이 높은 대표만 유지
+
+test/audit에는 train에서 얻은 median/mean/std를 그대로 적용한다.
+
+### 6.2 pairwise 가중치 피팅
+
+후보 점수는 0에서 시작한다.
+
+```text
+score_i = Σ(w_k × signed_Z(feature_i,k))
 ```
 
-- **수정 전(current) vs 수정 후(proposed)** 만 비교. 히스토리 누적 없음.
-- `f_proposed`에 수정 제안 로직을 구현하고 실행하면 역전 비율 비교 결과 출력.
-- 출력 예:
-  - `current: inversion_rate=0.2450`
-  - `proposed: inversion_rate=0.2440`
-- **역전 비율(inversion_rate)**:
-  - 분모: 전체 순서쌍 수 \(\binom{n}{2}\)  
-  - 분자: 정답에서는 A가 B보다 상위인데, 점수 기준으로는 B가 A보다 상위가 되는 쌍의 개수  
-  - 값이 **작을수록** 정답셋과 더 잘 맞음.
+development에서 정답상 A가 B보다 위인 모든 쌍에 대해 다음을 최소화한다.
 
-#### 3. 추가 오차 지표(Spearman + 쌍별 순위차 오차)
-
-```bash
-python fms_recalib_rank_metrics.py
+```text
+mean[log(1 + exp(-(score_A - score_B)))]
++ λ × Σw
++ 0.002 × Σw²
 ```
 
-- current vs proposed에 대해:
-  - **Spearman 상관계수(`spearman_rho`)**:
-    - 정답 rank vs 모델 rank 의 랭크 상관
-    - 1에 가까울수록 순서가 잘 맞음
-  - **쌍별 순위차 오차(`pair_delta_error`)**:
-    - 모든 쌍 (i, j)에 대해  
-      - 정답 순위차: \(d_{\text{true}} = rank_j - rank_i\)  
-      - 모델 순위차: \(d_{\text{model}} = rank^{(model)}_j - rank^{(model)}_i\)  
-      - 오차: \(|d_{\text{true}} - d_{\text{model}}|\)  
-    - 이 값을 **전체 쌍에 대해 평균** 낸 값 (작을수록 좋음).
+- `0 ≤ w ≤ 6`: 방향성을 보존하는 비음수 제약
+- optimizer: SciPy L-BFGS-B
+- L1 후보: `0.01, 0.03, 0.07, 0.15`
+- 최대 항 수: 10
+- rank gap으로 pair에 추가 가중치를 주지 않는다.
 
-#### 4. “개선 여부” 자동 판정 기준
+### 6.3 비교 모델군
 
-새 FMS 후보를 설계한 뒤에는, 최소한 다음 기준을 모두 만족할 때만 FMS를 교체합니다.
+1. `sparse_linear`
+   - signed Z 피처의 희소 가중합
+2. `monotone_gam`
+   - linear / tanh / softplus 연속 단조 basis
+3. `limited_interactions`
+   - 사용자 직관으로 사전 정의한 소수의 연속 confirmation interaction
 
-- **역전 비율**: 기존 대비 **감소해야** 함 (예: 0.2798 → 0.2450)  
-- **Spearman ρ**: 기존 대비 **증가해야** 함 (예: 0.58 → 0.69)  
-- **쌍별 순위차 오차(pair_delta_error)**: 기존 대비 **감소해야** 함 (예: 25.4 → 22.6)
+블랙박스 tree/boosting 모델과 종목별 규칙은 사용하지 않는다.
 
-위 세 지표 중 하나라도 나빠진다면,  
-- **해당 FMS 후보는 코드에 반영하지 않습니다.**  
-- FMS 교체는 “역전 비율↓, Spearman↑, 쌍별 순위차 오차↓”를 동시에 만족하는 경우에만 수행합니다.
+### 6.4 모델 선택
 
-이 규칙을 지키면 “정답셋에 대해 설명력이 악화되는 수식”이 실수로 배포되는 것을 방지할 수 있습니다.
-
----
-
-### C. 차기 재보정 시 AI 에이전트를 활용하는 프롬프트 예시
-
-다음은, 향후 다시 이 프로세스를 수행할 때 AI 에이전트에게 지시할 수 있는 기본 프롬프트 템플릿입니다.
-
-#### 1. 패턴 분석 요청용 프롬프트
-
-> - 작업 맥락:  
->   - `fms_calibration_sessions/<session_id>.json` 안의 `final_ranking`은 내가 A/B 그래프 비교로 정한 “정답 순서”입니다.  
->   - `fms_calibration_snapshots/<snapshot_id>/prices_krw.pkl`에는 그 시점의 KRW 환산 가격 데이터가 들어 있습니다.  
->   - `fms_recalib_features.csv`에는 각 종목에 대해  
->     기본 피처 `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct, rank` 와  
->     확장 피처 `R_10D, R_5D, EMA20_SLOPE_10D, EMA20_CURV_20D, UNDER_EMA20_DEPTH, UNDER_EMA20_DAYS, DOWN_STREAK_5D` 가 들어 있습니다.
->   - `fms_calibration_sessions/<session_id>__baseline_metrics.json`에는 **해당 정답셋(features.csv) 기준**으로 계산된 current FMS의 baseline 지표/순위가 저장됩니다.
-> - 해야 할 일:  
->   1. `fms_recalib_features.csv`를 기반으로, 정답 rank의 상위/중위/하위 구간에서 각각 어떤 패턴이 보이는지 **말로 정리**해 주세요.  
->      - 예: 상위권은 어떤 수익률/변동성/R²/드로우다운/EMA50 특성을 공통으로 가지는지, 하위권은 어떤 패턴이 많은지.  
->   2. 그 패턴을 바탕으로 FMS를 구성하는데 적절한 **설명 변수(지표)** 들과,  
->      각 변수에 부여해야 하는 **가중/임계/비선형 요소(예: 구간별 처리, 제곱, clip)** 를 제안해 주세요.  
->   3. 제안된 설명을 바탕으로, 사람이 이해 가능한 형태의 **FMS 수식 후보 1~2개**를 만들어 주세요.  
->      - 새 FMS는 오직 `R_1M, R_3M, R_4M, R2_3M, AboveEMA50, Vol20_Ann, MaxDD_Pct` 같은 **그래프에서 유도 가능한 변수**만 사용해야 합니다.
-
-#### 2. 수식 평가·비교 요청용 프롬프트
-
-> - 작업 맥락:  
->   - `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`에서  
->     **current(현재 적용)** vs **proposed(수정 제안)** 의 역전 비율 / Spearman / 쌍별 순위차 오차를 비교합니다.  
->   - **중요**: 정답셋이 바뀌면 지표의 **절대값은 당연히 달라집니다.**  
->     따라서 과거 정답셋에서의 inversion/spearman/pair_delta_error 수치와 비교하지 말고, **이번 정답셋 내부에서** current vs proposed의 개선 여부만 판단하세요.
-> - 해야 할 일:  
->   1. 제안한 새 FMS 수식을 `f_proposed` 함수에 작성해 주세요.  
->   2. 실행 후 current vs proposed 결과를 비교하고,  
->      **proposed가 이 세 지표 모두에서 개선되는지**를 확인해 주세요.  
->   3. 개선되지 않는다면, 어떤 패턴에서 오차가 커지는지 설명하고, 수식을 어떻게 조정하면 좋을지 제안해 주세요.
+- development에서 repeated 5-fold outer validation을 수행한다.
+- 각 outer train 내부 4-fold에서 L1을 선택한다.
+- 주 지표는 inversion, 보조 지표는 Spearman과 pair-delta다.
+- raw best보다 inversion 1 standard error 이내인 모델 중 가장 단순한 모델을 선택한다.
+- family와 L1을 동결한 뒤 development 전체에서 최종 가중치를 적합한다.
 
 ---
 
-### D. 재보정에 유용한 보조 스크립트(재사용 도구)
+## 7. 5단계 — 과적합 검증
 
-- `fms_recalib_build_features.py`:
-  - 최신 세션/스냅샷으로 `fms_recalib_features.csv` 생성
-  - 동시에 `fms_calibration_sessions/<session_id>__baseline_metrics.json` 저장 (해당 정답셋 기준 baseline)
-- `fms_recalib_evaluate_formulas.py`, `fms_recalib_rank_metrics.py`:
-  - current vs proposed를 같은 정답셋에서 비교
-- `fms_recalib_tune_vol_penalty.py`:
-  - Vol20 패널티 mapping(q, tail power 등)만 단독 탐색
-- `fms_recalib_tune_weights_and_transitions.py`:
-  - 가중치/전이폭(smoothstep 폭, 게이트 폭, 램프 파라미터)만 단독 탐색(몬테카를로)
-- `fms_check_relative_ranks.py`:
-  - 관심종목 집합에서 특정 심볼들의 상대 순위/지표를 빠르게 점검
-- `fms_recalib_inspect_patterns.py`:
-  - 최신 정답셋(`fms_recalib_features.csv`)의 상/중/하위 그룹 평균과 rank 상관관계를 요약해 패턴 관찰을 돕는 도구
+### 7.1 필수 검증
+
+- repeated nested symbol holdout
+- symbol bootstrap stability selection
+- leave-one-symbol-out
+- 상·중·하위 구간 오차
+- top-quintile recall
+- feature-family·변환 ablation
+
+개별 pair를 독립 표본처럼 bootstrap하지 않는다. symbol을 복원추출하고,
+동일 symbol이 여러 번 뽑힌 빈도를 bootstrap sample에 반영한다.
+
+### 7.2 label uncertainty
+
+재검토 불일치가 `k`개면 각 쌍의 최초/재검토 판단을 독립 조합해
+`2^k`개 순위 변형을 평가한다.
+
+현재 세션은 불일치 3개이므로 **8개 변형**을 모두 평가한다.
+
+### 7.3 부분집합 지표
+
+holdout·audit의 pair-delta와 Spearman을 계산할 때 원래 1~80 rank를 그대로
+사용하지 않는다. 해당 부분집합 내부 순서를 연속 `1…n`으로 다시 부여한다.
+
+### 7.4 audit
+
+- audit symbols는 모델 구조·피처·가중치를 동결한 후 한 번만 평가한다.
+- audit의 세 주 지표가 production benchmark보다 악화되면 승격하지 않는다.
+- audit 결과를 본 뒤 수정한 후보는 같은 audit으로 “미관측 검증 완료”라고 부르지 않는다.
+
+#### 현재 세션의 검증 한계
+
+2026-07-29 작업 중 첫 후보에서 audit 결과를 확인한 후, **development 잔차만을
+근거로** 신규 피처를 추가하고 audit을 다시 계산했다. 신규 피처 선택에 audit
+수치를 사용하지는 않았지만, 최종 후보의 audit은 엄밀한 의미의 완전 미관측
+검증이라고 주장하지 않는다. 최종 외부 검증은 다음 신규 정답셋에서 수행해야 한다.
 
 ---
 
-## 구현 순서(중요)
+## 8. 평가 지표와 채택 기준
 
-- **코딩은 1단계부터** 단위작업별로 완성하고 다음으로 넘어갑니다.
-- 1~4단계 전체 흐름을 잊지 않도록 본 문서를 기준으로 개발합니다.
-- 로직이 꼬이거나 버그가 나기 쉬우므로, “한 번에 다 구현”을 피하고 단계별 완료 기준을 충족한 뒤 다음 단계로 진행합니다.
+### 지표
 
+- `inversion_rate`: 전체 쌍 중 정답과 순서가 뒤집힌 비율, 낮을수록 좋음
+- `spearman_rho`: 정답 rank와 모델 rank의 상관, 높을수록 좋음
+- `pair_delta_error`: 두 종목 간 정답 순위차와 모델 순위차의 평균 절대오차
+- `top_quintile_recall`: 정답 상위 20%를 모델 상위 20%가 포함한 비율
+
+### 후보 보고 조건
+
+- full set과 development에서 production 대비:
+  - inversion 감소
+  - Spearman 증가
+  - pair-delta 감소
+- nested holdout에서 안정적인 개선
+- 핵심 피처의 bootstrap 방향·선택 안정성
+- LOO에서 특정 종목 하나 제거로 결론이 뒤집히지 않음
+- 모든 label variants에서 개선 방향 유지
+- 수식과 각 피처를 자연어로 설명 가능
+
+한 개 정답셋에서 수치가 좋아도 미래 일반화를 증명한 것은 아니다.
+
+---
+
+## 9. 승격된 원점 모델 — 2026-07-29
+
+이 절은 실행 결과 스냅샷이며 production 수식이 아니다.
+
+### 선택 결과
+
+- family raw best: limited interactions
+- one-standard-error 선택: **sparse linear**
+- 상태: `promoted_to_production`
+- 승격 버전: `v4.6.0`
+
+```text
++ 0.846427 × Z(R2_3M)
++ 0.601307 × Z(DD_RECOVERY)
++ 0.354317 × Z(TREND_QUALITY_21D)
+- 0.279017 × Z(JUMP_DISCONTINUITY_3M)
+- 0.196604 × Z(UNDER_EMA20_DAYS)
++ 0.186983 × Z(R_3M)
+- 0.181753 × Z(STALE_AGE)
++ 0.107915 × Z(UP_STREAK_5D)
++ 0.107766 × Z(TREND_EFFICIENCY_REWARD_15D)
+- 0.104169 × Z(RANGE_COMPRESSION_20D)
+```
+
+### 최신 80종 전체 지표
+
+| 지표 | production v4.5.1 | 원점 후보 |
+|---|---:|---:|
+| inversion | 0.2373 | 0.1177 |
+| Spearman | 0.7024 | 0.8917 |
+| pair-delta | 19.8032 | 10.4677 |
+| top 20% recall | 0.6875 | 0.8750 |
+
+### audit 16종
+
+| 지표 | production v4.5.1 | 원점 후보 |
+|---|---:|---:|
+| inversion | 0.2083 | 0.1417 |
+| Spearman | 0.7118 | 0.8000 |
+| pair-delta | 3.7667 | 2.7333 |
+
+- label variants: 8/8에서 production 대비 세 지표 동시 개선
+- LOO inversion range: 0.1126~0.1254
+- 핵심 bootstrap 선택률:
+  - R2_3M: 100%
+  - DD_RECOVERY: 95.8%
+  - JUMP_DISCONTINUITY_3M: 86.7%
+  - TREND_QUALITY_21D: 78.3%
+  - R_3M: 75.0%
+
+하위 가중치 피처의 선택률은 더 낮으므로 승격 전 수식 단순화 여부를 함께 검토한다.
+
+---
+
+## 10. Monte Carlo의 역할
+
+- 현재 sparse pairwise loss는 같은 변수·제약 아래 거의 볼록이므로
+  광범위한 무작위 탐색을 주 optimizer로 쓰지 않는다.
+- Monte Carlo는 수식 구조를 정한 뒤 다음 용도로만 선택적으로 사용한다.
+  - 현재 가중치 주변 민감도·평탄성 확인
+  - 실제 rank 지표의 constrained local refinement
+  - weight=0 ablation과 임계값 주변 탐색
+- 전체 배율은 순위에 영향이 없으므로 `Σw=1` 등으로 scale을 고정한다.
+- 방향·해석 가능성·sparsity를 유지하고 각 inner train 안에서만 탐색한다.
+- audit을 확인한 뒤 Monte Carlo로 수정한 후보는 같은 audit으로 재승인하지 않는다.
+
+---
+
+## 11. 후보 보고와 production 승격
+
+### 11.1 후보 보고
+
+다음을 사용자에게 보고한다.
+
+- 자연어 동작 설명
+- 전체 수식과 정규화 정책
+- 선택·제거된 기존/신규 피처
+- production 대비 full/development/audit 지표
+- nested/bootstrap/LOO/label variant 결과
+- 가장 큰 개선·악화 사례
+- 단일 정답셋과 audit 사용 이력 등 한계
+
+여기서 사용자 컨펌을 기다린다.
+
+2026-07-29 모델은 위 보고 후 사용자 컨펌을 받아 v4.6.0으로 승격했다.
+이 문장의 승격 이력은 다음 재보정의 후보-승격 분리 원칙을 완화하지 않는다.
+
+### 11.2 컨펌 후에만 승격
+
+승인 후:
+
+1. 공유 feature builder와 score body를 `core/` SSOT로 구현
+2. `compute_fms_snapshot`과 feature-frame scorer의 parity 보장
+3. 앱·배치가 동일 core 경로를 사용하도록 연결
+4. 거래적합성 `-999` 정책 유지
+5. 골든 순위, 경계 연속성, 결측·비양수 가격, 네트워크 금지 테스트
+6. 전체 pytest, FMS harness, app/batch import smoke 실행
+7. 버전과 `app.py`, `config.FMS_FORMULA`, README, CHANGELOG, TODO,
+   HARNESS_RULES, 본 문서 동기화
+
+컨펌 전에는 version bump나 production 공식 변경을 하지 않는다.
+
+---
+
+## 12. 재실행 명령
+
+```bash
+# 1. 최신 완료 세션과 snapshot으로 manifest/features 생성
+python fms_recalib_build_features.py
+
+# 2. 0점에서 원점 재피팅 + 검증
+python fms_recalib_refit.py
+
+# 3. development 잔차 차트
+python -m calibration.fms_recalib_plot_residuals
+
+# 4. 전체 회귀
+python -m pytest
+python -m harness.run_fms_snapshot
+```
+
+### 다음 작업을 AI에게 지시하는 예시
+
+> 최신 완료 FMS 재보정 세션 하나만 사용해 원점 재피팅을 수행해.
+> production FMS는 benchmark로만 쓰고 후보 점수는 0에서 시작해.
+> development에서 피처 발견·잔차 차트 검토·nested validation을 끝낸 후
+> audit을 한 번만 평가해. sparse/GAM/제한 상호작용을 비교하고
+> one-standard-error 규칙을 적용해. bootstrap, LOO, 모든 review label
+> variants를 검증한 뒤 후보 보고 단계에서 멈추고 production은 수정하지 마.
+
+---
+
+## 13. 레거시 도구의 위치
+
+다음 도구는 과거 incremental 수식 평가 또는 특정 항 미세조정용이다.
+
+- `fms_recalib_evaluate_formulas.py`
+- `fms_recalib_rank_metrics.py`
+- `fms_recalib_tune_vol_penalty.py`
+- `fms_recalib_tune_weights_and_transitions.py`
+- `calibration/fms_recalib_fit_latest.py`
+- `calibration/fms_recalib_screen_short_horizon.py`
+
+이들을 전면 재피팅의 기본 경로로 사용하지 않는다. 기존 production 구조를 유지한 채
+항을 더하는 결과는 **incremental 실험**으로 명시하며 원점 재피팅으로 보고하지 않는다.
