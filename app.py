@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.5.0
+# KRW Momentum Radar - v4.5.1
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (R² 기반 급등주 필터링)
@@ -98,7 +98,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.5.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v4.5.1", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -749,14 +749,14 @@ with st.sidebar.expander("✏️ 수동 관리", expanded=False):
                 st.error("삭제할 종목을 선택해주세요.")
 
 with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
-    # FMS 설명
+    # FMS 설명 (SSOT: core/fms.py · config.FMS_FORMULA — UI 문구는 여기와 동기화)
     st.markdown("**📊 FMS (Fast Momentum Score)**")
     
     st.markdown(f"""
     **개요:**  
     - FMS는 **중·장기 우상향(3M/4M 수익률)**, **추세의 매끄러움(3M R²)**, **현재 위치(EMA50 대비)**,  
-      그리고 **건강한 추세에서의 최근 가속(조건부 1M 수익률)** 을 가산하고,  
-      **깊은 드로우다운**, **과도한 20일 변동성**, **추세가 나쁜데 1M만 튄 이벤트성 급등**을 감점하는 **비선형 점수**입니다.
+      **단기 연속성(EMA20 기울기·곡률, 10D/5D 수익률)**, 그리고 **건강한 추세에서의 최근 가속(조건부 1M)** 을 가산하고,  
+      **깊은 드로우다운**, **과도한 20일 변동성**, **추세·연속성이 받쳐주지 않는 1M 이벤트성 급등**을 감점하는 **비선형 점수**입니다.
 
     **긍정 요인 (가산)**  
     - **R_3M, R_4M**: 3개월/4개월 수익률이 높을수록 가산  
@@ -764,7 +764,8 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
       - 0.7/0.9 같은 임계값에서 **계단식으로 점수가 튀지 않도록**, 경계 주변을 **부드러운 곡선(smoothstep)** 으로 전이  
       - **추세상승 게이트(연속형)**: R²는 R_3M≈5%, R_4M≈5.3%를 기준으로 가산되되, 경계에서 **부드럽게 켜지고/꺼지도록** 적용  
     - **AboveEMA50**: 현재가가 EMA50 위에 있고, 충분히 위에 있을수록 가산  
-    - **조건부 R_1M (좋은 경우)**: 이미 R2_3M, R_3M, R_4M 이 모두 좋은 “건강한 우상향”인 종목에서만,  
+    - **EMA20 기울기/곡률 · R_10D/R_5D**: 최근 수 주~1개월 안쪽의 **꾸준한 우상향·가속**을 가산 (계단식 상승 후 평탄한 패턴보다 최근 연속 상승을 선호)  
+    - **조건부 R_1M (좋은 경우)**: R² soft quality(≈0.80 중심 smoothstep) + R_3M/R_4M이 받쳐주는 종목에서  
       최근 1개월 수익률이 높으면 추가 가산 (견고한 추세의 가속으로 해석)
 
     **부정 요인 (감점)**  
@@ -774,16 +775,16 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     - **Vol20_Ann (20일 변동성)**:  
       - 중간 수준의 변동성까지는 완만한 패널티  
       - 상위 변동성 구간에서 제곱 항으로 급격히 강한 패널티 (과도하게 요동치는 종목 기피)  
-    - **조건부 R_1M (나쁜 경우)**: R2_3M, R_3M, R_4M 이 받쳐주지 않는데 1M 수익률만 높은 경우,  
-      이벤트성 급등으로 보고 감점 요인으로 사용
+    - **조건부 R_1M (나쁜 경우)**: quality가 낮고 1M만 크게 오른 경우를 이벤트성 급등으로 감점.  
+      단, **R_10D>0 이고 EMA20 기울기>0**이면(최근 연속 상승 확인) 이벤트 급등 감점에서 **면제**
 
     **추가 필터 (거래 적합성)**  
     - True Range 기반 **치명적 변동성 30% 초과** 또는  
       **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
 
     **한 줄 요약:**  
-    - **“일관된 중·장기 우상향 + 추세 상단 위치 + 건강한 가속”을 가진 종목을 선호하고,  
-      “깊은 손실/과도한 변동/이벤트성 급등” 패턴을 강하게 배제하는 비선형 모멘텀 점수입니다.**
+    - **“중·장기 우상향 + 최근 구간까지 이어지는 꾸준한 가속”을 선호하고,  
+      “계단식 급등 후 정체 / 깊은 손실 / 과도한 변동 / 연속성 없는 이벤트 급등”을 배제하는 비선형 모멘텀 점수입니다.**
     """)
     
     st.markdown("---")
@@ -1109,7 +1110,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.5.0")
+st.title("⚡ KRW Momentum Radar v4.5.1")
 
 
 

@@ -5,6 +5,23 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [4.5.1] - 2026-07-29
+
+### 변경
+
+- **FMS 최근 우상향 가중 튜닝** (계단식 상승 후 평탄 vs 꾸준한 1M 우상향)
+  - `r1_bad` 면제: R_1M>30%라도 `R_10D>0` AND `EMA20_SLOPE_10D>0`이면 이벤트 급등 감점 제외
+  - 조건부 R_1M quality R²: 하드컷 0.85 → **0.80 중심 smoothstep** (`_r1_quality_weight`)
+  - `w_recent` +25% (0.183→0.229), `w_ema_shape` +15% (0.388→0.446); R_3M/R_4M/vol/dd 가중 유지
+  - SSOT 헬퍼: `_r1_conditional_series` — feature-frame + `_mom_snapshot` 동시 적용
+  - UI: 좌측 [도구 및 도움말] FMS 설명 — soft quality / continuation 면제 / 단기 연속 축 반영
+
+### 검증 하네스
+
+- `tests/unit/test_fms_recent_continuation.py` — soft quality / continuation exemption / stale vs recent 순위
+- 기존 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지
+- 푸시 전: `python -m pytest` · `python -m harness.run_fms_snapshot` · app/batch import 스모크
+
 ## [4.5.0] - 2026-07-28
 
 ### 추가

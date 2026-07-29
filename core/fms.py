@@ -66,6 +66,11 @@ R_4M_QUALITY_MIN = horizon_return_map(
 )
 R_3M_GATE_CENTER = 0.05  # unchanged (3M axis)
 
+# Soft R² gate for conditional R_1M (was a hard cut at 0.85).
+R2_QUALITY_CENTER = 0.80
+# Treat quality weight below this as "non-quality" for binary r1_bad / break.
+R1_QUALITY_HARD_FLOOR = 0.5
+
 
 @dataclass(frozen=True)
 class FmsScoreParams:
@@ -116,14 +121,18 @@ class FmsScoreParams:
 
 
 def production_fms_score_params() -> FmsScoreParams:
-    """Iteration 5 production weights / transition widths (reference-panel path)."""
+    """Production weights / transition widths (reference-panel path).
+
+    2026-07-29: modest bump to ``w_ema_shape`` / ``w_recent`` so intra-month
+    continuation competes better with stale 3M/4M residue (see HARNESS / CHANGELOG).
+    """
     return FmsScoreParams(
         w_r3=0.46869,
         w_r4=0.417409,
         w_r2=0.505669,
         w_ema=0.323264,
-        w_ema_shape=0.387801,
-        w_recent=0.183015,
+        w_ema_shape=0.445971,
+        w_recent=0.228769,
         w_r1_pos=0.270777,
         w_dd=0.28298,
         w_vol=0.291973,
@@ -177,6 +186,56 @@ def _smoothstep(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
         return pd.Series(0.0, index=x.index)
     t = ((x - edge0) / (edge1 - edge0)).clip(lower=0.0, upper=1.0)
     return t * t * (3.0 - 2.0 * t)
+
+
+def _r1_quality_weight(
+    r2_3m: pd.Series,
+    r_3m: pd.Series,
+    r_4m: pd.Series,
+    params: FmsScoreParams,
+) -> pd.Series:
+    """Continuous quality weight for conditional R_1M (soft R² around 0.80)."""
+    r2_clip = r2_3m.astype(float).clip(lower=0.0, upper=1.0)
+    r2_soft = _smoothstep(
+        r2_clip,
+        R2_QUALITY_CENTER - params.r2_transition_w,
+        R2_QUALITY_CENTER + params.r2_transition_w,
+    )
+    ret_ok = ((r_3m.astype(float) > 0.3) & (r_4m.astype(float) > R_4M_QUALITY_MIN)).astype(float)
+    return pd.Series(r2_soft * ret_ok, index=r2_3m.index, dtype=float)
+
+
+def _recent_continuation_mask(r_10d: pd.Series, ema20_slope: pd.Series) -> pd.Series:
+    """True when short-term price/EMA structure confirms ongoing uptrend."""
+    return (r_10d.astype(float) > 0.0) & (ema20_slope.astype(float) > 0.0)
+
+
+def _r1_conditional_series(
+    r_1m: pd.Series,
+    r_3m: pd.Series,
+    r_4m: pd.Series,
+    r2_3m: pd.Series,
+    r_10d: pd.Series,
+    ema20_slope: pd.Series,
+    params: FmsScoreParams,
+) -> tuple[pd.Series, pd.Series]:
+    """Return ``(r1_good, r1_bad)`` with soft quality + continuation exemption.
+
+    - ``r1_good``: R_1M scaled by continuous quality weight (healthy accel credit).
+    - ``r1_bad``: event-spike path — high R_1M without quality, unless recent
+      continuation (R_10D>0 and EMA20 slope>0) confirms the move is not a spike.
+    """
+    qw = _r1_quality_weight(r2_3m, r_3m, r_4m, params)
+    r1 = r_1m.astype(float)
+    r1_good = pd.Series(r1 * qw, index=r_1m.index, dtype=float)
+    low_q = qw < R1_QUALITY_HARD_FLOOR
+    continuation = _recent_continuation_mask(r_10d, ema20_slope)
+    r1_bad = pd.Series(
+        np.where(low_q & (r1 > 0.3) & ~continuation, r1, 0.0),
+        index=r_1m.index,
+        dtype=float,
+    )
+    return r1_good, r1_bad
 
 
 def _z_peer(x: pd.Series, mask_exclude: Optional[set] = None) -> pd.Series:
@@ -340,13 +399,17 @@ def score_fms_from_feature_frame(
     r4_term = _z_ref(r_4m, ref_r_4m)
     ema_term = _z_ref(above_ema50, ref_above)
 
-    quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r_4m > R_4M_QUALITY_MIN)
-    r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
-    r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
-    ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_4m > R_4M_QUALITY_MIN)
-    ref_r1_good = pd.Series(np.where(ref_quality, ref_r_1m, 0.0), index=ref_r_1m.index)
-    ref_r1_bad = pd.Series(
-        np.where(~ref_quality & (ref_r_1m > 0.3), ref_r_1m, 0.0), index=ref_r_1m.index
+    r1_good, r1_bad = _r1_conditional_series(
+        r_1m, r_3m, r_4m, r2_3m, r_10d, ema20_slope, p
+    )
+    ref_r1_good, ref_r1_bad = _r1_conditional_series(
+        ref_r_1m,
+        ref_r_3m,
+        ref_r_4m,
+        ref_r2_3m,
+        ref["R_10D"].astype(float),
+        ref["EMA20_SLOPE_10D"].astype(float),
+        p,
     )
     r1_pos = _z_ref(r1_good, ref_r1_good)
     r1_neg = _z_ref(r1_bad, ref_r1_bad)
@@ -361,8 +424,9 @@ def score_fms_from_feature_frame(
     )
 
     recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
+    quality_w = _r1_quality_weight(r2_3m, r_3m, r_4m, p)
     recent_break_raw = pd.Series(
-        np.where(quality_mask & (r_10d < 0.0), -r_10d, 0.0),
+        np.where((quality_w >= R1_QUALITY_HARD_FLOOR) & (r_10d < 0.0), -r_10d, 0.0),
         index=r_10d.index,
     )
     recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)
@@ -546,6 +610,25 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
             ref_above_ema50[c] = (s.iloc[-1] / e50.iloc[-1] - 1.0) if e50.iloc[-1] > 0 else np.nan
         ref_above_ema50 = pd.Series(ref_above_ema50, name='AboveEMA50')
         ref_vol20 = last_vol_annualized(reference_prices_krw, 20).rename('Vol20(ann)')
+        ref_r_10d = returns_pct(reference_prices_krw, 10)
+        ref_ema20_slope_10d: Dict[str, float] = {}
+        for c in reference_prices_krw.columns:
+            s = reference_prices_krw[c].dropna()
+            if s.empty:
+                ref_ema20_slope_10d[c] = np.nan
+                continue
+            e20 = ema(s, 20)
+            if len(e20) >= 10:
+                last10 = e20.iloc[-10:]
+                x10 = np.arange(len(last10), dtype=float)
+                y10 = np.log(last10.where(last10 > 0)).dropna()
+                if len(y10) == len(x10):
+                    ref_ema20_slope_10d[c] = float(np.polyfit(x10, y10, 1)[0])
+                else:
+                    ref_ema20_slope_10d[c] = np.nan
+            else:
+                ref_ema20_slope_10d[c] = np.nan
+        ref_ema20_slope_10d = pd.Series(ref_ema20_slope_10d, name='EMA20_SLOPE_10D')
 
         # 참조용 MaxDD
         ref_md: Dict[str, float] = {}
@@ -614,17 +697,24 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         vol_penalty = _z_ref(v_combined, v_ref_combined)
 
         # 주요 양의 축들
+        r4_full = returns_pct(prices_krw, HORIZON_DAYS_4M)
         r3_term = _z_ref(r_3m, ref_r_3m)
-        r4_term = _z_ref(returns_pct(prices_krw, HORIZON_DAYS_4M), ref_r_4m)
+        r4_term = _z_ref(r4_full, ref_r_4m)
         ema_term = _z_ref(above_ema50_ser, ref_above_ema50)
 
-        # R1 조건부 처리
-        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, HORIZON_DAYS_4M) > R_4M_QUALITY_MIN)
-        r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
-        r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
-        ref_quality = (ref_r2_3m > 0.85) & (ref_r_3m > 0.3) & (ref_r_4m > R_4M_QUALITY_MIN)
-        ref_r1_good = pd.Series(np.where(ref_quality, ref_r_1m, 0.0), index=ref_r_1m.index)
-        ref_r1_bad = pd.Series(np.where(~ref_quality & (ref_r_1m > 0.3), ref_r_1m, 0.0), index=ref_r_1m.index)
+        # R1 조건부 처리 (soft R² + recent-continuation exemption)
+        r1_good, r1_bad = _r1_conditional_series(
+            r_1m, r_3m, r4_full, r2_3m, r_10d, ema20_slope_10d_ser, p
+        )
+        ref_r1_good, ref_r1_bad = _r1_conditional_series(
+            ref_r_1m,
+            ref_r_3m,
+            ref_r_4m,
+            ref_r2_3m,
+            ref_r_10d,
+            ref_ema20_slope_10d,
+            p,
+        )
         r1_pos = _z_ref(r1_good, ref_r1_good)
         r1_neg = _z_ref(r1_bad, ref_r1_bad)
 
@@ -641,8 +731,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         )
 
         recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
+        quality_w = _r1_quality_weight(r2_3m, r_3m, r4_full, p)
         recent_break_raw = pd.Series(
-            np.where((r2_3m > 0.85) & (r_3m > 0.3) & (returns_pct(prices_krw, HORIZON_DAYS_4M) > R_4M_QUALITY_MIN) & (r_10d < 0.0), -r_10d, 0.0),
+            np.where((quality_w >= R1_QUALITY_HARD_FLOOR) & (r_10d < 0.0), -r_10d, 0.0),
             index=r_10d.index,
         )
         recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)
@@ -703,9 +794,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         r4_term = _z_peer(r4_full, disqualified_symbols)
         ema_term = _z_peer(above_ema50_ser, disqualified_symbols)
 
-        quality_mask = (r2_3m > 0.85) & (r_3m > 0.3) & (r4_full > R_4M_QUALITY_MIN)
-        r1_good = pd.Series(np.where(quality_mask, r_1m, 0.0), index=r_1m.index)
-        r1_bad = pd.Series(np.where(~quality_mask & (r_1m > 0.3), r_1m, 0.0), index=r_1m.index)
+        r1_good, r1_bad = _r1_conditional_series(
+            r_1m, r_3m, r4_full, r2_3m, r_10d, ema20_slope_10d_ser, p
+        )
         r1_pos = _z_peer(r1_good, disqualified_symbols)
         r1_neg = _z_peer(r1_bad, disqualified_symbols)
 
@@ -721,8 +812,9 @@ def _mom_snapshot(prices_krw: pd.DataFrame, reference_prices_krw: Optional[pd.Da
         )
 
         recent_accel_term = _z_peer(r_10d + 0.5 * r_5d, disqualified_symbols)
+        quality_w = _r1_quality_weight(r2_3m, r_3m, r4_full, p)
         recent_break_raw = pd.Series(
-            np.where(quality_mask & (r_10d < 0.0), -r_10d, 0.0),
+            np.where((quality_w >= R1_QUALITY_HARD_FLOOR) & (r_10d < 0.0), -r_10d, 0.0),
             index=r_10d.index,
         )
         recent_break_term = _z_peer(recent_break_raw, disqualified_symbols)

@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-28 (KST) · 제품 버전 v4.5.0
+최종 갱신: 2026-07-29 (KST) · 제품 버전 v4.5.1
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.5.0)
+## 0. 현재 구축된 검증 하네스 (v4.5.1)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -19,6 +19,7 @@
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
 | `tests/unit/test_fms_scoring.py` | 순위 / `-999` / 결측 / yfinance 미호출 / 셔임 | `python -m pytest` |
+| `tests/unit/test_fms_recent_continuation.py` | soft R² quality / r1_bad continuation 면제 / stale vs recent | (pytest 포함) |
 | `tests/unit/test_fms_recalib_parity.py` | recalib `f_current` = production FMS | (pytest 포함) |
 | `tests/unit/test_fms_params.py` | params 기본값=production / 오버라이드 / tune 위임 | (pytest 포함) |
 | `tests/unit/test_fms_horizon_map.py` | 6M→4M 복리/√t 매핑 · R²=63d 불변 | (pytest 포함) |
@@ -54,6 +55,14 @@
 - `watchlist_irp.csv`
 - `screened_universe.csv`  
 운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.
+
+### 2026-07-29 세션 — FMS 최근 우상향 튜닝 (v4.5.1)
+
+1. **원인**: R² below 0.85 + R_1M>30% 시 `r1_bad`가 꾸준한 가속까지 이벤트 급등으로 감점.
+2. **수정**: `_r1_conditional_series` — soft R² quality(0.80) + continuation 면제(R_10D and EMA slope > 0); `w_recent`/`w_ema_shape` 소폭 상향.
+3. **회귀**: `test_fms_recent_continuation.py` (오프라인 synthetic stale vs recent); 골든 순위 불변.
+4. **UI**: 사이드바 FMS 설명을 동일 게이트/면제/단기 축에 맞춤 (`config.FMS_FORMULA` 주석과 동기).
+5. **운영/하네스 경계**: `app.py` / `run_scan_batch.py`는 tests·fixture 미import; Mock은 `tests/`·`harness/`만.
 
 ### 2026-07-20 세션에서 확정된 FMS 검증 요약
 

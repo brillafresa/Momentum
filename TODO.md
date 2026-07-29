@@ -1,13 +1,22 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-28** (KST) · 제품 버전 **v4.5.0**
+> 최종 갱신: **2026-07-29** (KST) · 제품 버전 **v4.5.1**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-07-29 — v4.5.1 (FMS 최근 우상향 가중 튜닝)
+
+- [x] `r1_bad` 면제: R_10D>0 ∧ EMA20 slope>0 이면 이벤트 급등 감점 제외
+- [x] R² quality soft gate (center 0.80 smoothstep); `_r1_conditional_series` SSOT
+- [x] `w_recent` +25%, `w_ema_shape` +15%
+- [x] 회귀: `test_fms_recent_continuation.py`; 골든 순위 유지
+- [x] UI 좌측 [도구 및 도움말] FMS 수식 설명 동기화
+- [x] 푸시 전 정리: 프로덕션↔하네스 경계·문서 SSOT·pytest/import 스모크
 
 ### 2026-07-28 — v4.5.0 (FREE 홍콩 유니버스 + Finviz 페이지네이션 복원력)
 
@@ -60,6 +69,7 @@
 
 | 자산 | 검증 내용 | 실행 |
 |------|-----------|------|
+| `tests/unit/test_fms_recent_continuation.py` | soft R² quality / r1_bad continuation 면제 / stale vs recent | (pytest 포함) |
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 | (pytest 포함) |
 | `tests/unit/test_fms_horizon_map.py` | 복리/√t 매핑, R²=63d 불변 | (pytest 포함) |
 | `tests/unit/test_fms_params.py` | params 기본값=production, 오버라이드, tune 위임 | (pytest 포함) |

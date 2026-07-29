@@ -15,6 +15,7 @@ tests/
 │   └── golden_fms_ranks.json
 ├── unit/                # 순수 로직·헬퍼 단위 테스트
 │   ├── test_fms_scoring.py
+│   ├── test_fms_recent_continuation.py
 │   ├── test_fms_recalib_parity.py
 │   ├── test_indicators.py
 │   ├── test_tradeability.py
