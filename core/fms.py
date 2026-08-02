@@ -123,8 +123,8 @@ def production_fms_score_params() -> FmsScoreParams:
     """Archived pre-v4.6 weights / transition widths (legacy tune path only).
 
     Production scoring uses ``score_production_fms_features`` /
-    ``score_fms_from_feature_frame`` with sparse-linear weights and
-    watchlist-relative Z in ``core/fms_features.py``. These params remain for
+    ``score_fms_from_feature_frame`` with the v5.0.0 ``alive_pullback`` formula
+    in ``core/fms_features.py``. These params remain for
     ``score_legacy_fms_from_feature_frame`` and offline tune scripts.
     """
     return FmsScoreParams(
@@ -451,11 +451,11 @@ def score_fms_from_feature_frame(
     reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set] = None,
 ) -> pd.Series:
-    """Score production FMS relative to the current account watchlist.
+    """Score production FMS (v5.0.0 alive_pullback absolute nonlinear).
 
-    ``reference_features`` supplies the watchlist distribution used for every
-    axis' mean/standard deviation. When omitted, the target frame is its own
-    reference (the app's current-watchlist behavior).
+    ``reference_features`` is accepted for API compatibility with batch/app
+    call sites but is unused by the absolute scorer. Pass disqualified symbols
+    to force tradeability ``FMS = -999``.
     """
     return score_production_fms_features(
         features,

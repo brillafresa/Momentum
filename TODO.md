@@ -1,13 +1,21 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-07-30** (KST) · 제품 버전 **v4.7.0**
+> 최종 갱신: **2026-08-02** (KST) · 제품 버전 **v5.0.0**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-08-02 — v5.0.0 (alive_pullback 원점 재피팅 승격)
+
+- [x] 정답셋 cal_fms_20260730_190637 → NL·비중첩 SEG_*·비선형 MC → `alive_pullback` 선정
+- [x] `STALE_AFTER_RUN` 최근-약세 게이트 + residual features / alive_pullback family
+- [x] production SSOT 승격 (`core/fms_features.py`); 레거시 sparse+cash는 harness 보존
+- [x] residual plot 스키마 호환; pytest unit/contract; app/batch import 스모크
+- [x] CHANGELOG / HARNESS_RULES / TODO / .cursorrules / docs 동기화
 
 ### 2026-07-30 — v4.7.0 (현재 관심종목 상대 Z-score 복원)
 
@@ -127,10 +135,11 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-- [ ] LIVE IRP/FREE 배치 재실행으로 v4.7.0 상대 Z + 현금성 게이트 실랭킹 확인
-- [x] (선택) `get_filter_debug_info` → `core/tradeability.py` 동반 이전
-- [x] (선택) `fms_recalib_tune_vol_penalty` 단순화 본문 정리
-- [x] `fms_recalib_*.py` → `calibration/` 점진 이동
+- [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0 (실사용 피드백 후 추가 라운드 검토)
+- [x] LIVE IRP/FREE 배치로 v4.7.0 상대 Z + 현금성 게이트 재랭킹 확인 (사용자 직접 실행)
+- [x] (선택) get_filter_debug_info → core/tradeability.py 동반 이전
+- [x] (선택) ms_recalib_tune_vol_penalty 단순화 본문 정리
+- [x] ms_recalib_*.py → calibration/ 점진 이동
 
 ---
 
@@ -164,4 +173,7 @@
 python -m pytest
 python -m harness.run_fms_snapshot
 python -m harness.compare_cash_like_gate
+python fms_recalib_build_features.py
+python -m calibration.fms_recalib_inspect_patterns
+python fms_recalib_nonlinear_mc.py
 ```

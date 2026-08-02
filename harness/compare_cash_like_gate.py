@@ -19,11 +19,11 @@ from typing import Iterable, List, Optional
 import pandas as pd
 
 from core.fms_features import (
-    PRODUCTION_FMS_COLUMNS,
+    LEGACY_SPARSE_FMS_COLUMNS as PRODUCTION_FMS_COLUMNS,
     build_panel_feature_frame,
     cash_like_strength,
     production_axis_contributions,
-    score_production_fms_features,
+    score_legacy_sparse_fms_features as score_production_fms_features,
 )
 
 ROOT = Path(__file__).resolve().parents[1]

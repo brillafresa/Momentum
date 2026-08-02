@@ -66,11 +66,11 @@ def test_momentum_now_and_delta_rank_order_matches_golden(
         assert result.loc[symbol, "FMS"] == pytest.approx(expected)
 
 
-def test_reference_panel_changes_production_fms(
+def test_reference_panel_does_not_change_production_fms(
     synthetic_prices_krw: pd.DataFrame,
     synthetic_ohlc: pd.DataFrame,
 ) -> None:
-    """Production FMS must normalize against the supplied current watchlist."""
+    """v5.0.0 alive_pullback is absolute — reference panel must not alter FMS."""
     symbols = list(synthetic_prices_krw.columns)
     with_ref = compute_fms_snapshot(
         synthetic_prices_krw,
@@ -85,7 +85,9 @@ def test_reference_panel_changes_production_fms(
         ohlc_data=synthetic_ohlc,
         symbols=symbols,
     )
-    assert not np.allclose(with_ref["FMS"], with_alt_ref["FMS"])
+    pd.testing.assert_series_equal(
+        with_ref["FMS"], with_alt_ref["FMS"], check_names=False
+    )
 
 
 def test_missing_reference_defaults_to_target_watchlist(

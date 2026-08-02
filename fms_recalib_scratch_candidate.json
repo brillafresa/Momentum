@@ -1,622 +1,506 @@
 {
-  "status": "promoted_to_production",
-  "promoted_version": "v4.6.0",
-  "promoted_at": "2026-07-29",
-  "policy": "true scratch score starts at zero; production is benchmark only",
-  "session_id": "20260729_recent1m",
-  "snapshot_id": "fms_20260729_154752",
-  "n_symbols": 80,
-  "families": {
-    "sparse_linear": {
-      "splits": 20,
-      "inv_median": 0.15555555555555556,
-      "inv_standard_error": 0.014397723726786786,
-      "rho_median": 0.843131868131868,
-      "pair_err_median": 2.4190476190476193,
-      "terms_median": 10.0,
-      "l1_mode": 0.03
+  "status": "promoted_to_production_v5.0.0",
+  "created_at": "2026-08-02T17:44:34",
+  "method": "nonlinear_monte_carlo_round2b",
+  "session_id": "cal_fms_20260730_190637",
+  "snapshot_id": "fms_20260730_190637",
+  "n_symbols": 147,
+  "seed": 20260802,
+  "seeds": [
+    20260802,
+    20260803,
+    20260811
+  ],
+  "mc_samples_per_family": 2500,
+  "nested_refit_samples": 180,
+  "natural_language_rules_path": "fms_recalib_natural_language_rules.json",
+  "natural_language_rules": {
+    "created_at": "2026-08-02T17:30:52",
+    "n_symbols": 147,
+    "feature_csv": "fms_recalib_features.csv",
+    "production_benchmark": {
+      "inversion_rate": 0.27415897865995714,
+      "spearman_rho": 0.5655123952579921,
+      "pair_delta_error": 41.151616811108006
     },
-    "monotone_gam": {
-      "splits": 20,
-      "inv_median": 0.1523809523809524,
-      "inv_standard_error": 0.013751000385010747,
-      "rho_median": 0.8424242424242423,
-      "pair_err_median": 2.287179487179487,
-      "terms_median": 10.0,
-      "l1_mode": 0.03
-    },
-    "limited_interactions": {
-      "splits": 20,
-      "inv_median": 0.1492063492063492,
-      "inv_standard_error": 0.013258450603191535,
-      "rho_median": 0.8591408591408591,
-      "pair_err_median": 2.295238095238095,
-      "terms_median": 9.5,
-      "l1_mode": 0.01
-    }
-  },
-  "winner": "sparse_linear",
-  "one_standard_error": {
-    "best_raw_family": "limited_interactions",
-    "inversion_limit": 0.16246479980954073,
-    "eligible_families": [
-      "sparse_linear",
-      "monotone_gam",
-      "limited_interactions"
-    ],
-    "selected_simplest": "sparse_linear"
-  },
-  "model": {
-    "family": "sparse_linear",
-    "columns": [
-      "R2_3M",
-      "DD_RECOVERY",
-      "TREND_QUALITY_21D",
-      "JUMP_DISCONTINUITY_3M",
-      "UNDER_EMA20_DAYS",
-      "R_3M",
-      "STALE_AGE",
-      "UP_STREAK_5D",
-      "TREND_EFFICIENCY_REWARD_15D",
-      "RANGE_COMPRESSION_20D"
-    ],
-    "weights": [
-      0.8464267343631183,
-      0.6013072809914602,
-      0.35431695139125063,
-      0.2790170661950331,
-      0.19660351882982424,
-      0.18698290479370505,
-      0.18175252387780497,
-      0.1079152553498922,
-      0.10776592373907062,
-      0.10416888196208451
-    ],
-    "medians": {
-      "AboveEMA50": 0.1112247285342381,
-      "DD_RECOVERY": 0.6643035889404665,
-      "DOWNSIDE_RMS_10D": 0.18218455552167176,
-      "DOWNSIDE_RMS_20D": 0.2194163129480977,
-      "DOWN_STREAK_5D": 1.0,
-      "EMA20_ACCEL_3D_VS_10D": 0.0001695043844084,
-      "EMA20_CURV_20D": -0.0008475810321083,
-      "EMA20_SLOPE_10D": 0.0036707812335746,
-      "EMA20_SLOPE_3D": 0.0033910284659306,
-      "JUMP_DISCONTINUITY_3M": 0.05468108452358465,
-      "LOG_SLOPE_10D": 0.0013702707665244,
-      "LOG_SLOPE_15D": 0.0030141478664315,
-      "LOG_SLOPE_21D": 0.00235972069766055,
-      "MaxDD_Pct": -9.685499844401512,
-      "POST_SPIKE_STALL": 0.0,
-      "PRICE_VS_EMA20": 0.0301916233898179,
-      "PRICE_VS_EMA50": 0.1112247285342381,
-      "R2_3M": 0.8352543449520893,
-      "RANGE_COMPRESSION_20D": 0.7201582916335658,
-      "RECENT_3D_VS_21D_TREND": 0.004104449168115551,
-      "RECOVERY_3D_VS_PRIOR7": 0.0040627144700934,
-      "R_10D": 0.031873939093928855,
-      "R_10D_LOG": 0.0313764472634777,
-      "R_1M": 0.06917903384783805,
-      "R_21D_LOG": 0.0668893648639183,
-      "R_3D_LOG": 0.015613342646524149,
-      "R_3M": 0.41548493960236277,
-      "R_5D": 0.013833444342823902,
-      "R_5D_LOG": 0.0137385261097927,
-      "SLOPE_ACCEL_10_21": 0.0001232994929133417,
-      "STALE_AGE": 0.3295732726744802,
-      "TREND_EFFICIENCY_10D": 0.2038437983701598,
-      "TREND_EFFICIENCY_15D": 0.25503352104579935,
-      "TREND_EFFICIENCY_20D": 0.14382541511867866,
-      "TREND_EFFICIENCY_REWARD_15D": 0.25503352104579935,
-      "TREND_INEFFICIENCY_15D": 0.0,
-      "TREND_QUALITY_10D": 0.00010894714420560462,
-      "TREND_QUALITY_15D": 0.00138610578987665,
-      "TREND_QUALITY_21D": 0.00091647480412345,
-      "TREND_R2_10D": 0.326352540096574,
-      "TREND_R2_15D": 0.43680364386235637,
-      "TREND_R2_21D": 0.4307369275695407,
-      "UNDER_EMA20_DAYS": 8.0,
-      "UNDER_EMA20_DEPTH": -0.0302344120315007,
-      "UNDER_EMA20_STREAK": 0.0,
-      "UPSIDE_RMS_20D": 0.28250486877194675,
-      "UP_STREAK_5D": 1.0,
-      "VOL_ASYMMETRY_20D": 0.0602500008501638,
-      "Vol20_Ann": 0.35802279091022704,
-      "WORST_LOG_RETURN_20D": -0.038846091361005294
-    },
-    "means": {
-      "AboveEMA50": 0.12050628976102067,
-      "DD_RECOVERY": 0.663785299908631,
-      "DOWNSIDE_RMS_10D": 0.22275136113509653,
-      "DOWNSIDE_RMS_20D": 0.23964344989638137,
-      "DOWN_STREAK_5D": 1.125,
-      "EMA20_ACCEL_3D_VS_10D": -1.81869321586246e-05,
-      "EMA20_CURV_20D": -0.000861031369465476,
-      "EMA20_SLOPE_10D": 0.004407321570064727,
-      "EMA20_SLOPE_3D": 0.004389134637906118,
-      "JUMP_DISCONTINUITY_3M": 0.06367881333930969,
-      "LOG_SLOPE_10D": 0.0024602618759223824,
-      "LOG_SLOPE_15D": 0.0043050627564979165,
-      "LOG_SLOPE_21D": 0.0031753914814752295,
-      "MaxDD_Pct": -10.726392887500396,
-      "POST_SPIKE_STALL": 9.892240838979374e-05,
-      "PRICE_VS_EMA20": 0.0456390194972929,
-      "PRICE_VS_EMA50": 0.12050628976102067,
-      "R2_3M": 0.7950150409752298,
-      "RANGE_COMPRESSION_20D": 0.8673743653042431,
-      "RECENT_3D_VS_21D_TREND": 0.005211346222326815,
-      "RECOVERY_3D_VS_PRIOR7": 0.00468617763735155,
-      "R_10D": 0.05570324246565203,
-      "R_10D_LOG": 0.05106413357655982,
-      "R_1M": 0.09577999963399356,
-      "R_21D_LOG": 0.08586664653965098,
-      "R_3D_LOG": 0.025160213111406225,
-      "R_3M": 0.43566472679969265,
-      "R_5D": 0.020473386720451806,
-      "R_5D_LOG": 0.018806495617379498,
-      "SLOPE_ACCEL_10_21": -0.0007151296055528735,
-      "STALE_AGE": 0.40298524301352723,
-      "TREND_EFFICIENCY_10D": 0.19352783634003012,
-      "TREND_EFFICIENCY_15D": 0.22678469463379258,
-      "TREND_EFFICIENCY_20D": 0.10490371707883125,
-      "TREND_EFFICIENCY_REWARD_15D": 0.2544042787253949,
-      "TREND_INEFFICIENCY_15D": 0.08308104829916274,
-      "TREND_QUALITY_10D": 0.001555036113569836,
-      "TREND_QUALITY_15D": 0.0026101071074600118,
-      "TREND_QUALITY_21D": 0.0019688894572815613,
-      "TREND_R2_10D": 0.33307800271881893,
-      "TREND_R2_15D": 0.410627918828096,
-      "TREND_R2_21D": 0.41771495158134364,
-      "UNDER_EMA20_DAYS": 9.390625,
-      "UNDER_EMA20_DEPTH": -0.04152251399674842,
-      "UNDER_EMA20_STREAK": 0.90625,
-      "UPSIDE_RMS_20D": 0.31625125430896234,
-      "UP_STREAK_5D": 1.59375,
-      "VOL_ASYMMETRY_20D": 0.07660780441258094,
-      "Vol20_Ann": 0.40747524679137925,
-      "WORST_LOG_RETURN_20D": -0.042632353891886667
-    },
-    "scales": {
-      "AboveEMA50": 0.07837345105699649,
-      "DD_RECOVERY": 0.309333572309615,
-      "DOWNSIDE_RMS_10D": 0.12530912309560485,
-      "DOWNSIDE_RMS_20D": 0.10760211743165632,
-      "DOWN_STREAK_5D": 0.8926785535678563,
-      "EMA20_ACCEL_3D_VS_10D": 0.002802725203741239,
-      "EMA20_CURV_20D": 0.0037413476183886813,
-      "EMA20_SLOPE_10D": 0.00374649514912962,
-      "EMA20_SLOPE_3D": 0.0046113647978895415,
-      "JUMP_DISCONTINUITY_3M": 0.041124318302813774,
-      "LOG_SLOPE_10D": 0.007625637665531585,
-      "LOG_SLOPE_15D": 0.005023924293232015,
-      "LOG_SLOPE_21D": 0.004571210016368034,
-      "MaxDD_Pct": 5.326300486939801,
-      "POST_SPIKE_STALL": 0.0004830276527058716,
-      "PRICE_VS_EMA20": 0.05109637241468441,
-      "PRICE_VS_EMA50": 0.07837345105699649,
-      "R2_3M": 0.16520174648250016,
-      "RANGE_COMPRESSION_20D": 0.6188434821411432,
-      "RECENT_3D_VS_21D_TREND": 0.014053762798970486,
-      "RECOVERY_3D_VS_PRIOR7": 0.015463333175532312,
-      "R_10D": 0.08674144298448609,
-      "R_10D_LOG": 0.07792001436984536,
-      "R_1M": 0.12020226926369194,
-      "R_21D_LOG": 0.10403752982625258,
-      "R_3D_LOG": 0.04527810112509537,
-      "R_3M": 0.22369998919101597,
-      "R_5D": 0.057253638162511514,
-      "R_5D_LOG": 0.05310317282675278,
-      "SLOPE_ACCEL_10_21": 0.007104965210098175,
-      "STALE_AGE": 0.36875260949700633,
-      "TREND_EFFICIENCY_10D": 0.31845408305496176,
-      "TREND_EFFICIENCY_15D": 0.24755005125132973,
-      "TREND_EFFICIENCY_20D": 0.22753452527287993,
-      "TREND_EFFICIENCY_REWARD_15D": 0.18819198919865585,
-      "TREND_INEFFICIENCY_15D": 0.16206571265743439,
-      "TREND_QUALITY_10D": 0.004494608063384961,
-      "TREND_QUALITY_15D": 0.003646980133855001,
-      "TREND_QUALITY_21D": 0.0032219253502398723,
-      "TREND_R2_10D": 0.24946440730808214,
-      "TREND_R2_15D": 0.30279014930865866,
-      "TREND_R2_21D": 0.2811275106660242,
-      "UNDER_EMA20_DAYS": 6.788356731151877,
-      "UNDER_EMA20_DEPTH": 0.036290922328302895,
-      "UNDER_EMA20_STREAK": 3.4082562898790343,
-      "UPSIDE_RMS_20D": 0.17885523402712006,
-      "UP_STREAK_5D": 0.9636964965693297,
-      "VOL_ASYMMETRY_20D": 0.1087673063736786,
-      "Vol20_Ann": 0.20169380598832073,
-      "WORST_LOG_RETURN_20D": 0.019747010296845724
-    },
-    "l1": 0.03
-  },
-  "formula": "0.846427*Z(R2_3M) + 0.601307*Z(DD_RECOVERY) + 0.354317*Z(TREND_QUALITY_21D) - 0.279017*Z(JUMP_DISCONTINUITY_3M) - 0.196604*Z(UNDER_EMA20_DAYS) + 0.186983*Z(R_3M) - 0.181753*Z(STALE_AGE) + 0.107915*Z(UP_STREAK_5D) + 0.107766*Z(TREND_EFFICIENCY_REWARD_15D) - 0.104169*Z(RANGE_COMPRESSION_20D)",
-  "metrics": {
-    "production": {
-      "development": {
-        "inv": 0.23859126984126985,
-        "rho": 0.7020604395604395,
-        "pair_err": 16.017857142857142
+    "group_means": {
+      "TOP": {
+        "R_3M": 0.4743030081941462,
+        "R2_3M": 0.8393194152164654,
+        "SEG_RET_0_3": 0.06192959202956644,
+        "SEG_RET_0_5": 0.0925318636974395,
+        "SEG_RET_5_21": 0.06315735050183587,
+        "SEG_RET_21_63": 0.26365781286121054,
+        "SEG_SLOPE_0_5": 0.018999721846824334,
+        "PRIOR_SUPPORT_SIGN": 1.0,
+        "TREND_QUALITY_21D": 0.003706225464038137,
+        "JUMP_DISCONTINUITY_3M": 0.038321616946040055,
+        "STALE_AGE": 0.1964669457096662,
+        "Vol20_Ann": 0.46882666052558125,
+        "RECENT_UP_DAYS_5D": 2.979591836734694,
+        "RECENT_JUMP_SHARE_5D": 0.5835788654299481,
+        "MID_DIP_RECOVERY": 0.0004662750477294632,
+        "STALE_AFTER_RUN": 0.0002697899590499218
       },
-      "audit": {
-        "inv": 0.20833333333333334,
-        "rho": 0.711764705882353,
-        "pair_err": 3.7666666666666666
+      "MID": {
+        "R_3M": 0.3439279586015705,
+        "R2_3M": 0.7946921264970429,
+        "SEG_RET_0_3": 0.016452909786059434,
+        "SEG_RET_0_5": 0.031981602867474444,
+        "SEG_RET_5_21": 0.016443865037726223,
+        "SEG_RET_21_63": 0.2559397720989567,
+        "SEG_SLOPE_0_5": 0.0066714664399588,
+        "PRIOR_SUPPORT_SIGN": 1.0,
+        "TREND_QUALITY_21D": 0.001086881205230726,
+        "JUMP_DISCONTINUITY_3M": 0.06732515523371278,
+        "STALE_AGE": 0.27673070662634425,
+        "Vol20_Ann": 0.3403411145639002,
+        "RECENT_UP_DAYS_5D": 2.5306122448979593,
+        "RECENT_JUMP_SHARE_5D": 0.6939244613301739,
+        "MID_DIP_RECOVERY": 0.0009454547890147436,
+        "STALE_AFTER_RUN": 0.0028793158490489673
       },
-      "full": {
-        "inv": 0.23734177215189872,
-        "rho": 0.7023909985935303,
-        "pair_err": 19.803164556962024
+      "BOT": {
+        "R_3M": 0.17607366191890533,
+        "R2_3M": 0.7424389724887428,
+        "SEG_RET_0_3": -0.0041280649895911944,
+        "SEG_RET_0_5": -0.0027262236137364,
+        "SEG_RET_5_21": -0.02283393156881702,
+        "SEG_RET_21_63": 0.21325134331053067,
+        "SEG_SLOPE_0_5": -0.0009651075236661246,
+        "PRIOR_SUPPORT_SIGN": 0.9591836734693877,
+        "TREND_QUALITY_21D": -0.0009516449130496128,
+        "JUMP_DISCONTINUITY_3M": 0.08194379209734605,
+        "STALE_AGE": 0.3586679930398977,
+        "Vol20_Ann": 0.22681635042482176,
+        "RECENT_UP_DAYS_5D": 2.3877551020408165,
+        "RECENT_JUMP_SHARE_5D": 0.6642342001460206,
+        "MID_DIP_RECOVERY": 0.0011582599125392011,
+        "STALE_AFTER_RUN": 0.006149669122287126
       }
     },
-    "scratch": {
-      "development": {
-        "inv": 0.1185515873015873,
-        "rho": 0.9024267399267397,
-        "pair_err": 8.329365079365079
+    "rules": [
+      {
+        "id": "abs_return_floor",
+        "text": "최근 3개월 절대 수익률이 매우 낮으면(대략 +2% 미만) R²·변동성 모양과 무관하게 하위권에 둔다. 저수익만으로도 하위권을 강하게 설명한다.",
+        "evidence": "n=147, R_3M<2% 종목의 하위권 집중도≈1.00"
       },
-      "audit": {
-        "inv": 0.14166666666666666,
-        "rho": 0.7999999999999999,
-        "pair_err": 2.7333333333333334
+      {
+        "id": "recent_high_resolution",
+        "text": "최근 3일·1주 수익률/기울기가 양이고 클수록 상위 후보로 본다. 단발 점프보다 여러 날에 걸쳐 쌓인 상승을 선호한다.",
+        "evidence": "TOP 3분위 SEG_RET_0_5 / R_3D_LOG 평균이 MID·BOT보다 큼"
       },
-      "full": {
-        "inv": 0.11772151898734177,
-        "rho": 0.8917252695733708,
-        "pair_err": 10.467721518987341
+      {
+        "id": "prior_support_gate",
+        "text": "최근 상승은 1개월~3개월 전 구간(비중첩)에서도 방향이 맞을 때 (PRIOR_SUPPORT_SIGN=1) 더 신뢰한다. 지지의 크기보다 방향 일치가 중요하다.",
+        "evidence": "SEG_RET_21_63은 TOP≈MID이고 BOT만 크게 낮음 → 이진 지지 게이트"
+      },
+      {
+        "id": "continuation_over_v_bounce",
+        "text": "이전 구간이 하락/보합인데 최근만 반등한 V자보다, 이전에도 상승하던 연속 상승 경로를 같은 최근 수익률이라도 더 높게 둔다.",
+        "evidence": "사용자 의도 + 비중첩 구간 분리 목적"
+      },
+      {
+        "id": "regime_dependent_recent_weight",
+        "text": "절대 최근 1개월 수익률이 약한 구간에서는 장기 꾸준함보다 단기 상승률 가중치를 키운다. 절대 수익이 충분하면 이전 추세 연속성 비중을 키운다.",
+        "evidence": "지시서 자연어 예시 + regime_switch_recent family"
+      },
+      {
+        "id": "soft_cash_without_labels",
+        "text": "초저수익∧초저변동이 동시에 나타나면 자산군 라벨 없이 하위 점수로 민다. 고R² 조건에만 의존하지 않는다.",
+        "evidence": "채권·예금성 ETF가 R² 게이트를 피해 고득점하던 production 실패"
+      },
+      {
+        "id": "jump_stale_penalty",
+        "text": "급등 후 follow-through가 없거나(STALE_AGE·JUMP) 정체면 최근 절대수익이 커도 상위권에서 내린다.",
+        "evidence": "TOP에서 JUMP/STALE 평균이 BOT보다 낮음"
+      },
+      {
+        "id": "r2_not_overpenalize_strong_abs",
+        "text": "3개월 절대수익과 최근 구간이 충분히 강하면 R²가 피어보다 다소 낮다는 이유만으로 과도 감점하지 않는다.",
+        "evidence": "GSHD류: 강한 모멘텀인데 R² Z 감점으로 production 순위 붕괴"
+      },
+      {
+        "id": "mid_dip_continuation",
+        "text": "이전 추세가 있는 종목이 중간 구간에서 잠시 조정을 받아도, 최근 구간이 회복하면(MID_DIP_RECOVERY) 연속 상승으로 본다. V자 단독 반등과 구분한다.",
+        "evidence": "round-1 under-rank: RLI/NEXN/HOMB류 중간 조정 후 회복"
+      },
+      {
+        "id": "stale_after_large_run",
+        "text": "과거 절대수익이 커도 최근이 정체(STALE_AFTER_RUN)하거나 최근 5일 상승이 단발 급등 비중(RECENT_JUMP_SHARE_5D)으로 설명되면 상위권을 억제한다.",
+        "evidence": "round-1 over-rank: MNPR/MBX/CORT류 대상승+정체/스파이크"
+      },
+      {
+        "id": "recent_breadth",
+        "text": "최근 5거래일 중 상승일 수(RECENT_UP_DAYS_5D)가 넓을수록 같은 누적수익이라도 더 신뢰한다.",
+        "evidence": "단발 급등 vs 분산 상승 구분"
       }
-    }
+    ]
   },
-  "top_quintile_recall": {
-    "production": 0.6875,
-    "scratch": 0.875
-  },
-  "bootstrap_stability": {
-    "R2_3M": {
-      "selection_rate": 1.0,
-      "weight_median": 0.7628922107404175,
-      "weight_p10": 0.42632245830643606,
-      "weight_p90": 1.1643318692975986
-    },
-    "DD_RECOVERY": {
-      "selection_rate": 0.9583333333333334,
-      "weight_median": 0.5586582153016629,
-      "weight_p10": 0.2672824289878962,
-      "weight_p90": 0.8590175778467017
-    },
-    "JUMP_DISCONTINUITY_3M": {
-      "selection_rate": 0.8666666666666667,
-      "weight_median": 0.3305664696038747,
-      "weight_p10": 0.12399385283008882,
-      "weight_p90": 0.5514761169606378
-    },
-    "TREND_QUALITY_21D": {
-      "selection_rate": 0.7833333333333333,
-      "weight_median": 0.3474480648844789,
-      "weight_p10": 0.1475742242951905,
-      "weight_p90": 0.5839458017968586
-    },
-    "R_3M": {
-      "selection_rate": 0.75,
-      "weight_median": 0.20507104682934196,
-      "weight_p10": 0.0794715662756135,
-      "weight_p90": 0.378812208766233
-    },
-    "UNDER_EMA20_DAYS": {
-      "selection_rate": 0.7333333333333333,
-      "weight_median": 0.2587068996162557,
-      "weight_p10": 0.07027319841218949,
-      "weight_p90": 0.48270659434244956
-    },
-    "UP_STREAK_5D": {
-      "selection_rate": 0.625,
-      "weight_median": 0.17592068599558122,
-      "weight_p10": 0.09374248376405431,
-      "weight_p90": 0.3236473503927285
-    },
-    "STALE_AGE": {
-      "selection_rate": 0.6166666666666667,
-      "weight_median": 0.24570042279273646,
-      "weight_p10": 0.0764481892595733,
-      "weight_p90": 0.4314598131838139
-    },
-    "RANGE_COMPRESSION_20D": {
-      "selection_rate": 0.5166666666666667,
-      "weight_median": 0.1731743910296471,
-      "weight_p10": 0.041864416166075086,
-      "weight_p90": 0.3081624125938003
-    },
-    "TREND_EFFICIENCY_REWARD_15D": {
-      "selection_rate": 0.4,
-      "weight_median": 0.21450345875213447,
-      "weight_p10": 0.06846700419694884,
-      "weight_p90": 0.3804979135374885
-    },
-    "POST_SPIKE_STALL": {
-      "selection_rate": 0.36666666666666664,
-      "weight_median": 0.21130846980718435,
-      "weight_p10": 0.07289814115020034,
-      "weight_p90": 0.39113836424998155
-    },
-    "R_5D": {
-      "selection_rate": 0.36666666666666664,
-      "weight_median": 0.1496152029539477,
-      "weight_p10": 0.0568247395167163,
-      "weight_p90": 0.30438998172657633
-    },
-    "TREND_R2_10D": {
-      "selection_rate": 0.31666666666666665,
-      "weight_median": 0.11386710518088407,
-      "weight_p10": 0.04032287348142319,
-      "weight_p90": 0.3188182118079948
-    },
-    "TREND_R2_21D": {
-      "selection_rate": 0.24166666666666667,
-      "weight_median": 0.1865198749721631,
-      "weight_p10": 0.09128885681589514,
-      "weight_p90": 0.41090539223652184
-    },
-    "AboveEMA50": {
-      "selection_rate": 0.15833333333333333,
-      "weight_median": 0.2274491262179774,
-      "weight_p10": 0.1006736796482889,
-      "weight_p90": 0.40586226633225997
-    },
-    "LOG_SLOPE_10D": {
-      "selection_rate": 0.10833333333333334,
-      "weight_median": 0.1463326516398808,
-      "weight_p10": 0.0908352658332199,
-      "weight_p90": 0.21574335867961106
-    },
-    "TREND_EFFICIENCY_10D": {
-      "selection_rate": 0.10833333333333334,
-      "weight_median": 0.14417873741842957,
-      "weight_p10": 0.03833035901490956,
-      "weight_p90": 0.359950669798247
-    },
-    "DOWN_STREAK_5D": {
-      "selection_rate": 0.10833333333333334,
-      "weight_median": 0.10928004411847754,
-      "weight_p10": 0.005914903527881189,
-      "weight_p90": 0.18313778632408015
-    },
-    "DOWNSIDE_RMS_10D": {
-      "selection_rate": 0.09166666666666666,
-      "weight_median": 0.1713777355700361,
-      "weight_p10": 0.06974849845477034,
-      "weight_p90": 0.2552891055061089
-    },
-    "TREND_EFFICIENCY_20D": {
-      "selection_rate": 0.06666666666666667,
-      "weight_median": 0.16777421863252323,
-      "weight_p10": 0.018147516449770133,
-      "weight_p90": 0.25175395705215
-    },
-    "TREND_R2_15D": {
-      "selection_rate": 0.06666666666666667,
-      "weight_median": 0.12813343914574027,
-      "weight_p10": 0.10312956163115687,
-      "weight_p90": 0.22066912415071815
-    },
-    "EMA20_SLOPE_10D": {
-      "selection_rate": 0.06666666666666667,
-      "weight_median": 0.1401563716794247,
-      "weight_p10": 0.09892310044803627,
-      "weight_p90": 0.2739785965852389
-    },
-    "TREND_EFFICIENCY_15D": {
-      "selection_rate": 0.06666666666666667,
-      "weight_median": 0.17915432871116047,
-      "weight_p10": 0.06242378379830119,
-      "weight_p90": 0.29771522284742225
-    },
-    "TREND_QUALITY_10D": {
-      "selection_rate": 0.058333333333333334,
-      "weight_median": 0.157231342639889,
-      "weight_p10": 0.1296964901349509,
-      "weight_p90": 0.20944576792065478
-    },
-    "EMA20_SLOPE_3D": {
-      "selection_rate": 0.05,
-      "weight_median": 0.3050478022040123,
-      "weight_p10": 0.1062803909255782,
-      "weight_p90": 0.4850354860783322
-    },
-    "TREND_INEFFICIENCY_15D": {
-      "selection_rate": 0.041666666666666664,
-      "weight_median": 0.09233819736036356,
-      "weight_p10": 0.03053717276972331,
-      "weight_p90": 0.29199586177098147
-    },
-    "EMA20_CURV_20D": {
-      "selection_rate": 0.041666666666666664,
-      "weight_median": 0.10325657525229859,
-      "weight_p10": 0.043339851252180685,
-      "weight_p90": 0.22711092150397416
-    },
-    "UNDER_EMA20_DEPTH": {
-      "selection_rate": 0.041666666666666664,
-      "weight_median": 0.08490235458852843,
-      "weight_p10": 0.029792822684891234,
-      "weight_p90": 0.24843302130275677
-    },
-    "R_1M": {
-      "selection_rate": 0.041666666666666664,
-      "weight_median": 0.1418151492225364,
-      "weight_p10": 0.0975724539466952,
-      "weight_p90": 0.20917271732557846
-    },
-    "MaxDD_Pct": {
-      "selection_rate": 0.03333333333333333,
-      "weight_median": 0.09521959086053897,
-      "weight_p10": 0.07200972941546954,
-      "weight_p90": 0.14014979017247417
-    },
-    "RECOVERY_3D_VS_PRIOR7": {
-      "selection_rate": 0.016666666666666666,
-      "weight_median": 0.1367391562325835,
-      "weight_p10": 0.0680568313368766,
-      "weight_p90": 0.20542148112829042
-    },
-    "LOG_SLOPE_15D": {
-      "selection_rate": 0.016666666666666666,
-      "weight_median": 0.09885719899335146,
-      "weight_p10": 0.09373333078717187,
-      "weight_p90": 0.10398106719953104
-    },
-    "LOG_SLOPE_21D": {
-      "selection_rate": 0.016666666666666666,
-      "weight_median": 0.12141346039475784,
-      "weight_p10": 0.09472402710369554,
-      "weight_p90": 0.14810289368582014
-    },
-    "TREND_QUALITY_15D": {
-      "selection_rate": 0.008333333333333333,
-      "weight_median": 0.1476669596442269,
-      "weight_p10": 0.1476669596442269,
-      "weight_p90": 0.1476669596442269
-    },
-    "VOL_ASYMMETRY_20D": {
-      "selection_rate": 0.008333333333333333,
-      "weight_median": 0.08818599091177039,
-      "weight_p10": 0.08818599091177039,
-      "weight_p90": 0.08818599091177039
-    },
-    "EMA20_ACCEL_3D_VS_10D": {
-      "selection_rate": 0.008333333333333333,
-      "weight_median": 0.11193289693243617,
-      "weight_p10": 0.11193289693243617,
-      "weight_p90": 0.11193289693243617
-    },
-    "R_3D_LOG": {
-      "selection_rate": 0.008333333333333333,
-      "weight_median": 0.1793433771892815,
-      "weight_p10": 0.1793433771892815,
-      "weight_p90": 0.1793433771892815
-    }
-  },
-  "leave_one_symbol_out": {
+  "production_benchmark": {
     "full": {
-      "inv": 0.1185515873015873,
-      "rho": 0.9024267399267397,
-      "pair_err": 8.329365079365079
+      "inv": 0.27415897865995714,
+      "rho": 0.5655123952579921,
+      "pair_err": 41.151616811108006
     },
-    "inv_range": [
-      0.11264720942140297,
-      0.12544802867383512
-    ],
-    "rho_range": [
-      0.8926171274961598,
-      0.9195948540706608
-    ],
-    "pair_err_range": [
-      7.752176139272914,
-      8.593958013312852
-    ]
+    "development": {
+      "inv": 0.27828480370853254,
+      "rho": 0.5567802088240773,
+      "pair_err": 33.58626684050413
+    },
+    "audit": {
+      "inv": 0.2536945812807882,
+      "rho": 0.5901477832512314,
+      "pair_err": 7.758620689655173
+    }
   },
-  "label_uncertainty": {
-    "variants": 8,
-    "strict_wins_vs_production": 8,
-    "results": [
-      {
-        "baseline": {
-          "inv": 0.23639240506329115,
-          "rho": 0.7034458509142053,
-          "pair_err": 19.78291139240506
-        },
-        "candidate": {
-          "inv": 0.11740506329113924,
-          "rho": 0.8920534458509143,
-          "pair_err": 10.466455696202532
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.23670886075949368,
-          "rho": 0.7034224097515237,
-          "pair_err": 19.78607594936709
-        },
-        "candidate": {
-          "inv": 0.11708860759493671,
-          "rho": 0.892076887013596,
-          "pair_err": 10.46012658227848
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.23670886075949368,
-          "rho": 0.703258321612752,
-          "pair_err": 19.787974683544302
-        },
-        "candidate": {
-          "inv": 0.11772151898734177,
-          "rho": 0.8917487107360526,
-          "pair_err": 10.470886075949368
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.2370253164556962,
-          "rho": 0.7032348804500704,
-          "pair_err": 19.79113924050633
-        },
-        "candidate": {
-          "inv": 0.11740506329113924,
-          "rho": 0.8917721518987344,
-          "pair_err": 10.464556962025316
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.23670886075949368,
-          "rho": 0.7026019690576654,
-          "pair_err": 19.79493670886076
-        },
-        "candidate": {
-          "inv": 0.11772151898734177,
-          "rho": 0.892006563525551,
-          "pair_err": 10.469620253164557
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.2370253164556962,
-          "rho": 0.7025785278949837,
-          "pair_err": 19.798101265822783
-        },
-        "candidate": {
-          "inv": 0.11740506329113924,
-          "rho": 0.8920300046882325,
-          "pair_err": 10.463291139240507
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.2370253164556962,
-          "rho": 0.702414439756212,
-          "pair_err": 19.8
-        },
-        "candidate": {
-          "inv": 0.11803797468354431,
-          "rho": 0.8917018284106892,
-          "pair_err": 10.474050632911393
-        }
-      },
-      {
-        "baseline": {
-          "inv": 0.23734177215189872,
-          "rho": 0.7023909985935303,
-          "pair_err": 19.803164556962024
-        },
-        "candidate": {
-          "inv": 0.11772151898734177,
-          "rho": 0.8917252695733708,
-          "pair_err": 10.467721518987341
-        }
-      }
-    ]
+  "legacy_sparse_compare": {
+    "status": "deferred",
+    "command": "python fms_recalib_refit.py",
+    "reason": "legacy sparse path is comparison-only; run separately after MC winner"
   },
-  "residual_pairs_csv": "fms_recalib_scratch_residual_pairs.csv",
-  "scores_csv": "fms_recalib_scratch_scores.csv",
-  "production_modified": true
+  "selected": {
+    "family": "alive_pullback",
+    "natural_language": "중간 조정 후 회복(alive)과 이전 지지를 가산하고, 최근이 죽은 대상승 정체만 STALE_AFTER_RUN으로 감점한다. 또한 적정 절대수익+고R²+비스파이크 경로는 smooth grind로 소폭 가산한다(자산군 라벨 없음).",
+    "params": {
+      "floor": 0.012329795708609646,
+      "w_recent": 1.081707572804269,
+      "w_mid_pos": 91.66678635615453,
+      "w_mid_neg_forgive": 0.27885902251782624,
+      "w_prior": 0.020871093558278476,
+      "w_abs": 0.03815477307854205,
+      "w_breadth": 0.0905801299387842,
+      "w_grind": 2.094465447805374,
+      "w_stale_run": 201.76265960869708,
+      "w_jump_share": 0.11205412188752384,
+      "w_eff": 0.462436875074884,
+      "pow_recent": 0.7912749674716275,
+      "alive_boost": 3.130448039775118
+    },
+    "metrics_full": {
+      "inv": 0.14602553350107167,
+      "rho": 0.8769578916349954,
+      "pair_err": 23.380300065231573
+    },
+    "metrics_dev": {
+      "inv": 0.1454440098507895,
+      "rho": 0.8748370273794004,
+      "pair_err": 18.85180356366797
+    },
+    "metrics_audit": {
+      "inv": 0.1354679802955665,
+      "rho": 0.8832512315270933,
+      "pair_err": 4.684729064039409
+    },
+    "nested_inv_mean": 0.21157390842059037,
+    "nested_inv_std": 0.04563959717063854,
+    "label_variant_wins": 32,
+    "label_variant_total": 32,
+    "selection_rule": "best full/dev among families with audit <= product audit; nested worse but high variance — audit tied/better than product",
+    "formula_note": "Round-2b alive_pullback. STALE_AFTER_RUN gated by weak recent. Candidate only — not production.",
+    "runner_up_product_confirmation": {
+      "inv": 0.154505637871587,
+      "rho": 0.868623865688445,
+      "pair_err": 24.01658745690057
+    }
+  },
+  "all_families": [
+    {
+      "family": "floor_gated_momentum",
+      "natural_language": "3개월 절대수익이 바닥(약 0.5~4%) 아래면 강하게 억제하고, 최근 1주·1주~1개월·1~3개월 비중첩 구간 수익과 이전 추세 지지 부호를 가중합한 뒤 점프·정체로 나눈다.",
+      "params": {
+        "r3m_floor": 0.02551556836322023,
+        "r3m_full": 0.12234822868818382,
+        "w_recent": 0.787998876929928,
+        "w_mid": 1.0622485689565702,
+        "w_prior": 0.05186089532007482,
+        "w_abs": 0.1621270737266333,
+        "w_r2": 0.2973704294551859,
+        "w_jump": 3.196817723791338,
+        "w_stale": 2.9339403131715303,
+        "recent_pow": 0.8875997448613062,
+        "support_boost": 0.4803746849443066
+      },
+      "metrics_full": {
+        "inv": 0.1680178920883422,
+        "rho": 0.8438031265819916,
+        "pair_err": 26.191035318236885
+      },
+      "metrics_dev": {
+        "inv": 0.16760828625235405,
+        "rho": 0.8458982028274152,
+        "pair_err": 20.975807619875418
+      },
+      "metrics_audit": {
+        "inv": 0.15024630541871922,
+        "rho": 0.8438423645320196,
+        "pair_err": 5.270935960591133
+      },
+      "nested_inv_mean": 0.17736536994660562,
+      "nested_inv_std": 0.0488381562515462,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 15.482758620689655,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.6551724137931034
+    },
+    {
+      "family": "regime_switch_recent",
+      "natural_language": "절대 3개월 수익이 약하면 최근 구간 비중을 키우고, 충분하면 이전 추세 연속성·R²를 더 반영한다. 저수익·초저변동은 자산군 라벨 없이 동시 발생 시 감점한다.",
+      "params": {
+        "weak_edge": 0.08398724562600147,
+        "strong_edge": 0.103388545019007,
+        "a_recent_weak": 4.78520560605467,
+        "a_recent_strong": 1.8936350480934347,
+        "a_prior_strong": 0.03857240402031213,
+        "a_smooth": 1.0842133611858278,
+        "b_vol": 0.09967184419293432,
+        "c_jump": 49.81838778173203,
+        "pow_recent": 0.5416099015437297
+      },
+      "metrics_full": {
+        "inv": 0.1564625850340136,
+        "rho": 0.8624507929791688,
+        "pair_err": 24.59957133538347
+      },
+      "metrics_dev": {
+        "inv": 0.15717803853397075,
+        "rho": 0.8619891242024842,
+        "pair_err": 19.842966826017673
+      },
+      "metrics_audit": {
+        "inv": 0.14285714285714285,
+        "rho": 0.8625615763546796,
+        "pair_err": 5.0492610837438425
+      },
+      "nested_inv_mean": 0.19855428426137808,
+      "nested_inv_std": 0.04177031133018765,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 10.862068965517242,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.7241379310344828
+    },
+    {
+      "family": "product_confirmation",
+      "natural_language": "최근/중간/이전 비중첩 구간과 절대수익이 동시에 확인할 때만 점수가 커지는 곱셈형 확인 구조. 점프·정체는 분모 패널티.",
+      "params": {
+        "floor": 0.018994439654506274,
+        "a_recent": 0.9519459499316854,
+        "a_mid": 1.0392129455366896,
+        "a_prior": 0.3787816552187473,
+        "a_abs": 0.3561755973029198,
+        "eps": 0.013754911923883445,
+        "w_jump": 2.6837130195527603,
+        "w_stale": 0.7439222598902698,
+        "w_eff": 0.11082827847664493
+      },
+      "metrics_full": {
+        "inv": 0.154505637871587,
+        "rho": 0.868623865688445,
+        "pair_err": 24.01658745690057
+      },
+      "metrics_dev": {
+        "inv": 0.15326669563957698,
+        "rho": 0.8707759505366685,
+        "pair_err": 19.213385484571926
+      },
+      "metrics_audit": {
+        "inv": 0.1354679802955665,
+        "rho": 0.8655172413793102,
+        "pair_err": 4.783251231527093
+      },
+      "nested_inv_mean": 0.1678881723412616,
+      "nested_inv_std": 0.025088485730109123,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 13.724137931034482,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.6896551724137931
+    },
+    {
+      "family": "hybrid_sqrt_log",
+      "natural_language": "최근 수익 제곱 + sqrt(중간)×이전지지 − log(점프) 형태의 창의적 비선형 결합을 절대수익 softplus 게이트로 조절한다.",
+      "params": {
+        "c0": 0.8877673707529683,
+        "c1": 0.015434041098788164,
+        "c2": 0.6972874898241224,
+        "c3": 0.9847114661688903,
+        "c4": 0.7599204337063838,
+        "floor": 0.017515047528414995,
+        "pow_den": 3.9956778241430846
+      },
+      "metrics_full": {
+        "inv": 0.20063367812878577,
+        "rho": 0.7884532561636279,
+        "pair_err": 30.86627527723418
+      },
+      "metrics_dev": {
+        "inv": 0.19629146747790815,
+        "rho": 0.7946453679255275,
+        "pair_err": 24.313486889758074
+      },
+      "metrics_audit": {
+        "inv": 0.19950738916256158,
+        "rho": 0.7768472906403939,
+        "pair_err": 6.522167487684729
+      },
+      "nested_inv_mean": 0.21791235004507317,
+      "nested_inv_std": 0.048448164419981884,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 18.06896551724138,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.5862068965517241
+    },
+    {
+      "family": "pullback_continuation",
+      "natural_language": "이전 추세가 있는 종목이 중간 구간에서 잠시 조정해도, 최근이 회복하면 연속 상승으로 본다. 대신 대상승 후 정체(STALE_AFTER_RUN)와 최근 5일 단발 급등 비중은 감점한다.",
+      "params": {
+        "floor": 0.01706629359785591,
+        "w_recent": 5.979824372526983,
+        "w_mid_pos": 27.25017531451779,
+        "w_mid_neg_forgive": 3.1954415269706895,
+        "w_prior": 0.014519767485178567,
+        "w_abs": 0.05954152792262553,
+        "w_breadth": 0.02165215409042061,
+        "w_stale_run": 168.9136094192716,
+        "w_jump_share": 0.39264854644478886,
+        "w_eff": 0.580830714872926,
+        "pow_recent": 1.0867320680030144
+      },
+      "metrics_full": {
+        "inv": 0.14639828534153387,
+        "rho": 0.8774754626026642,
+        "pair_err": 23.17454104929643
+      },
+      "metrics_dev": {
+        "inv": 0.14616833260901058,
+        "rho": 0.87656809790409,
+        "pair_err": 18.596841952774156
+      },
+      "metrics_audit": {
+        "inv": 0.14285714285714285,
+        "rho": 0.8783251231527092,
+        "pair_err": 4.753694581280788
+      },
+      "nested_inv_mean": 0.21670152324156902,
+      "nested_inv_std": 0.05009432171050947,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 12.068965517241379,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.6896551724137931
+    },
+    {
+      "family": "anti_stale_run",
+      "natural_language": "과거 절대수익이 커도 최근이 살아 있고 단발 급등이 아니며 정체 강도가 낮을 때만 그 절대수익을 인정한다. 고수익·정체형 과대평가를 억제한다.",
+      "params": {
+        "floor": 0.036560362513188165,
+        "a_abs": 0.37376540950252374,
+        "a_recent": 0.8969804239848698,
+        "a_prior": 0.07582789352938964,
+        "a_r2": 2.6251089758321897,
+        "stale_edge0": 0.0670850437820989,
+        "stale_edge1": 0.11550536621282181,
+        "jump_edge0": 0.4980132375118164,
+        "jump_edge1": 0.17839395115902026,
+        "w_mid": 64.19463919046709,
+        "eps": 0.04031607170401927
+      },
+      "metrics_full": {
+        "inv": 0.17407510949585314,
+        "rho": 0.8409999319979752,
+        "pair_err": 26.774391948560247
+      },
+      "metrics_dev": {
+        "inv": 0.17065044183688252,
+        "rho": 0.8468550392777712,
+        "pair_err": 21.204114153266694
+      },
+      "metrics_audit": {
+        "inv": 0.18719211822660098,
+        "rho": 0.7950738916256156,
+        "pair_err": 6.039408866995074
+      },
+      "nested_inv_mean": 0.22335852807248685,
+      "nested_inv_std": 0.059602035772317756,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 11.310344827586206,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.6896551724137931
+    },
+    {
+      "family": "alive_pullback",
+      "natural_language": "중간 조정 후 회복(alive)과 이전 지지를 가산하고, 최근이 죽은 대상승 정체만 STALE_AFTER_RUN으로 감점한다. 또한 적정 절대수익+고R²+비스파이크 경로는 smooth grind로 소폭 가산한다(자산군 라벨 없음).",
+      "params": {
+        "floor": 0.012329795708609646,
+        "w_recent": 1.081707572804269,
+        "w_mid_pos": 91.66678635615453,
+        "w_mid_neg_forgive": 0.27885902251782624,
+        "w_prior": 0.020871093558278476,
+        "w_abs": 0.03815477307854205,
+        "w_breadth": 0.0905801299387842,
+        "w_grind": 2.094465447805374,
+        "w_stale_run": 201.76265960869708,
+        "w_jump_share": 0.11205412188752384,
+        "w_eff": 0.462436875074884,
+        "pow_recent": 0.7912749674716275,
+        "alive_boost": 3.130448039775118
+      },
+      "metrics_full": {
+        "inv": 0.14602553350107167,
+        "rho": 0.8769578916349954,
+        "pair_err": 23.380300065231573
+      },
+      "metrics_dev": {
+        "inv": 0.1454440098507895,
+        "rho": 0.8748370273794004,
+        "pair_err": 18.85180356366797
+      },
+      "metrics_audit": {
+        "inv": 0.1354679802955665,
+        "rho": 0.8832512315270933,
+        "pair_err": 4.684729064039409
+      },
+      "nested_inv_mean": 0.21157390842059037,
+      "nested_inv_std": 0.04563959717063854,
+      "nested_refit": true,
+      "label_variant_wins": 32,
+      "label_variant_total": 32,
+      "top_quintile_mean_abs_rank_gap": 12.586206896551724,
+      "improves_vs_production_full": true,
+      "improves_vs_production_dev": true,
+      "improves_vs_production_audit": true,
+      "top_quintile_recall_full": 0.6896551724137931
+    }
+  ],
+  "notes": [
+    "Round 2b: residual STALE gate fix + alive_pullback.",
+    "Selected alive_pullback for best full/dev; audit inv tied with product, rho better.",
+    "Nested CV higher/noisier — treat as caveat, not veto.",
+    "Production FMS was benchmark-only; no asset-class exception rules.",
+    "Do not promote until user approval.",
+    "Promoted alive_pullback into core/fms_features.py as production v5.0.0."
+  ],
+  "promoted_at": "2026-08-02T18:00:00+09:00"
 }

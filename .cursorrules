@@ -33,7 +33,7 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 - **문서화**: 모든 함수와 클래스에 docstring 추가
 
 ## 주요 기능
-1. **FMS (Fast Momentum Score)**: 3M-window 10축 sparse-linear 점수 (현재 계좌 관심종목 상대 Z-score)
+1. **FMS (Fast Momentum Score)**: 3M-window **alive_pullback** 비선형 절대 점수 (SEG_* + 잔차 피처)
 2. **거래 적합성 필터**: True Range 기반 치명적 변동성 및 반복적 하방리스크 감지로 부적합 종목 자동 실격 (디버그 로깅 지원, 당일 고가/저가 0인 경우 전일 데이터로 대체)
 3. **동적 컬럼 재정렬**: FMS 전략에 맞춰 결과 테이블 컬럼 순서 자동 조정
 4. **가속 보드**: FMS 기반 실시간 모멘텀 랭킹
@@ -47,9 +47,9 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 12. **다국가 통합 스캔**: 미국(Finviz 스크리닝) + 한국(KOSPI200/KOSDAQ150) + 홍콩(HSI/HSCEI/HSTECH) 유니버스 병합
 13. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
 14. **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
-    - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
-    - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
-    - 모드별 배치 스캔 결과 저장 및 로드
+   - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
+   - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
+   - 모드별 배치 스캔 결과 저장 및 로드
 15. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
 
 ## 파일 구조
@@ -59,7 +59,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v4.7.0, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.0, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -153,23 +153,25 @@ Momentum/
 - **universe_utils.py**: 유니버스 관리 유틸리티 (모듈화됨)
 
 ## FMS 계산 로직 (중요!)
-- **v4.7.0 전략**: 3M-window sparse-linear 가중치 + 관심종목 상대 Z + 현금성 양의 보너스 게이트.
-  - 저수익∧초저변동∧고R²일 때 `R_3M` 제외 품질 축의 양의 기여만 억제 (감점·`R_3M` 불변).
-- **가산 축**: `R2_3M`, `DD_RECOVERY`, `TREND_QUALITY_21D`, `R_3M`,
-  `UP_STREAK_5D`, `TREND_EFFICIENCY_REWARD_15D`.
-- **감점 축**: `JUMP_DISCONTINUITY_3M`, `UNDER_EMA20_DAYS`, `STALE_AGE`,
-  `RANGE_COMPRESSION_20D`.
-- **정규화**: 현재 계좌 관심종목의 median 결측 대체, mean/std Z-score, ±4 clip.
-  앱은 관심종목 self-reference, 배치는 신규 후보를 현재 계좌 watchlist와 비교한다.
-- **SSOT**: 피처·가중치·normalization은 `core/fms_features.py`,
-  production orchestration과 `-999` 적용은 `core/fms.py`.
-- **재보정**: `saved_at` 기준 최신 완료 정답셋 하나만 사용하고, 다음 후보도
-  사용자 승인 전에는 production에 반영하지 않는다. (상세: `docs/FMS_RECALIBRATION_WORKFLOW.md`)
+- **v5.0.0 전략**: 3M-window **alive_pullback** 비선형 절대 점수
+  (비중첩 SEG_* + MID_DIP_RECOVERY / STALE_AFTER_RUN / RECENT_JUMP_SHARE_5D 등).
+  - 절대수익 softplus 바닥(~1.2%)으로 저수익 경로 억제 (자산군 예외 없음).
+  - 중간 조정 후 회복·이전 지지 가산; 최근이 약할 때만 대상승 정체 감점.
+  - watchlist 상대 Z / 현금성 게이트는 production에서 사용하지 않음.
+- **가산 축(해석용)**: `SEG_RET_0_5`, `MID_DIP_RECOVERY`, `PRIOR_SUPPORT_SIGN`,
+  `SEG_RET_21_63`, `R_3M`, `RECENT_UP_DAYS_5D`, `TREND_EFFICIENCY_REWARD_15D`, grind.
+- **감점 축**: `STALE_AFTER_RUN`(최근 약할 때), `RECENT_JUMP_SHARE_5D`.
+- **정규화**: 절대 피처 점수(동결 파라미터 `PRODUCTION_ALIVE_PULLBACK_PARAMS`).
+  앱·배치 동일 수식; reference panel은 API 호환용이며 점수에 영향 없음.
+- **SSOT**: 피처는 `core/fms_features.py`, production 점수는
+  `score_alive_pullback_from_params` / `score_production_fms_features`,
+  orchestration과 `-999`는 `core/fms.py`.
+- **재보정**: NL → 비선형 MC (`calibration/fms_recalib_nonlinear_mc.py`).
+  레거시 sparse는 `score_legacy_sparse_fms_features` + `fms_recalib_refit.py`.
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
   - 치명적 변동성: 63거래일 내 True Range 기반 일일 변동폭 30% 초과 시 실격(가격 갭 포함)
   - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
   - 당일 고가/저가 0 처리: 국장 개장 시간(9시~9시 20분) Yahoo Finance 데이터 이슈 대응 (전일 고가/저가로 대체)
-- **상대 Z-score**: 실격 관심종목은 reference 통계에서 제외한다. 유효값 <2 또는 std≈0인 축은 기여 0.
 - **API 제한 대응**: 청크 슬립·outer batch·`shared._ERRORS` 레이트리밋 감지 후 지수 백오프(배치 기본 재시도 상한·대기 상한은 `analysis_utils` 상수). 상장폐지/`no data`는 스킵.
 - **가격 계열**: 수익/FMS는 Adj Close(배당 반영), 거래적합성은 raw High/Low/Close.
 

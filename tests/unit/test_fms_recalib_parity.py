@@ -13,6 +13,7 @@ Usage
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -69,7 +70,8 @@ def test_f_current_and_f_proposed_delegate_to_core(
     )
 
 
-def test_score_fms_from_feature_frame_requires_core_columns() -> None:
-    """Missing required feature columns must fail loudly."""
-    with pytest.raises(KeyError, match="missing columns"):
-        score_fms_from_feature_frame(pd.DataFrame({"R_1M": [0.1]}))
+def test_score_fms_from_feature_frame_tolerates_missing_optional_columns() -> None:
+    """v5 alive_pullback fills missing SEG_* with defaults; still returns finite FMS."""
+    scores = score_fms_from_feature_frame(pd.DataFrame({"R_3M": [0.1]}, index=["X"]))
+    assert scores.index.tolist() == ["X"]
+    assert np.isfinite(float(scores.iloc[0]))

@@ -1,13 +1,13 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v4.7.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v5.0.0**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
 ### 📊 가속 보드
 
 - FMS(Fast Momentum Score) 기반 실시간 모멘텀 분석
-- **3M 경로 품질 전략**: R²·drawdown 회복·21D 추세 품질·점프 불연속·정체/압축을 결합한 재피팅 점수
+- **3M alive_pullback 전략**: 비중첩 구간 수익·이전 추세 지지·절대수익 바닥·정체/급등 패널티를 결합한 비선형 FMS
 - 1일/5일 가속도 변화량 추적
 - 상위 N개 종목의 모멘텀 랭킹
 
@@ -155,33 +155,17 @@ streamlit run app.py --server.port 8501
 
 ### FMS (Fast Momentum Score)
 
-#### 최신 3개월 경로 기반 sparse-linear 전략
+#### 최신 3개월 경로 기반 alive_pullback 전략
 
-v4.7.0 FMS는 최신 80종 A/B 정답 순위로 **0점에서 재피팅**한 가중치를 사용하고,
-각 축은 현재 계좌모드의 관심종목 평균·표준편차로 상대 정규화합니다.
-사용자가 본 최근 3개월(63거래일) 경로에서 다음 10개 축만 사용합니다.
+v5.0.0 FMS는 정답셋 `cal_fms_20260730_190637`(n=147)에서
+NL→비중첩 피처→비선형 MC로 피팅한 **`alive_pullback`** 절대 점수입니다.
+관심종목 상대 Z-score는 사용하지 않습니다.
 
-\[
-\begin{aligned}
-\mathrm{FMS} =&\
-0.846427z(R2_{3M}) + 0.601307z(DD_{\mathrm{recovery}})
-+ 0.354317z(Q_{21D}) \\
-&- 0.279017z(Jump_{3M}) - 0.196604z(UnderDays_{20})
-+ 0.186983z(R_{3M}) \\
-&- 0.181753z(StaleAge) + 0.107915z(UpStreak_{5D})
-+ 0.107766z(EffReward_{15D}) \\
-&- 0.104169z(RangeCompression_{20D})
-\end{aligned}
-\]
-
-- 가산: 3M R², drawdown 회복률, 21D 추세 품질, 3M 수익률,
-  5D 상승 streak, 15D 상승 추세 효율성
-- 감점: 3M 단발 점프 지배도, EMA20 아래 체류일, 급등 후 정체,
-  20D range compression
-- \(z(\cdot)\): 현재 계좌 관심종목의 median/mean/std로 상대 정규화 후 ±4 clip
-- 앱은 관심종목끼리 비교하고, 배치는 신규 후보를 현재 관심종목 분포와 비교합니다.
-- 저수익∧초저변동∧고R² 현금성 경로는 양의 품질 보너스만 억제합니다.
-- 거래적합성 필터의 `FMS=-999` 정책은 기존과 동일합니다.
+- 가산: 최근 1주 수익·회복(alive), 중간 조정 후 회복(`MID_DIP_RECOVERY`),
+  이전 추세 지지, 절대 `R_3M` softplus 바닥, 최근 상승일 폭·grind
+- 감점: 최근이 약할 때의 `STALE_AFTER_RUN`, 단발 급등 비중(`RECENT_JUMP_SHARE_5D`)
+- 앱·배치 동일 절대 수식; 거래적합성 필터의 `FMS=-999` 정책은 기존과 동일
+- SSOT: `core/fms_features.py` (`PRODUCTION_ALIVE_PULLBACK_PARAMS`)
 
 ## 🔁 FMS 재보정(원점 재피팅)
 
@@ -243,7 +227,13 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v4.7.0 (현재)
+### v5.0.0 (현재)
+
+- **alive_pullback 원점 재피팅 승격**: NL→SEG_*→비선형 MC 후보를 production SSOT로 적용
+- 절대 경로 점수(관심종목 상대 Z / 현금성 게이트 제거); `-999` 거래적합성 유지
+- 하네스: `test_fms_alive_pullback_production`, `test_nonlinear_mc_features`, residual plot 호환
+
+### v4.7.0
 
 - **관심종목 상대 Z-score 복원**: 각 축을 현재 계좌모드 관심종목의 평균·표준편차로 정규화
 - 앱은 현재 관심종목끼리, 배치는 신규 후보를 현재 관심종목 기준으로 평가

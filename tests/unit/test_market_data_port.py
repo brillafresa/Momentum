@@ -87,11 +87,11 @@ def test_batch_with_fixture_adapter_matches_direct_scoring_offline(
     assert list(batch.index) == list(direct.index)  # same FMS-descending order
 
 
-def test_batch_scores_candidates_against_account_watchlist_reference(
+def test_batch_fms_is_invariant_to_account_watchlist_reference(
     synthetic_prices_krw: pd.DataFrame,
     fixture_adapter: FixtureAdapter,
 ) -> None:
-    """Batch reference is the current account watchlist, not each outer chunk."""
+    """v5.0.0 absolute FMS: reference panel must not change candidate scores."""
     symbols = list(synthetic_prices_krw.columns)
     weak_reference = synthetic_prices_krw[["FLAT", "CRASHY"]]
     strong_reference = synthetic_prices_krw[["TREND_UP", "MILD_UP"]]
@@ -107,8 +107,10 @@ def test_batch_scores_candidates_against_account_watchlist_reference(
         market_data=fixture_adapter,
     )
 
-    assert not weak_ref_scores["FMS"].sort_index().equals(
-        strong_ref_scores["FMS"].sort_index()
+    pd.testing.assert_series_equal(
+        weak_ref_scores["FMS"].sort_index(),
+        strong_ref_scores["FMS"].sort_index(),
+        check_names=False,
     )
 
 

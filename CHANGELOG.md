@@ -5,6 +5,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.0] - 2026-08-02
+
+### 변경
+
+- **FMS 원점 재피팅 production 승격**: 정답셋 `cal_fms_20260730_190637`(n=147, 3M)에서
+  NL 규칙 → 비중첩 SEG_* / 잔차 피처 → 비선형 family MC 경쟁으로 고른
+  **`alive_pullback`** 수식을 production SSOT로 승격
+- 관심종목 상대 Z-score / 현금성 양의 보너스 게이트는 production 경로에서 제거
+  (절대 경로 점수; `R_3M` softplus 바닥 + `STALE_AFTER_RUN` / jump-share 패널티)
+- `STALE_AFTER_RUN`은 최근 수익이 약할 때만 적용되어 중간 조정 후 회복 경로를 과도 감점하지 않음
+- 거래적합성 필터 `FMS=-999` 유지
+- 레거시 sparse-linear + cash gate는 `score_legacy_sparse_fms_features`로 하네스 보존
+- 잔차 차트 스크립트를 symbol-gap CSV 스키마와 호환되도록 수정
+
+### 검증 하네스
+
+- `tests/unit/test_nonlinear_mc_features.py` — SEG_* · MID_DIP · STALE 게이트 · family 등록
+- `tests/unit/test_fms_alive_pullback_production.py` — 동결 파라미터 · calibration/core 수식 parity · `-999`
+- `tests/unit/test_fms_scoring.py` — 골든 순위 · reference 불변(절대 점수)
+- `tests/unit/test_fms_cash_like_gate.py` — **레거시** sparse+gate 회귀
+- `tests/unit/test_market_data_port.py` — 배치 reference 불변
+- CLI: `python -m calibration.fms_recalib_plot_residuals`
+- 전체 `tests/unit` + `tests/contract` pytest 통과
+
 ## [4.7.0] - 2026-07-30
 
 ### 변경

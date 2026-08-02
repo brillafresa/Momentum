@@ -4,45 +4,62 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-07-30 (KST) · 제품 버전 v4.7.0
+최종 갱신: 2026-08-02 (KST) · 제품 버전 v5.0.0
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v4.7.0)
+## 0. 현재 구축된 검증 하네스 (v5.0.0)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
-| `core/fms_features.py` (`PRODUCTION_FMS_*` / `score_production_fms_features` / `cash_like_strength`) | **v4.7 production 피처·가중치·관심종목 상대 Z + 현금성 양의 보너스 게이트 SSOT** | `tests/unit/test_fms_features.py` / `test_fms_cash_like_gate.py` |
+| `core/fms_features.py` (`PRODUCTION_ALIVE_PULLBACK_PARAMS` / `score_alive_pullback_from_params` / `score_production_fms_features`) | **v5.0 production SSOT**: alive_pullback 절대 비선형 점수 | `test_fms_alive_pullback_production.py` / `test_nonlinear_mc_features.py` |
+| `core/fms_features.py` (`score_legacy_sparse_fms_features` / `cash_like_strength`) | **v4.6–v4.7 archived** sparse+상대Z+현금 게이트 | `test_fms_cash_like_gate.py` / `harness.compare_cash_like_gate` |
 | `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS | fixture; `analysis_utils` 셔임 |
 | `core/fms.py` (`score_legacy_fms_from_feature_frame` / `FmsScoreParams`) | **pre-v4.6 archived formula** (tune 스크립트·회귀만) | `test_fms_params` / `test_fms_vol_tune` / `test_fms_recent_continuation` |
 | `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` / `mask_non_positive_prices` | `tests/unit/test_indicators.py` |
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
-| `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 현금성 게이트·relative-Z |
-| `tests/unit/test_fms_scoring.py` | 골든 순위 / `-999` / **reference_panel 상대평가** / 결측 / yfinance 미호출 | `python -m pytest` |
+| `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 레거시 게이트 + v5 저순위 계약 |
+| `tests/unit/test_fms_scoring.py` | 골든 순위 / `-999` / **reference 불변(절대 점수)** / 결측 / yfinance 미호출 | `python -m pytest` |
+| `tests/unit/test_fms_alive_pullback_production.py` | 동결 파라미터 · core≡calibration family · `-999` | (pytest 포함) |
+| `tests/unit/test_nonlinear_mc_features.py` | SEG_* 비중첩 · MID_DIP · STALE 게이트 · family 등록 | (pytest 포함) |
 | `tests/unit/test_fms_recalib_parity.py` | feature-frame scorer ≡ snapshot FMS (동일 패널) | (pytest 포함) |
 | `tests/unit/test_fms_features.py` | 3M visible-window 피처 방향성·결측 안전 | (pytest 포함) |
 | `tests/unit/test_calibration_session.py` | `saved_at` 기준 최신 완료 세션 선택 (mtime 금지) | (pytest 포함) |
+| `tests/unit/test_fms_cash_like_gate.py` | **legacy** sparse+gate · relative-Z 회귀 | (pytest 포함) |
 | `tests/unit/test_fms_recent_continuation.py` | **legacy** soft R² / r1_bad continuation (v4.5.1 회귀) | (pytest 포함) |
 | `tests/unit/test_fms_params.py` / `test_fms_vol_tune_params.py` / `test_fms_horizon_map.py` | **legacy** params·vol·6M→4M 매핑 | (pytest 포함) |
 | `calibration/manifest.py` | 최신 완료 세션·snapshot·ranking hash·development/audit split 고정 | build 시 freshness assert |
-| `calibration/ranking_metrics.py` | inversion / Spearman / subset 재서열화 pair-delta | refit 공용 |
-| `calibration/fms_recalib_refit.py` | 0점 출발 sparse/GAM/제한 상호작용 + nested/bootstrap/LOO/label variants | candidate JSON |
-| `fms_recalib_scratch_candidate.json` (+ scores/residuals/manifest) | **v4.6.0 승격 증거** (tracked) | 승인 후 `promoted_to_production` |
+| `calibration/ranking_metrics.py` | inversion / Spearman / subset 재서열화 pair-delta | MC/refit 공용 |
+| `calibration/nonlinear_formulas.py` | 해석 가능 비선형 family (alive_pullback 포함; core SSOT 위임) | `test_nonlinear_mc_features.py` |
+| `calibration/fms_recalib_nonlinear_mc.py` | **기본 원점 경로**: NL 규칙 연계 MC 경쟁 적합 | candidate JSON |
+| `calibration/fms_recalib_inspect_patterns.py` | TOP/MID/BOT + natural-language rules JSON | 수동 |
+| `calibration/fms_recalib_plot_residuals.py` | 잔차 상위 심볼 3M 차트 PNG | `python -m calibration.fms_recalib_plot_residuals` |
+| `calibration/fms_recalib_refit.py` | **레거시** 0점 sparse/GAM/제한 상호작용 | candidate JSON (비기본) |
+| `fms_recalib_scratch_candidate.json` (+ scores/residuals/manifest) | 승격 증거 (`promoted_to_production_v5.0.0`) | 회귀 비교용 |
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
-| `harness/compare_cash_like_gate.py` | 현금성 게이트 old/new 기여·영향 비교 | `python -m harness.compare_cash_like_gate` |
+| `harness/compare_cash_like_gate.py` | **legacy** 현금성 게이트 기여·영향 비교 | `python -m harness.compare_cash_like_gate` |
 | `harness/diagnose_fms_outlier.py` | 단일 티커 FMS 극단치 원인 LIVE 점검 | `python -m harness.diagnose_fms_outlier SYMBOL` |
-| `harness/check_relative_ranks.py` | 관심종목 상대순위 LIVE 점검 | `python -m harness.check_relative_ranks` |
+| `harness/check_relative_ranks.py` | (역사적) 관심종목 상대순위 LIVE 점검 — v5에서는 절대점수 확인용으로만 | `python -m harness.check_relative_ranks` |
 | `scripts/fixtures/generate_synthetic_panel.py` | 합성 골든 fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/generate_cash_like_panel.py` | 현금성/채권/주식 경로 fixture 재생성기 | 필요 시만 |
 | `scripts/fixtures/prefilter_band_sample_fms.csv` | Finviz 사전필터 경계 밴드 실측 증거 (LIVE 산출) | 수동 참고 |
 | `scripts/analyze_prefilter_impact.py` | Finviz 사전필터 tightness 실측 (LIVE; 운영 미import) | `python scripts/analyze_prefilter_impact.py` |
 
-**v4.7.0 검증 요약 (현재 관심종목 상대 Z-score)**
+**v5.0.0 검증 요약 (alive_pullback 절대 비선형)**
+
+1. 앱·배치 동일 `momentum_now_and_delta` / `score_production_fms_features` 경로.
+2. reference panel 변경해도 FMS 불변 (절대 점수); API는 `reference_prices_krw`를 받지만 무시.
+3. 정답셋 full inv 0.146 / Spearman 0.877 vs production-v4.7 benchmark 0.274 / 0.566.
+4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
+5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
+6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v4.7.0 검증 요약 (관심종목 상대 Z — 역사적)**
 
 1. 앱: target=current watchlist, reference=current watchlist; 축별 ungated 기여 평균 0.
 2. 배치: target=신규 후보, reference=현재 계좌모드 watchlist.
@@ -56,14 +73,6 @@
 2. 승인 80종 캘리브레이션 패널: old/new bit-identical (Spearman/inversion 불변).
 3. `cash_strength = low_return × ultra_low_vol × high_smooth`; 양의 품질 보너스만 축소.
 4. 계약: `tests/unit/test_fms_cash_like_gate.py` + `harness/compare_cash_like_gate.py`.
-
-**v4.6 검증 요약 (역사적 고정 Z 계약; v4.7.0에서 폐기)**
-
-1. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` (`test_fms_scoring` + `harness.run_fms_snapshot`).
-2. ~~reference/peer 구성 불변~~ → v4.7.0에서 사용자 의도에 따라 관심종목 상대평가로 변경.
-3. `build_panel_feature_frame` → `score_fms_from_feature_frame` ≡ snapshot FMS (`test_fms_recalib_parity`).
-4. 승인 후보 JSON의 frozen median/mean/scale은 v4.6 승격 증거로만 보존; production은 가중치만 유지.
-5. 앱·배치는 동일 `momentum_now_and_delta` 경로만 사용; `tests/`·`harness/`를 import하지 않음.
 
 ### 배치 I/O · 유니버스 (네트워크 없이 단위 검증)
 
@@ -89,6 +98,15 @@
 - `watchlist_irp.csv`
 - `screened_universe.csv`  
 운영 코드(`app.py`, `run_scan_batch.py`)는 fixture·테스트 경로를 import하지 않는다.
+
+### 2026-08-02 세션 — 원점 재피팅 절차 전환 (비선형 + MC)
+
+1. **표준 변경**: 자연어 규칙 → 비중첩/고해상도 피처 → 비선형 수식 → 몬테카를로 경쟁.
+2. **정답셋**: `cal_fms_20260730_190637` (147종, 3M, inconsistencies=5). 저수익·임의 종목 포함으로 편향 완화.
+3. **피처**: `SEG_*` 비중첩 구간 + `PRIOR_SUPPORT_SIGN` (`core/fms_features.py`).
+4. **기본 적합 경로**: `fms_recalib_nonlinear_mc.py` (sparse/GAM L-BFGS는 레거시 비교용).
+5. **금지**: 자산군/티커 예외 규칙; 승인 전 production 변경.
+6. **문서 SSOT**: `docs/FMS_RECALIBRATION_WORKFLOW.md`.
 
 ### 2026-07-30 세션 — 현금성 ETF 과대평가 게이트 (v4.6.1)
 
@@ -177,7 +195,7 @@ KRW Momentum Radar는 FMS(모멘텀 스코어)·거래 적합성 필터·배치 
 | `core/` | FMS·지표·필터 등 순수 로직 | pandas/numpy/scipy | yfinance, finviz, requests, streamlit, 네트워크 |
 | `adapters/` | 시장 데이터·유니버스·파일 I/O | API 클라이언트, CSV/픽클 | FMS 공식 복제 |
 | `app.py` / `run_scan_batch.py` | orchestration만 | core + adapters 조합 | 비즈니스 수식 인라인 복제 |
-| `calibration/` | 재보정·튜닝 | production 평가는 core FMS; **0점 scratch 후보**는 공유 순수 피처 + 별도 candidate artifact | 승인 전 production scorer에 후보 섞기 |
+| `calibration/` | 재보정·튜닝 | production 평가는 core FMS; **0점 scratch**는 비중첩 피처 + 비선형 family + MC (레거시 sparse는 비교용) | 승인 전 production scorer에 후보 섞기; 자산군 예외 규칙 |
 | `harness/` | 수동 시나리오 러너 | fixture 주입 | 라이브 API 기본 경로 |
 | `tests/` | 자동 검증 | fixture + pytest | 네트워크 필수 단위 테스트 |
 
@@ -201,7 +219,8 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
   - 테스트: CSV·픽클 `FixtureAdapter` (`tests/fixtures/`, `scripts/fixtures/`)
 - 체크인 fixture는 **gitignore 스냅샷에만 의존하지 않는다.**  
   (`fms_calibration_snapshots/`는 로컬 자산일 수 있음)
-- Z-score 재현: **production v4.7**은 현재 계좌 watchlist의 median/mean/std를 사용한다.
+- Z-score 재현: **production v5.0**은 절대 비선형 점수라 watchlist Z를 쓰지 않는다.
+  레거시 sparse 하네스만 watchlist median/mean/std를 사용한다.
   앱은 target self-reference, 배치는 전달된 `reference_prices_krw`를 기준으로 한다.
   동일 fixture에서 target과 reference를 함께 고정해야 점수가 재현된다.
 
@@ -227,8 +246,10 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
 - Production 공식의 유일한 구현: `core.fms.compute_fms_snapshot` / 내부 `_mom_snapshot`  
   (`analysis_utils`는 re-export 셔임; 지표는 `core/indicators.py`, 필터는 `core/tradeability.py`)
 - Production baseline·legacy incremental tuning은 **동일 core API**만 사용한다.
-- **원점 scratch 후보**는 `core.fms_features`의 공유 순수 피처에서 0점으로 독립 피팅하며,
-  production은 benchmark일 뿐이다. 사용자 승인 전에는 `core/fms.py`에 반영하지 않는다.
+- **원점 scratch 후보**는 공유 순수 피처(비중첩 `SEG_*` 포함) 위에서
+  **비선형 family + 몬테카를로**로 0점 출발 적합한다. production은 benchmark일 뿐이다.
+  사용자 승인 전에는 `core/fms.py`에 반영하지 않는다.
+  레거시 `fms_recalib_refit.py`(sparse/GAM)는 비교·회귀용이다.
 - `fms_recalib_evaluate_formulas.f_current` / 과거 tune 스크립트 내 독립 `fms_score`처럼  
   **production 공식 복제는 금지**한다. 발견 시 통합·삭제 대상으로 기록한다 (`TODO.md`).
   (v4.4.6: weights tune `fms_score`는 `score_fms_from_feature_frame(..., params=...)` 위임으로 통합됨.  
@@ -252,14 +273,16 @@ Streamlit Cloud 호환을 위해 **`app.py`, `run_scan_batch.py`는 루트에 �
 ## 4. 백테스트 / 리캘리브레이션 검증 룰
 
 1. 피처 테이블·세션 JSON·스냅샷은 **읽기 전용 입력**으로 취급한다.
-   production benchmark는 core API로, scratch 후보는 `fms_recalib_refit.py`로 계산한다.
+   production benchmark는 core API로, scratch 후보는
+   `fms_recalib_nonlinear_mc.py`(기본) 또는 레거시 `fms_recalib_refit.py`로 계산한다.
 2. 워크플로 문서: [`docs/FMS_RECALIBRATION_WORKFLOW.md`](docs/FMS_RECALIBRATION_WORKFLOW.md)
+   — 자연어 → 비중첩 피처 → 비선형 → MC 경쟁이 표준이다.
 3. 튜닝 결과가 라이브 FMS와 어긋나면 **튜닝 쪽 복제 공식을 폐기**하고 production 경로에 맞춘다.
-4. 오프라인 실험 스크립트는 `scripts/` 또는 `harness/`에 두고, 프로덕션 엔트리포인트에 실험 코드를 남기지 않는다.
-5. 사람 랭킹(mergesort 세션)과 알고리즘 점수를 비교할 때도 **동일 reference 패널**을 사용한다.
-6. 재보정 정답셋은 **최종 저장 시각이 가장 최신인 완료 세션 하나만** 사용한다. 과거 세션을
-   피팅·외부 검증에 병합하지 않으며, 과적합 검증은 최신 정답셋 내부 반복 홀드아웃과
-   재검토 불일치 변형으로 수행한다.
+4. 오프라인 실험 스크립트는 `scripts/` 또는 `harness/` / `calibration/`에 두고,
+   프로덕션 엔트리포인트에 실험 코드를 남기지 않는다.
+5. 사람 랭킹과 알고리즘 점수를 비교할 때도 **동일 reference 패널**을 사용한다.
+6. 재보정 정답셋은 **최종 저장 시각이 가장 최신인 완료 세션 하나만** 사용한다.
+7. **몬테카를로는 비선형 후보의 주 optimizer**다. 자산군 예외 규칙은 금지한다.
 
 ---
 

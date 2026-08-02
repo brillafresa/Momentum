@@ -1,9 +1,9 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v4.7.0
+# KRW Momentum Radar - v5.0.0
 # 
 # 주요 기능:
-# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v4.7.0 watchlist-relative sparse-linear)
+# - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0.0 alive_pullback nonlinear)
 # - 다국가 시장 통합 분석 (미국, 한국, 일본)
 # - 수익률-변동성 이동맵 (정적/애니메이션 모드)
 # - 실시간 데이터 업데이트 및 시각화
@@ -98,7 +98,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v4.7.0", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.0", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -721,46 +721,38 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     
     st.markdown(f"""
     **현재 적용 상태:**
-    - 아래 설명은 앱·배치가 실제 사용하는 **production v4.7.0 FMS**입니다.
-    - 10축 sparse-linear + **현재 계좌 관심종목 상대 Z-score** +
-      **현금성 경로 양의 품질 보너스 게이트**가 적용됩니다.
+    - 아래 설명은 앱·배치가 실제 사용하는 **production v5.0.0 FMS**입니다.
+    - **alive_pullback** 비선형 수식(비중첩 SEG_* + 잔차 피처)이며,
+      관심종목 상대 Z-score / 현금성 게이트는 사용하지 않습니다(절대 경로 점수).
 
     **개요:**
-    - FMS는 사용자가 본 **최근 3개월(63거래일) 가격 경로**에서 추세 품질·회복·연속성을 평가합니다.
-    - 기존 v4.5.1 수식에 항을 더한 것이 아니라, 아래 10개 축만으로 완전히 다시 피팅한 선형 점수입니다.
+    - FMS는 사용자가 본 **최근 3개월(63거래일) 가격 경로**에서 최근 회복·이전 추세 지지·
+      절대수익 바닥·정체/단발급등 패널티를 평가합니다.
+    - 정답셋 `cal_fms_20260730_190637`에서 NL→비선형 MC로 피팅 후 승격한 수식입니다.
 
-    **긍정 요인 (가산)**
-    - **R2_3M**: 3개월 로그 추세가 직선에 가깝고 매끄러울수록 가산
-    - **DD_RECOVERY**: 3개월 최대 낙폭에서 현재가가 많이 회복했을수록 가산
-    - **TREND_QUALITY_21D**: 최근 21일 로그 기울기 × R²가 높을수록 가산
-    - **R_3M**: 3개월 절대 수익률 가산
-    - **UP_STREAK_5D**: 최근 5일 내 연속 상승 최대 길이 가산
-    - **TREND_EFFICIENCY_REWARD_15D**: 최근 15일 상승 경로의 방향 효율성 가산
+    **가산 요인**
+    - **SEG_RET_0_5 / alive**: 최근 1주 수익·회복(이전 지지가 있을 때 가산)
+    - **MID_DIP_RECOVERY**: 중간 구간 조정 후 최근 회복 연속성
+    - **SEG_RET_21_63 / PRIOR_SUPPORT_SIGN**: 이전 추세 지지
+    - **R_3M softplus floor**: 절대 3개월 수익이 바닥(~1.2%) 아래면 강하게 억제
+    - **RECENT_UP_DAYS_5D / grind**: 최근 상승일 폭·고R²·비스파이크 경로 소폭 가산
+    - **TREND_EFFICIENCY_REWARD_15D**: 최근 경로 효율
 
-    **부정 요인 (감점)**
-    - **JUMP_DISCONTINUITY_3M**: 하루 점프가 3개월 전체 진행을 과도하게 지배하면 감점
-    - **UNDER_EMA20_DAYS**: 최근 60일 중 EMA20 아래에 머문 날이 많을수록 감점
-    - **STALE_AGE**: 과거 급등 뒤 고점 갱신 없이 정체된 기간이 길수록 감점
-    - **RANGE_COMPRESSION_20D**: 최근 20일 변동 범위가 과도하게 압축되어 동력이 소진된 경로 감점
-
-    **현금성 게이트**
-    - 저수익(`R_3M`) ∧ 초저변동(`Vol20_Ann`) ∧ 고R²가 **동시에** 나타나면,
-      `R_3M`을 제외한 품질 축의 **양의 기여분만** `(1 - cash_strength)`로 축소합니다.
-    - 기존 감점과 `R_3M` 항은 그대로 두어, 금리·머니마켓형 ETF가 상위권을 독점하지 않게 합니다.
-    - 충분한 수익률의 장기채 랠리·일반 주식 경로는 영향받지 않습니다.
+    **감점 요인**
+    - **STALE_AFTER_RUN**: 최근이 약할 때만 적용되는 대상승 후 정체 패널티
+    - **RECENT_JUMP_SHARE_5D**: 최근 5일 상승이 단발 급등에 치우치면 감점
 
     **정규화**
-    - 각 축을 **현재 계좌모드 관심종목의 median·mean·표준편차**로 상대 정규화하고 Z값을 ±4로 제한합니다.
-    - 앱은 현재 관심종목끼리 비교하고, 배치는 신규 후보를 현재 관심종목 분포와 비교합니다.
-      따라서 관심종목 구성이 바뀌면 FMS도 함께 바뀌며, 0점은 현재 관심종목 기준선입니다.
+    - 절대 피처 점수(watchlist 상대 Z 없음). 관심종목 구성이 바뀌어도
+      같은 가격 경로면 FMS는 동일합니다. 배치는 후보를 같은 절대 수식으로 점수화합니다.
 
     **추가 필터 (거래 적합성)**  
     - True Range 기반 **치명적 변동성 30% 초과** 또는  
       **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
 
     **한 줄 요약:**
-    - **“실제 모멘텀이 있는 매끄러운 상승·회복”을 선호하고,
-      “단발성 점프·정체·동력 소진”과 “저수익·초저변동 현금성 경로의 무위험형 보너스”를 억제하는 점수입니다.**
+    - **“이전 지지 + 최근 회복이 확인된 연속 상승”을 선호하고,
+      “절대 저수익·죽은 대상승 정체·단발 급등”을 억제하는 비선형 점수입니다.**
     """)
     
     st.markdown("---")
@@ -1086,7 +1078,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v4.7.0")
+st.title("⚡ KRW Momentum Radar v5.0.0")
 
 
 
@@ -2036,8 +2028,9 @@ if active_session_id and state:
             "다음 단계: 이 정답 순서로 CLI에서 **후보**를 생성합니다. "
             "산출물은 candidate-only이며 production FMS는 자동으로 변경되지 않습니다.\n\n"
             "1. `python fms_recalib_build_features.py`\n"
-            "2. `python fms_recalib_refit.py`\n"
-            "3. `python -m calibration.fms_recalib_plot_residuals`"
+            "2. `python -m calibration.fms_recalib_inspect_patterns`\n"
+            "3. `python fms_recalib_nonlinear_mc.py`\n"
+            "4. `python -m calibration.fms_recalib_plot_residuals`"
         )
 
 # ------------------------------

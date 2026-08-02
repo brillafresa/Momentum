@@ -1,16 +1,12 @@
 """
-Contracts for the cash-like path quality-bonus gate (v4.6.1+) under
-watchlist-relative Z-score normalization (v4.7.0).
+Legacy harness: cash-like path quality-bonus gate (v4.6.1) under
+watchlist-relative Z-score (v4.7.0 sparse-linear).
 
-Policy
-------
-Suppress **positive** quality-axis contributions only when
-``low_return(R_3M) × ultra_low_vol(Vol20_Ann) × high_smooth(R2_3M)`` is high.
-``R_3M`` itself and existing penalties are unchanged. Tradeability ``-999``
-semantics are unchanged.
-
-Also locks relative-Z contracts that the cash fixture panel exercises:
-self-reference centering, zero-variance axes, and batch-vs-watchlist parity.
+Since v5.0.0 production uses absolute ``alive_pullback`` (no cash gate / Z).
+These tests lock the **archived** sparse scorer
+(``score_legacy_sparse_fms_features``) so the historical gate contract remains
+regression-checkable. Production cash suppression is covered by absolute-return
+floor tests in ``test_fms_alive_pullback_production.py``.
 """
 
 from __future__ import annotations
@@ -29,13 +25,17 @@ from core.fms_features import (
     CASH_R3M_NONE,
     CASH_VOL_FULL,
     CASH_VOL_NONE,
-    PRODUCTION_FMS_COLUMNS,
+    LEGACY_SPARSE_FMS_COLUMNS,
     build_panel_feature_frame,
     cash_like_strength,
     production_axis_contributions,
-    score_production_fms_features,
+    score_legacy_sparse_fms_features,
     smoothstep_series,
 )
+
+# Alias used throughout this legacy harness file.
+PRODUCTION_FMS_COLUMNS = LEGACY_SPARSE_FMS_COLUMNS
+score_production_fms_features = score_legacy_sparse_fms_features
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -85,17 +85,13 @@ def test_cash_like_strength_is_high_for_smooth_cash_path(
 def test_cash_like_path_does_not_rank_as_top_momentum(
     cash_like_prices: pd.DataFrame,
 ) -> None:
-    """Cash-rate smoothness must not outrank real momentum paths."""
-    result = momentum_now_and_delta(
-        cash_like_prices,
-        reference_prices_krw=cash_like_prices,
-        ohlc_data=None,
-        symbols=list(cash_like_prices.columns),
-    )
-    cash_fms = float(result.loc["CASH_LIKE", "FMS"])
-    equity_fms = float(result.loc["EQUITY_TREND", "FMS"])
-    smooth_strong_fms = float(result.loc["SMOOTH_STRONG", "FMS"])
-    bond_fms = float(result.loc["BOND_RALLY", "FMS"])
+    """Legacy sparse+gate: cash-rate smoothness must not outrank real momentum."""
+    feats = build_panel_feature_frame(cash_like_prices)
+    result = score_production_fms_features(feats, reference_features=feats)
+    cash_fms = float(result.loc["CASH_LIKE"])
+    equity_fms = float(result.loc["EQUITY_TREND"])
+    smooth_strong_fms = float(result.loc["SMOOTH_STRONG"])
+    bond_fms = float(result.loc["BOND_RALLY"])
 
     assert cash_fms < 0.5
     assert cash_fms < equity_fms

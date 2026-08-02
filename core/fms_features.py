@@ -1,12 +1,21 @@
 """Pure FMS feature extraction from price panels (no network I/O).
 
-Used by recalibration and, after promotion, by production scoring. Features are
-computed on the visible comparison window (default 63 trading days ≈ 3M).
+Used by recalibration and production scoring. Features are computed on the
+visible comparison window (default 63 trading days ≈ 3M).
+
+Production scorer (v5.0.0)
+--------------------------
+``alive_pullback`` nonlinear formula over non-overlapping SEG_* features.
+Absolute path score (no watchlist-relative Z). Frozen params from session
+``cal_fms_20260730_190637`` / round-2b MC.
+
+Legacy sparse-linear + cash-like gate (v4.6–v4.7) remains as
+``score_legacy_sparse_fms_features`` for harness comparison only.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -18,10 +27,46 @@ HORIZON_DAYS_3M = 63
 HORIZON_DAYS_4M = 84
 VISIBLE_WINDOW_3M = HORIZON_DAYS_3M
 
-# Promoted 2026-07-29 scratch model weights. Since v4.7.0, each feature is
-# normalized against the current account watchlist rather than frozen fit
-# statistics; the weights and feature directions remain the approved model.
+PRODUCTION_FORMULA_ID = "alive_pullback_v5"
+PRODUCTION_SESSION_ID = "cal_fms_20260730_190637"
+PRODUCTION_SNAPSHOT_ID = "fms_20260730_190637"
+
+# Locked 2026-08-02 round-2b MC winner (alive_pullback). Do not retune in place.
+PRODUCTION_ALIVE_PULLBACK_PARAMS: Dict[str, float] = {
+    "floor": 0.012329795708609646,
+    "w_recent": 1.081707572804269,
+    "w_mid_pos": 91.66678635615453,
+    "w_mid_neg_forgive": 0.27885902251782624,
+    "w_prior": 0.020871093558278476,
+    "w_abs": 0.03815477307854205,
+    "w_breadth": 0.0905801299387842,
+    "w_grind": 2.094465447805374,
+    "w_stale_run": 201.76265960869708,
+    "w_jump_share": 0.11205412188752384,
+    "w_eff": 0.462436875074884,
+    "pow_recent": 0.7912749674716275,
+    "alive_boost": 3.130448039775118,
+}
+
+# Columns surfaced in snapshot / dynamic table order (interpretability).
 PRODUCTION_FMS_COLUMNS = (
+    "SEG_RET_0_5",
+    "SEG_RET_5_21",
+    "SEG_RET_21_63",
+    "R_3M",
+    "PRIOR_SUPPORT_SIGN",
+    "MID_DIP_RECOVERY",
+    "STALE_AFTER_RUN",
+    "RECENT_UP_DAYS_5D",
+    "RECENT_JUMP_SHARE_5D",
+    "R2_3M",
+    "TREND_EFFICIENCY_REWARD_15D",
+)
+
+# ---------------------------------------------------------------------------
+# Legacy v4.6–v4.7 sparse-linear (harness / comparison only — not production)
+# ---------------------------------------------------------------------------
+LEGACY_SPARSE_FMS_COLUMNS = (
     "R2_3M",
     "DD_RECOVERY",
     "TREND_QUALITY_21D",
@@ -33,7 +78,7 @@ PRODUCTION_FMS_COLUMNS = (
     "TREND_EFFICIENCY_REWARD_15D",
     "RANGE_COMPRESSION_20D",
 )
-PRODUCTION_FMS_WEIGHTS = {
+LEGACY_SPARSE_FMS_WEIGHTS = {
     "R2_3M": 0.8464267343631183,
     "DD_RECOVERY": 0.6013072809914602,
     "TREND_QUALITY_21D": 0.35431695139125063,
@@ -45,16 +90,78 @@ PRODUCTION_FMS_WEIGHTS = {
     "TREND_EFFICIENCY_REWARD_15D": 0.10776592373907062,
     "RANGE_COMPRESSION_20D": 0.10416888196208451,
 }
-# Cash-like path gate (v4.6.1): suppress positive quality bonuses only when
-# low 3M return, ultra-low volatility, and near-perfect R² occur together.
-# Thresholds are decimals (0.01 = 1%). ``R_3M`` itself is never gated.
+# Back-compat aliases used by older harness imports.
+PRODUCTION_FMS_WEIGHTS = LEGACY_SPARSE_FMS_WEIGHTS
 CASH_R3M_FULL = 0.01
 CASH_R3M_NONE = 0.05
 CASH_VOL_FULL = 0.005
 CASH_VOL_NONE = 0.03
 CASH_R2_NONE = 0.95
 CASH_R2_FULL = 0.99
-CASH_GATED_AXES = tuple(col for col in PRODUCTION_FMS_COLUMNS if col != "R_3M")
+CASH_GATED_AXES = tuple(col for col in LEGACY_SPARSE_FMS_COLUMNS if col != "R_3M")
+
+def softplus_series(x: pd.Series | np.ndarray, beta: float = 8.0) -> pd.Series:
+    """Smooth ReLU used by the production alive_pullback formula."""
+    arr = np.asarray(x, dtype=float)
+    out = np.log1p(np.exp(np.clip(beta * arr, -40.0, 40.0))) / beta
+    return pd.Series(out, index=getattr(x, "index", None), dtype=float)
+
+
+def _feature_col(
+    frame: pd.DataFrame, name: str, default: float = 0.0
+) -> pd.Series:
+    if name not in frame.columns:
+        return pd.Series(default, index=frame.index, dtype=float)
+    return frame[name].astype(float).replace([np.inf, -np.inf], np.nan).fillna(default)
+
+
+def score_alive_pullback_from_params(
+    features: pd.DataFrame, params: Mapping[str, float]
+) -> pd.Series:
+    """Score the alive_pullback nonlinear family (no tradeability -999)."""
+    p = dict(params)
+    recent = _feature_col(features, "SEG_RET_0_5")
+    mid = _feature_col(features, "SEG_RET_5_21")
+    prior = _feature_col(features, "SEG_RET_21_63")
+    support = _feature_col(features, "PRIOR_SUPPORT_SIGN")
+    r3m = _feature_col(features, "R_3M")
+    r2 = _feature_col(features, "R2_3M", 0.5)
+    breadth = _feature_col(features, "RECENT_UP_DAYS_5D") / 5.0
+    dip_rec = _feature_col(features, "MID_DIP_RECOVERY")
+    stale_run = _feature_col(features, "STALE_AFTER_RUN").clip(lower=0.0)
+    jump_share = _feature_col(features, "RECENT_JUMP_SHARE_5D").clip(
+        lower=0.0, upper=1.0
+    )
+    eff = _feature_col(features, "TREND_EFFICIENCY_REWARD_15D")
+
+    recent_nl = np.sign(recent) * (np.abs(recent) ** p["pow_recent"])
+    alive = softplus_series(recent) * support
+    mid_term = p["w_mid_pos"] * softplus_series(mid) + p[
+        "w_mid_neg_forgive"
+    ] * dip_rec * (0.5 + support)
+    grind = (
+        softplus_series(r3m - p["floor"])
+        * r2
+        * (1.0 - jump_share)
+        * softplus_series(eff + 0.05)
+    )
+    body = (
+        p["w_recent"] * recent_nl
+        + p["alive_boost"] * alive
+        + mid_term
+        + p["w_prior"] * prior * (0.5 + support)
+        + p["w_abs"] * softplus_series(r3m - p["floor"])
+        + p["w_breadth"] * breadth
+        + p["w_grind"] * grind
+        + p["w_eff"] * softplus_series(eff)
+    )
+    penalty = (
+        1.0
+        + p["w_stale_run"] * stale_run
+        + p["w_jump_share"] * softplus_series(jump_share - 0.55)
+    )
+    score = softplus_series(r3m - p["floor"] * 0.5) * body / penalty
+    return score.astype(float).rename("FMS")
 
 
 def smoothstep_series(x: pd.Series, edge0: float, edge1: float) -> pd.Series:
@@ -137,7 +244,7 @@ def _axis_raw_contribution(
 
     standardized = ((target.fillna(median) - mean) / scale).clip(-4.0, 4.0)
     direction = float(FEATURE_DIRECTION[col])
-    return (PRODUCTION_FMS_WEIGHTS[col] * standardized * direction).astype(float)
+    return (LEGACY_SPARSE_FMS_WEIGHTS[col] * standardized * direction).astype(float)
 
 
 def production_axis_contributions(
@@ -147,18 +254,16 @@ def production_axis_contributions(
     reference_excluded_symbols: Optional[set[str]] = None,
     apply_cash_gate: bool = True,
 ) -> pd.DataFrame:
-    """Per-axis relative FMS contributions using the current watchlist.
+    """Per-axis legacy sparse contributions (v4.7 harness only — not production).
 
-    When ``reference_features`` is omitted, ``features`` is its own reference;
-    this is the app/watchlist behavior. Batch discovery supplies current
-    account-watchlist features while scoring separate candidate rows.
+    When ``reference_features`` is omitted, ``features`` is its own reference.
     """
-    missing = [col for col in PRODUCTION_FMS_COLUMNS if col not in features.columns]
+    missing = [col for col in LEGACY_SPARSE_FMS_COLUMNS if col not in features.columns]
     if missing:
-        raise KeyError(f"production FMS missing columns: {missing}")
+        raise KeyError(f"legacy sparse FMS missing columns: {missing}")
     reference = features if reference_features is None else reference_features
     ref_missing = [
-        col for col in PRODUCTION_FMS_COLUMNS if col not in reference.columns
+        col for col in LEGACY_SPARSE_FMS_COLUMNS if col not in reference.columns
     ]
     if ref_missing:
         raise KeyError(f"reference FMS missing columns: {ref_missing}")
@@ -168,7 +273,7 @@ def production_axis_contributions(
     )
     keep = (1.0 - strength).clip(lower=0.0, upper=1.0)
     cols: Dict[str, pd.Series] = {}
-    for col in PRODUCTION_FMS_COLUMNS:
+    for col in LEGACY_SPARSE_FMS_COLUMNS:
         raw = _axis_raw_contribution(
             features,
             reference,
@@ -327,6 +432,61 @@ def _jump_discontinuity(series: pd.Series, window: int = 63) -> float:
     return float(concentration * weak_follow_through)
 
 
+def _segment_simple_return(series: pd.Series, start_offset: int, end_offset: int) -> float:
+    """Return over a non-overlapping window.
+
+    ``start_offset`` / ``end_offset`` are trading-day distances from the last
+    observation. Example: ``(5, 0)`` is the most recent 5 sessions;
+    ``(21, 5)`` is the prior band from 21 days ago to 5 days ago.
+    Offsets are clamped to the available series length so a 63-day visible
+    window can still express the 21–63 band as ``start→21``.
+    """
+    clean = series.dropna()
+    if len(clean) < 3 or start_offset <= end_offset:
+        return np.nan
+    start_offset = int(min(max(start_offset, 1), len(clean) - 1))
+    end_offset = int(min(max(end_offset, 0), start_offset - 1))
+    start = clean.iloc[-(start_offset + 1)]
+    end = clean.iloc[-(end_offset + 1)] if end_offset > 0 else clean.iloc[-1]
+    if not (np.isfinite(start) and np.isfinite(end)) or start <= 0 or end <= 0:
+        return np.nan
+    return float(end / start - 1.0)
+
+
+def _segment_log_slope(series: pd.Series, start_offset: int, end_offset: int) -> float:
+    """Log-price OLS slope on a non-overlapping segment."""
+    clean = series.dropna()
+    if len(clean) < 3 or start_offset <= end_offset:
+        return np.nan
+    start_offset = int(min(max(start_offset, 1), len(clean) - 1))
+    end_offset = int(min(max(end_offset, 0), start_offset - 1))
+    if end_offset > 0:
+        seg = clean.iloc[-(start_offset + 1) : -end_offset]
+    else:
+        seg = clean.iloc[-(start_offset + 1) :]
+    if len(seg) < 3:
+        return np.nan
+    slope, _ = _log_slope_and_r2(seg, len(seg))
+    return float(slope) if np.isfinite(slope) else np.nan
+
+
+def _segment_vol(series: pd.Series, start_offset: int, end_offset: int) -> float:
+    """Annualized realized vol on a non-overlapping segment."""
+    clean = series.dropna()
+    if len(clean) < 3 or start_offset <= end_offset:
+        return np.nan
+    start_offset = int(min(max(start_offset, 1), len(clean) - 1))
+    end_offset = int(min(max(end_offset, 0), start_offset - 1))
+    if end_offset > 0:
+        seg = clean.iloc[-(start_offset + 1) : -end_offset]
+    else:
+        seg = clean.iloc[-(start_offset + 1) :]
+    rets = np.log(seg.where(seg > 0)).diff().dropna()
+    if len(rets) < 2:
+        return np.nan
+    return float(rets.std(ddof=0) * np.sqrt(252.0))
+
+
 def _consecutive_direction(series: pd.Series, window: int, direction: str) -> int:
     clean = series.dropna()
     if len(clean) < window + 1:
@@ -398,7 +558,7 @@ def _symbol_features(series: pd.Series, *, window_days: int) -> Dict[str, float]
     te15 = _trend_efficiency(visible, min(15, len(visible)))
     te20 = _trend_efficiency(visible, min(20, len(visible)))
 
-    return {
+    out = {
         "R_3D_LOG": r3,
         "R_5D_LOG": _log_return(visible, 5),
         "R_10D_LOG": _log_return(visible, 10),
@@ -458,6 +618,68 @@ def _symbol_features(series: pd.Series, *, window_days: int) -> Dict[str, float]
             slope10 - slope21 if np.isfinite(slope10) and np.isfinite(slope21) else np.nan
         ),
     }
+
+    seg_ret_21_63 = _segment_simple_return(visible, 63, 21)
+    out.update(
+        {
+            # Non-overlapping segment features (high resolution near today).
+            # Bands: 0-3d, 3-5d, 5-10d, 10-21d, 21-63d; also 0-5 / 5-21 / 21-63.
+            "SEG_RET_0_3": _segment_simple_return(visible, 3, 0),
+            "SEG_RET_3_5": _segment_simple_return(visible, 5, 3),
+            "SEG_RET_5_10": _segment_simple_return(visible, 10, 5),
+            "SEG_RET_10_21": _segment_simple_return(visible, 21, 10),
+            "SEG_RET_21_63": seg_ret_21_63,
+            "SEG_RET_0_5": _segment_simple_return(visible, 5, 0),
+            "SEG_RET_5_21": _segment_simple_return(visible, 21, 5),
+            "SEG_SLOPE_0_5": _segment_log_slope(visible, 5, 0),
+            "SEG_SLOPE_5_21": _segment_log_slope(visible, 21, 5),
+            "SEG_SLOPE_21_63": _segment_log_slope(visible, 63, 21),
+            "SEG_VOL_0_5": _segment_vol(visible, 5, 0),
+            "SEG_VOL_5_21": _segment_vol(visible, 21, 5),
+            "SEG_VOL_21_63": _segment_vol(visible, 63, 21),
+            "PRIOR_SUPPORT_SIGN": (
+                1.0
+                if np.isfinite(seg_ret_21_63) and seg_ret_21_63 > 0
+                else (0.0 if np.isfinite(seg_ret_21_63) else np.nan)
+            ),
+        }
+    )
+    # Residual-round features (2026-08-02): recent breadth, single-day dominance,
+    # mid-dip recovery, stale-after-large-run.
+    rets5 = np.log(visible.where(visible > 0)).diff().dropna().iloc[-min(5, len(visible)) :]
+    if len(rets5) >= 3:
+        pos = rets5.clip(lower=0.0)
+        pos_sum = float(pos.sum())
+        max_pos = float(pos.max()) if len(pos) else 0.0
+        out["RECENT_UP_DAYS_5D"] = float((rets5 > 0).sum())
+        out["RECENT_JUMP_SHARE_5D"] = (
+            float(max_pos / pos_sum) if pos_sum > 1e-12 else np.nan
+        )
+    else:
+        out["RECENT_UP_DAYS_5D"] = np.nan
+        out["RECENT_JUMP_SHARE_5D"] = np.nan
+
+    seg0_5 = float(out.get("SEG_RET_0_5", np.nan))
+    seg5_21 = float(out.get("SEG_RET_5_21", np.nan))
+    if np.isfinite(seg0_5) and np.isfinite(seg5_21):
+        out["MID_DIP_RECOVERY"] = float(max(seg0_5, 0.0) * max(-seg5_21, 0.0))
+    else:
+        out["MID_DIP_RECOVERY"] = np.nan
+
+    stale = float(out.get("STALE_AGE", np.nan))
+    if np.isfinite(stale) and np.isfinite(seg_ret_21_63):
+        # Only penalize "finished" runs: strong prior + high stale + weak/negative recent.
+        # Healthy mid-dip recoveries (RLI/NEXN-like) keep positive recent and must not
+        # inherit the same penalty as dead mega-runs (MNPR/MBX-like).
+        recent_weak = (
+            max(0.02 - seg0_5, 0.0) if np.isfinite(seg0_5) else 0.02
+        )
+        out["STALE_AFTER_RUN"] = float(
+            stale * max(seg_ret_21_63, 0.0) * recent_weak
+        )
+    else:
+        out["STALE_AFTER_RUN"] = np.nan
+    return out
 
 
 def build_symbol_feature_frame(
@@ -520,24 +742,17 @@ def build_panel_feature_frame(
     return out
 
 
-def score_production_fms_features(
+def score_legacy_sparse_fms_features(
     features: pd.DataFrame,
     *,
     reference_features: Optional[pd.DataFrame] = None,
     disqualified_symbols: Optional[set[str]] = None,
     apply_cash_gate: bool = True,
 ) -> pd.Series:
-    """Score the approved sparse-linear production FMS from feature rows.
+    """Score the archived v4.7 watchlist-relative sparse-linear FMS.
 
-    Each axis is standardized against the current account watchlist's
-    mean/standard deviation and clipped to ±4. Missing values use the current
-    watchlist median. Negative-direction axes are sign-flipped before applying
-    their non-negative fitted weights.
-
-    When ``apply_cash_gate`` is True (default), positive contributions on
-    quality axes other than ``R_3M`` are scaled by ``(1 - cash_like_strength)``
-    so low-return / ultra-low-vol / high-R² cash paths cannot dominate ranks.
-    Existing penalties and the ``R_3M`` term are never reduced by the gate.
+    Kept for harness regression / cash-gate comparison. Not used by production
+    ``compute_fms_snapshot`` since v5.0.0.
     """
     contrib = production_axis_contributions(
         features,
@@ -546,7 +761,29 @@ def score_production_fms_features(
         apply_cash_gate=apply_cash_gate,
     )
     score = contrib.sum(axis=1).astype(float).rename("FMS")
+    if disqualified_symbols:
+        score.loc[score.index.intersection(disqualified_symbols)] = -999.0
+    return score.rename("FMS")
 
+
+def score_production_fms_features(
+    features: pd.DataFrame,
+    *,
+    reference_features: Optional[pd.DataFrame] = None,
+    disqualified_symbols: Optional[set[str]] = None,
+    apply_cash_gate: bool = True,
+) -> pd.Series:
+    """Score production FMS (v5.0.0 alive_pullback).
+
+    Absolute nonlinear score over SEG_* / residual features. ``reference_features``
+    and ``apply_cash_gate`` are accepted for API compatibility but unused — the
+    absolute-return floor and stale/jump penalties replace the old relative-Z
+    cash gate. Tradeability disqualification still forces ``FMS = -999``.
+    """
+    del reference_features, apply_cash_gate  # API compat; absolute scorer
+    score = score_alive_pullback_from_params(
+        features, PRODUCTION_ALIVE_PULLBACK_PARAMS
+    )
     if disqualified_symbols:
         score.loc[score.index.intersection(disqualified_symbols)] = -999.0
     return score.rename("FMS")
@@ -602,6 +839,24 @@ FEATURE_DIRECTION: Dict[str, int] = {
     "RECENT_3D_VS_21D_TREND": 1,
     "SLOPE_ACCEL_10_21": 1,
     "VOL_ASYMMETRY_20D": 1,
+    "SEG_RET_0_3": 1,
+    "SEG_RET_3_5": 1,
+    "SEG_RET_5_10": 1,
+    "SEG_RET_10_21": 1,
+    "SEG_RET_21_63": 1,
+    "SEG_RET_0_5": 1,
+    "SEG_RET_5_21": 1,
+    "SEG_SLOPE_0_5": 1,
+    "SEG_SLOPE_5_21": 1,
+    "SEG_SLOPE_21_63": 1,
+    "SEG_VOL_0_5": -1,
+    "SEG_VOL_5_21": -1,
+    "SEG_VOL_21_63": -1,
+    "PRIOR_SUPPORT_SIGN": 1,
+    "RECENT_UP_DAYS_5D": 1,
+    "RECENT_JUMP_SHARE_5D": -1,
+    "MID_DIP_RECOVERY": 1,
+    "STALE_AFTER_RUN": -1,
 }
 
 
@@ -612,6 +867,6 @@ def candidate_feature_columns(frame: pd.DataFrame) -> List[str]:
     for col in frame.columns:
         if col in banned:
             continue
-        if col in FEATURE_DIRECTION or col.startswith(("R_", "LOG_", "TREND_", "EMA", "UNDER_", "DOWN_", "UP_", "DD_", "POST_", "STALE", "MaxDD", "Vol", "PRICE_", "RECOVERY", "RANGE_", "SLOPE_", "DOWNSIDE", "UPSIDE", "WORST_")):
+        if col in FEATURE_DIRECTION or col.startswith(("R_", "LOG_", "TREND_", "EMA", "UNDER_", "DOWN_", "UP_", "DD_", "POST_", "STALE", "MaxDD", "Vol", "PRICE_", "RECOVERY", "RANGE_", "SLOPE_", "DOWNSIDE", "UPSIDE", "WORST_", "SEG_", "PRIOR_")):
             cols.append(col)
     return sorted(set(cols))

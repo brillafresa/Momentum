@@ -1,0 +1,123 @@
+{
+  "created_at": "2026-08-02T17:30:52",
+  "n_symbols": 147,
+  "feature_csv": "fms_recalib_features.csv",
+  "production_benchmark": {
+    "inversion_rate": 0.27415897865995714,
+    "spearman_rho": 0.5655123952579921,
+    "pair_delta_error": 41.151616811108006
+  },
+  "group_means": {
+    "TOP": {
+      "R_3M": 0.4743030081941462,
+      "R2_3M": 0.8393194152164654,
+      "SEG_RET_0_3": 0.06192959202956644,
+      "SEG_RET_0_5": 0.0925318636974395,
+      "SEG_RET_5_21": 0.06315735050183587,
+      "SEG_RET_21_63": 0.26365781286121054,
+      "SEG_SLOPE_0_5": 0.018999721846824334,
+      "PRIOR_SUPPORT_SIGN": 1.0,
+      "TREND_QUALITY_21D": 0.003706225464038137,
+      "JUMP_DISCONTINUITY_3M": 0.038321616946040055,
+      "STALE_AGE": 0.1964669457096662,
+      "Vol20_Ann": 0.46882666052558125,
+      "RECENT_UP_DAYS_5D": 2.979591836734694,
+      "RECENT_JUMP_SHARE_5D": 0.5835788654299481,
+      "MID_DIP_RECOVERY": 0.0004662750477294632,
+      "STALE_AFTER_RUN": 0.0002697899590499218
+    },
+    "MID": {
+      "R_3M": 0.3439279586015705,
+      "R2_3M": 0.7946921264970429,
+      "SEG_RET_0_3": 0.016452909786059434,
+      "SEG_RET_0_5": 0.031981602867474444,
+      "SEG_RET_5_21": 0.016443865037726223,
+      "SEG_RET_21_63": 0.2559397720989567,
+      "SEG_SLOPE_0_5": 0.0066714664399588,
+      "PRIOR_SUPPORT_SIGN": 1.0,
+      "TREND_QUALITY_21D": 0.001086881205230726,
+      "JUMP_DISCONTINUITY_3M": 0.06732515523371278,
+      "STALE_AGE": 0.27673070662634425,
+      "Vol20_Ann": 0.3403411145639002,
+      "RECENT_UP_DAYS_5D": 2.5306122448979593,
+      "RECENT_JUMP_SHARE_5D": 0.6939244613301739,
+      "MID_DIP_RECOVERY": 0.0009454547890147436,
+      "STALE_AFTER_RUN": 0.0028793158490489673
+    },
+    "BOT": {
+      "R_3M": 0.17607366191890533,
+      "R2_3M": 0.7424389724887428,
+      "SEG_RET_0_3": -0.0041280649895911944,
+      "SEG_RET_0_5": -0.0027262236137364,
+      "SEG_RET_5_21": -0.02283393156881702,
+      "SEG_RET_21_63": 0.21325134331053067,
+      "SEG_SLOPE_0_5": -0.0009651075236661246,
+      "PRIOR_SUPPORT_SIGN": 0.9591836734693877,
+      "TREND_QUALITY_21D": -0.0009516449130496128,
+      "JUMP_DISCONTINUITY_3M": 0.08194379209734605,
+      "STALE_AGE": 0.3586679930398977,
+      "Vol20_Ann": 0.22681635042482176,
+      "RECENT_UP_DAYS_5D": 2.3877551020408165,
+      "RECENT_JUMP_SHARE_5D": 0.6642342001460206,
+      "MID_DIP_RECOVERY": 0.0011582599125392011,
+      "STALE_AFTER_RUN": 0.006149669122287126
+    }
+  },
+  "rules": [
+    {
+      "id": "abs_return_floor",
+      "text": "최근 3개월 절대 수익률이 매우 낮으면(대략 +2% 미만) R²·변동성 모양과 무관하게 하위권에 둔다. 저수익만으로도 하위권을 강하게 설명한다.",
+      "evidence": "n=147, R_3M<2% 종목의 하위권 집중도≈1.00"
+    },
+    {
+      "id": "recent_high_resolution",
+      "text": "최근 3일·1주 수익률/기울기가 양이고 클수록 상위 후보로 본다. 단발 점프보다 여러 날에 걸쳐 쌓인 상승을 선호한다.",
+      "evidence": "TOP 3분위 SEG_RET_0_5 / R_3D_LOG 평균이 MID·BOT보다 큼"
+    },
+    {
+      "id": "prior_support_gate",
+      "text": "최근 상승은 1개월~3개월 전 구간(비중첩)에서도 방향이 맞을 때 (PRIOR_SUPPORT_SIGN=1) 더 신뢰한다. 지지의 크기보다 방향 일치가 중요하다.",
+      "evidence": "SEG_RET_21_63은 TOP≈MID이고 BOT만 크게 낮음 → 이진 지지 게이트"
+    },
+    {
+      "id": "continuation_over_v_bounce",
+      "text": "이전 구간이 하락/보합인데 최근만 반등한 V자보다, 이전에도 상승하던 연속 상승 경로를 같은 최근 수익률이라도 더 높게 둔다.",
+      "evidence": "사용자 의도 + 비중첩 구간 분리 목적"
+    },
+    {
+      "id": "regime_dependent_recent_weight",
+      "text": "절대 최근 1개월 수익률이 약한 구간에서는 장기 꾸준함보다 단기 상승률 가중치를 키운다. 절대 수익이 충분하면 이전 추세 연속성 비중을 키운다.",
+      "evidence": "지시서 자연어 예시 + regime_switch_recent family"
+    },
+    {
+      "id": "soft_cash_without_labels",
+      "text": "초저수익∧초저변동이 동시에 나타나면 자산군 라벨 없이 하위 점수로 민다. 고R² 조건에만 의존하지 않는다.",
+      "evidence": "채권·예금성 ETF가 R² 게이트를 피해 고득점하던 production 실패"
+    },
+    {
+      "id": "jump_stale_penalty",
+      "text": "급등 후 follow-through가 없거나(STALE_AGE·JUMP) 정체면 최근 절대수익이 커도 상위권에서 내린다.",
+      "evidence": "TOP에서 JUMP/STALE 평균이 BOT보다 낮음"
+    },
+    {
+      "id": "r2_not_overpenalize_strong_abs",
+      "text": "3개월 절대수익과 최근 구간이 충분히 강하면 R²가 피어보다 다소 낮다는 이유만으로 과도 감점하지 않는다.",
+      "evidence": "GSHD류: 강한 모멘텀인데 R² Z 감점으로 production 순위 붕괴"
+    },
+    {
+      "id": "mid_dip_continuation",
+      "text": "이전 추세가 있는 종목이 중간 구간에서 잠시 조정을 받아도, 최근 구간이 회복하면(MID_DIP_RECOVERY) 연속 상승으로 본다. V자 단독 반등과 구분한다.",
+      "evidence": "round-1 under-rank: RLI/NEXN/HOMB류 중간 조정 후 회복"
+    },
+    {
+      "id": "stale_after_large_run",
+      "text": "과거 절대수익이 커도 최근이 정체(STALE_AFTER_RUN)하거나 최근 5일 상승이 단발 급등 비중(RECENT_JUMP_SHARE_5D)으로 설명되면 상위권을 억제한다.",
+      "evidence": "round-1 over-rank: MNPR/MBX/CORT류 대상승+정체/스파이크"
+    },
+    {
+      "id": "recent_breadth",
+      "text": "최근 5거래일 중 상승일 수(RECENT_UP_DAYS_5D)가 넓을수록 같은 누적수익이라도 더 신뢰한다.",
+      "evidence": "단발 급등 vs 분산 상승 구분"
+    }
+  ]
+}
