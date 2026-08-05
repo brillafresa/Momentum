@@ -3,8 +3,12 @@
 """
 KRW Momentum Radar - 배치 스캔 실행기 (CLI)
 
-강제 유니버스 스캔 → 관심종목 기준으로 참조 가격 구성 →
+강제 유니버스 스캔 → (선택) 관심종목 가격 패널 구성 →
 analysis_utils의 단일 FMS/필터 로직으로 결과 산출 및 저장.
+
+v5.0.0 production FMS(``alive_pullback``)는 **절대 점수**라 관심종목
+reference 패널이 점수에 영향을 주지 않는다. 관심종목은 스캔 대상 제외·
+거래적합성 사전 걸러내기에만 쓰인다.
 
 사용법:
     python run_scan_batch.py [--mode FREE|IRP] [--skip-universe-update]
@@ -18,17 +22,15 @@ analysis_utils의 단일 FMS/필터 로직으로 결과 산출 및 저장.
 import os
 import sys
 import argparse
-import pandas as pd
 
 from universe_utils import (
     update_universe_file,
     load_universe_file,
     save_scan_results,
-    get_scan_results_info,
     MODE_FREE,
     MODE_IRP,
 )
-from watchlist_utils import load_watchlist, MODE_FREE as WL_MODE_FREE, MODE_IRP as WL_MODE_IRP
+from watchlist_utils import load_watchlist
 from analysis_utils import (
     build_prices_krw_from_symbols,
     calculate_fms_for_batch,
@@ -47,11 +49,11 @@ def main() -> int:
         help='FREE 모드에서 Finviz 유니버스 갱신 생략 (screened_universe.csv 등 기존 파일 사용)',
     )
     args = parser.parse_args()
-    
+
     mode = args.mode
     mode_label = "자유투자계좌" if mode == MODE_FREE else "퇴직연금IRP"
     print(f"[Batch] 🏦 모드: {mode_label} ({mode})")
-    
+
     # FREE 모드: 기본은 Finviz 유니버스 갱신. --skip-universe-update 시 기존 CSV 사용.
     if mode == MODE_FREE and not args.skip_universe_update:
         print("[Batch] 🔄 Updating universe with relaxed filters...")
@@ -64,41 +66,56 @@ def main() -> int:
     else:
         print("[Batch] ℹ️ IRP 모드: 수동 관리 유니버스 파일 사용 (korean_etf_univers.csv)")
 
-    print(f"[Batch] 📥 Loading watchlist ({mode_label}) and building reference prices...")
+    print(f"[Batch] 📥 Loading watchlist ({mode_label})...")
     watchlist = load_watchlist([], mode=mode)
-    
-    # Watchlist에서 실격 종목 필터링
+
+    # Watchlist에서 실격 종목 필터링 (이미 보유·관심 목록에서 거래부적합 제외)
     if watchlist:
         from analysis_utils import download_ohlc_prices, calculate_tradeability_filters
         watchlist_ohlc, _ = download_ohlc_prices(watchlist, '1y', '1d')
         if not watchlist_ohlc.empty:
             watchlist_flags, _ = calculate_tradeability_filters(watchlist_ohlc, watchlist)
-            # 실격되지 않은 종목만 사용
             valid_watchlist = [s for s in watchlist if s in watchlist_flags and not watchlist_flags[s]]
             if len(valid_watchlist) != len(watchlist):
-                print(f"[Batch] ⚠️ Filtered {len(watchlist) - len(valid_watchlist)} disqualified symbols from watchlist")
+                print(
+                    f"[Batch] ⚠️ Filtered {len(watchlist) - len(valid_watchlist)} "
+                    "disqualified symbols from watchlist"
+                )
                 watchlist = valid_watchlist
         else:
-            print("[Batch] ⚠️ Failed to download watchlist OHLC data; skipping disqualification filtering for reference data")
-    
-    ref_prices = build_prices_krw_from_symbols("1Y", watchlist)
-    if ref_prices.empty or ref_prices.shape[1] < 2:
-        print(
-            "[Batch] ❌ Current account watchlist reference requires at least "
-            "2 valid price series; aborting relative-FMS scan."
-        )
-        return 1
+            print(
+                "[Batch] ⚠️ Failed to download watchlist OHLC; "
+                "skipping tradeability filter on watchlist"
+            )
+
+    # API 호환용으로 watchlist 가격 패널을 넘길 수 있으나 v5 절대 FMS에는 미사용.
+    ref_prices = None
+    if watchlist:
+        ref_prices = build_prices_krw_from_symbols("1Y", watchlist)
+        if ref_prices is None or ref_prices.empty:
+            print(
+                "[Batch] ℹ️ Watchlist price panel empty; continuing with absolute FMS "
+                "(reference unused in v5.0)."
+            )
+            ref_prices = None
+        else:
+            print(
+                f"[Batch] ℹ️ Watchlist panel ready ({ref_prices.shape[1]} series; "
+                "v5.0 absolute FMS ignores reference for scoring)."
+            )
+    else:
+        print("[Batch] ℹ️ Empty watchlist; scanning full universe with absolute FMS.")
 
     print(f"[Batch] 📂 Loading universe symbols ({mode_label})...")
     ok, all_symbols, msg = load_universe_file(mode=mode)
     if not ok or not all_symbols:
         print(f"[Batch] ⚠️ Failed to load universe: {msg}")
         all_symbols = []
-    
+
     print(f"[Batch] 📊 Loaded {len(all_symbols)} total symbols")
-    
+
     if not all_symbols:
-        print(f"[Batch] ❌ No universe symbols to scan.")
+        print("[Batch] ❌ No universe symbols to scan.")
         return 1
 
     scan_targets = [s for s in all_symbols if s not in watchlist]
@@ -106,21 +123,32 @@ def main() -> int:
         print("[Batch] ℹ️ No new symbols to scan.")
         return 0
 
-    print(f"[Batch] 🚀 Calculating FMS for {len(scan_targets)} symbols (with tradeability filters)...")
-    print("[Batch] ℹ️ 'no data / delisted' messages are normal skips; rate limits are retried with backoff.")
+    print(
+        f"[Batch] 🚀 Calculating FMS for {len(scan_targets)} symbols "
+        "(with tradeability filters)..."
+    )
+    print(
+        "[Batch] ℹ️ 'no data / delisted' messages are normal skips; "
+        "rate limits are retried with backoff."
+    )
     results = calculate_fms_for_batch(scan_targets, reference_prices_krw=ref_prices)
     if results.empty:
         print("[Batch] ❌ No results were produced.")
         return 1
 
-    print(f"[Batch] ✅ Scored {len(results)} symbols; saving FMS ≥ {DEFAULT_FMS_THRESHOLD} ({mode_label})...")
+    print(
+        f"[Batch] ✅ Scored {len(results)} symbols; "
+        f"saving FMS ≥ {DEFAULT_FMS_THRESHOLD} ({mode_label})..."
+    )
     save_success, save_msg, saved_count = save_scan_results(
         results, fms_threshold=DEFAULT_FMS_THRESHOLD, mode=mode
     )
     print(f"[Batch] {save_msg}")
-    
+
     if save_success:
-        latest_pointer_path = os.path.join("scan_results", f"latest_scan_results_{mode.lower()}.csv")
+        latest_pointer_path = os.path.join(
+            "scan_results", f"latest_scan_results_{mode.lower()}.csv"
+        )
         print(f"[Batch] ✅ Saved latest to {latest_pointer_path}")
 
     print(f"[Batch] ✅ Done ({mode_label}).")
@@ -129,5 +157,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-

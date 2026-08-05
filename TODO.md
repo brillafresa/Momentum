@@ -1,13 +1,24 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-08-02** (KST) · 제품 버전 **v5.0.0**
+> 최종 갱신: **2026-08-05** (KST) · 제품 버전 **v5.0.1**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-08-05 — 배치↔UI FMS 경로 실측 + v5 ops 수용 (v5.0.1)
+
+- [x] 배치 vs UI FMS 차이 원인: v5 절대점수(reference 무영향); 잔차는 I/O·시차
+- [x] `harness/compare_batch_ui_fms.py` — 동일 시점 경로 ΔFMS 실측 (max|d|≈0.01, 순위상관 1.0)
+- [x] 생산 패널 경로 통일 **하지 않음**; 사전필터 정책 **유지**
+- [x] v5.0 FMS 운영 만족 → **잔차/재피팅 추가 라운드 보류** (다음 세션 기본 액션 아님)
+- [x] 배치 `relative-FMS` abort/문구 제거 (`run_scan_batch.py` + `docs/README_BATCH.md`)
+- [x] work-plan: `docs/work-plans/2026-08-05-batch-ui-fms-path-compare.md` /
+  `2026-08-02-fms-nonlinear-mc-refit.md` ops follow-up 닫음
+- [x] 푸시 전: pytest · offline path harness · app/batch import · 문서/버전 v5.0.1 동기화
 
 ### 2026-08-02 — v5.0.0 (alive_pullback 원점 재피팅 승격)
 
@@ -135,11 +146,16 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-- [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0 (실사용 피드백 후 추가 라운드 검토)
+> **2026-08-05**: FMS v5 잔차/재피팅·배치↔UI 경로 통일·사전필터 변경은 **완료/보류 결정**.  
+> 새 세션 기본 목표는 아래 중기 항목 또는 **사용자가 명시한 신규 pain**만.
+
+- [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0
+- [x] v5 ops 수용 — 추가 잔차 라운드 없음 (재개 조건: 사용자 명시 pain)
+- [x] 배치↔UI 경로 ΔFMS 실측 후 통일 보류
 - [x] LIVE IRP/FREE 배치로 v4.7.0 상대 Z + 현금성 게이트 재랭킹 확인 (사용자 직접 실행)
 - [x] (선택) get_filter_debug_info → core/tradeability.py 동반 이전
-- [x] (선택) ms_recalib_tune_vol_penalty 단순화 본문 정리
-- [x] ms_recalib_*.py → calibration/ 점진 이동
+- [x] (선택) fms_recalib_tune_vol_penalty 단순화 본문 정리
+- [x] fms_recalib_*.py → calibration/ 점진 이동
 
 ---
 
@@ -164,6 +180,9 @@
 - Streamlit UI 리디자인
 - 라이브 API E2E를 CI 필수화
 - OHLC `auto_adjust=True` 전환 (v4.3.1에서 기각)
+- **v5.0 FMS 잔차 사냥 / 추가 재피팅 라운드** (운영 만족·2026-08-05 보류; 사용자 명시 시에만)
+- **배치↔UI 가격 패널 경로 강제 통일** (2026-08-05 실측 후 불필요 판단)
+- **사전필터 조임/완화** (v5 LIVE 재실측·정책 변경 요청 전까지 현상 유지)
 
 ---
 
@@ -173,6 +192,7 @@
 python -m pytest
 python -m harness.run_fms_snapshot
 python -m harness.compare_cash_like_gate
+python -m harness.compare_batch_ui_fms --offline
 python fms_recalib_build_features.py
 python -m calibration.fms_recalib_inspect_patterns
 python fms_recalib_nonlinear_mc.py

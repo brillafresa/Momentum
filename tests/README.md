@@ -18,6 +18,7 @@ tests/
 │   ├── test_fms_scoring.py          # 골든 순위 · reference 불변(v5 절대)
 │   ├── test_fms_alive_pullback_production.py  # v5 동결 파라미터 · parity
 │   ├── test_nonlinear_mc_features.py         # SEG_* · residual features
+│   ├── test_batch_ui_fms_paths.py   # 배치 vs UI 캘린더 경로 · coverage
 │   ├── test_fms_cash_like_gate.py   # legacy sparse+cash gate
 │   ├── test_fms_recalib_parity.py
 │   ├── test_fms_features.py
@@ -39,6 +40,7 @@ python -m pytest
 python -m pytest tests/unit/ -q
 python -m harness.run_fms_snapshot
 python -m harness.compare_cash_like_gate
+python -m harness.compare_batch_ui_fms --offline
 ```
 
 ## 규칙
@@ -52,6 +54,7 @@ python -m harness.compare_cash_like_gate
   `test_fms_scoring.py`(골든 순위 · reference 불변),
   `test_fms_alive_pullback_production.py`(v5 SSOT),
   `test_nonlinear_mc_features.py`(SEG_*/잔차),
+  `test_batch_ui_fms_paths.py`(배치 vs UI 경로 · coverage),
   `test_fms_recalib_parity.py`(feature≡snapshot),
   `test_fms_cash_like_gate.py`(**legacy** sparse+gate).
 - legacy 수식 회귀: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune` /

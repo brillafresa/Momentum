@@ -4,11 +4,11 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-08-02 (KST) · 제품 버전 v5.0.0
+최종 갱신: 2026-08-05 (KST) · 제품 버전 v5.0.1
 
 ---
 
-## 0. 현재 구축된 검증 하네스 (v5.0.0)
+## 0. 현재 구축된 검증 하네스 (v5.0.x)
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -42,6 +42,8 @@
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
+| `harness/compare_batch_ui_fms.py` | 배치 vs UI 캘린더 경로 dFMS (동일·연속 실행) | `python -m harness.compare_batch_ui_fms --offline` / `--live` |
+| `tests/unit/test_batch_ui_fms_paths.py` | 경로 빌더 bit-identical · coverage 0.5 vs 0.9 드롭 | (pytest 포함) |
 | `harness/compare_cash_like_gate.py` | **legacy** 현금성 게이트 기여·영향 비교 | `python -m harness.compare_cash_like_gate` |
 | `harness/diagnose_fms_outlier.py` | 단일 티커 FMS 극단치 원인 LIVE 점검 | `python -m harness.diagnose_fms_outlier SYMBOL` |
 | `harness/check_relative_ranks.py` | (역사적) 관심종목 상대순위 LIVE 점검 — v5에서는 절대점수 확인용으로만 | `python -m harness.check_relative_ranks` |
@@ -58,6 +60,15 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.1 검증 요약 (2026-08-05 — 배치 게이트 + 경로 ΔFMS 하네스)**
+
+1. 배치가 watchlist reference &lt;2 일 때 스캔을 중단하던 v4.7 상대-FMS 게이트를 제거.
+   관심종목은 스캔 제외·거래적합성 걸러내기만; 점수에는 reference 미사용.
+2. `compare_batch_ui_fms`: 동일 원본에서 UI vs 배치 패널 경로 dFMS —
+   LIVE 혼합 24종 max|d|≈0.01–0.014, 순위상관 1.0 → **경로 강제 통일 불필요**.
+3. 운영: v5 FMS 추가 잔차/재피팅·사전필터 변경은 pain 명시 전 보류 (`TODO.md` 비범위).
+4. 회귀: `test_batch_ui_fms_paths` + 전체 pytest; app/`run_scan_batch` import 스모크.
 
 **v4.7.0 검증 요약 (관심종목 상대 Z — 역사적)**
 

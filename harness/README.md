@@ -13,6 +13,9 @@ python -m harness.run_fms_snapshot --prices tests/fixtures/synthetic_prices_krw.
 # 현금성 게이트: ungated vs gated 기여·ΔFMS (기본 패널 = cash_like fixture)
 python -m harness.compare_cash_like_gate
 python -m harness.compare_cash_like_gate --top 6
+
+# 배치 vs UI 캘린더 경로 dFMS (동일 fixture)
+python -m harness.compare_batch_ui_fms --offline
 ```
 
 ## LIVE (수동만 · CI 금지)
@@ -21,7 +24,16 @@ python -m harness.compare_cash_like_gate --top 6
 python -m harness.diagnose_fms_outlier 381560.KS
 python -m harness.check_relative_ranks
 python -m harness.check_relative_ranks --symbols KMI SU PBR
+
+# 동일 다운로드 → UI(coverage=0.5) vs 배치(coverage=0.9) FMS 차이 실측
+python -m harness.compare_batch_ui_fms --live
+python -m harness.compare_batch_ui_fms --live --limit 40 --top 20
+# UI식 시장별 다운로드 vs 배치 일괄 다운로드 (연속 실행)
+python -m harness.compare_batch_ui_fms --live --mirror-io --limit 40
 ```
+
+2026-08-05 실측: 연속 실행 시 max|dFMS|≈0.01·순위상관 1.0 → 경로 통일 보류.
+상세: `docs/work-plans/2026-08-05-batch-ui-fms-path-compare.md`.
 
 자동 assert가 필요하면 `tests/`에 테스트를 추가한다.
 상세 SSOT: [`HARNESS_RULES.md`](../HARNESS_RULES.md) §0.

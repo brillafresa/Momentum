@@ -5,6 +5,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.1] - 2026-08-05
+
+### 변경
+
+- **배치 CLI**: v4.7 “관심종목 reference ≥2 아니면 relative-FMS 중단” 게이트 제거.
+  v5.0 절대 `alive_pullback`에서는 reference가 점수에 쓰이지 않으므로, 관심종목이
+  비어 있어도 유니버스 스캔을 계속한다 (관심종목은 스캔 제외·거래적합성 걸러내기용).
+- **운영 수용**: v5.0 FMS 추가 잔차/재피팅 라운드·배치↔UI 패널 경로 강제 통일·사전필터
+  변경은 보류 (명시적 pain 발생 시에만 재개).
+
+### 검증 하네스
+
+- `harness/compare_batch_ui_fms.py` — 동일 시점(동일·mirror-io 다운로드)에서
+  UI(coverage=0.5) vs 배치(coverage=0.9) 패널 경로의 dFMS 실측
+  - LIVE 24종(미·한·홍·일): max|d|≈0.01–0.014, 순위상관 1.0, `|d|≥0.1` = 0
+  - 오프라인: 정렬 패널 bit-identical; coverage 0.5 vs 0.9 심볼 드롭 계약
+- `tests/unit/test_batch_ui_fms_paths.py` — 경로 빌더·coverage 계약 (네트워크 없음)
+- `docs/README_BATCH.md` — v5.0 절대 FMS 동작으로 동기화
+- 푸시 전: `python -m pytest` · `python -m harness.compare_batch_ui_fms --offline` ·
+  app/batch import 스모크
+
 ## [5.0.0] - 2026-08-02
 
 ### 변경

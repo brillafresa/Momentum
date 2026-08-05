@@ -59,7 +59,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.0, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.1, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -163,9 +163,11 @@ Momentum/
 - **감점 축**: `STALE_AFTER_RUN`(최근 약할 때), `RECENT_JUMP_SHARE_5D`.
 - **정규화**: 절대 피처 점수(동결 파라미터 `PRODUCTION_ALIVE_PULLBACK_PARAMS`).
   앱·배치 동일 수식; reference panel은 API 호환용이며 점수에 영향 없음.
+  배치는 관심종목 비어 있어도 스캔 계속 (v5.0.1; 관심종목은 스캔 제외·필터용).
 - **SSOT**: 피처는 `core/fms_features.py`, production 점수는
   `score_alive_pullback_from_params` / `score_production_fms_features`,
   orchestration과 `-999`는 `core/fms.py`.
+- **경로 ΔFMS 하네스**: `harness/compare_batch_ui_fms.py` (운영 미import).
 - **재보정**: NL → 비선형 MC (`calibration/fms_recalib_nonlinear_mc.py`).
   레거시 sparse는 `score_legacy_sparse_fms_features` + `fms_recalib_refit.py`.
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
