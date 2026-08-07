@@ -23,7 +23,9 @@ from yfinance import shared as yf_shared
 from yfinance.exceptions import YFRateLimitError
 # Pure scoring helpers live in core/; re-exported here for transitional callers.
 from core.indicators import (  # noqa: F401
+    align_bday_ffill,
     ema,
+    harmonize_calendar,
     last_vol_annualized,
     mask_non_positive_prices,
     returns_pct,
@@ -396,23 +398,6 @@ def download_fx(
         hkdkrw = pd.Series(dtype=float, name='HKDKRW')
 
     return usdkrw, usdjpy, jpykrw, hkdkrw
-
-
-def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
-    if df.empty:
-        return df
-    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
-    df = df.reindex(idx).ffill()
-    valid_ratio = df.count().div(len(df))
-    keep_cols = valid_ratio[valid_ratio >= coverage].index
-    return df[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
-
-
-def align_bday_ffill(df: pd.DataFrame) -> pd.DataFrame:
-    if df is None or len(df) == 0:
-        return df
-    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
-    return df.reindex(idx).ffill()
 
 
 def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:

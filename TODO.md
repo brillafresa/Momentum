@@ -1,13 +1,20 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-08-05** (KST) · 제품 버전 **v5.0.1**
+> 최종 갱신: **2026-08-07** (KST) · 제품 버전 **v5.0.2**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-08-07 — 종목별 native as-of FMS (v5.0.2)
+
+- [x] 다국가 trailing ffill phantom → SEG_* 창 밀림 (ITGR UI 10.24 vs 배치 5.15) 수정
+- [x] `core.indicators.harmonize_calendar` 컬럼별 last_valid clip (시장 무관·양방향)
+- [x] `returns_pct` / vol / YTD 컬럼별 as-of; app/analysis_utils 셔임 통일
+- [x] 회귀: `test_native_asof_calendar` · batch_ui paths · 전체 pytest · snapshot
 
 ### 2026-08-05 — 배치↔UI FMS 경로 실측 + v5 ops 수용 (v5.0.1)
 
@@ -146,9 +153,10 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-08-05**: FMS v5 잔차/재피팅·배치↔UI 경로 통일·사전필터 변경은 **완료/보류 결정**.  
-> 새 세션 기본 목표는 아래 중기 항목 또는 **사용자가 명시한 신규 pain**만.
+> **2026-08-07**: native as-of(v5.0.2)로 다국가 trailing ffill FMS 오염 수정 완료.  
+> 새 세션 기본 목표는 중기 엔트리포인트/adapters 정리 또는 **사용자가 명시한 신규 pain**.
 
+- [x] **2026-08-07 native as-of**: 컬럼별 last_valid clip → UI/배치 FMS 정합
 - [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0
 - [x] v5 ops 수용 — 추가 잔차 라운드 없음 (재개 조건: 사용자 명시 pain)
 - [x] 배치↔UI 경로 ΔFMS 실측 후 통일 보류

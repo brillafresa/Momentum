@@ -35,17 +35,72 @@ def mask_non_positive_prices(df: pd.DataFrame) -> pd.DataFrame:
     return out.where(out > 0.0)
 
 
-def returns_pct(df: pd.DataFrame, n: int) -> pd.Series:
-    """Last-row n-period percentage return per column.
+def align_bday_ffill(df: pd.DataFrame) -> pd.DataFrame:
+    """Reindex a single-market frame to weekdays and forward-fill gaps.
 
-    If the panel has ``<= n`` rows, returns an empty float Series indexed by
-    ``df.columns`` (all NaN).
+    Intended for one market's native calendar before multi-market concat.
+    Does not clip to last_valid (the frame's own span *is* the native span).
     """
-    if df.shape[0] <= n:
-        return pd.Series(index=df.columns, dtype=float)
-    dff = df.ffill()
-    r = dff.pct_change(periods=n, fill_method=None).iloc[-1]
-    return r
+    if df is None or len(df) == 0:
+        return df
+    idx = pd.date_range(df.index.min(), df.index.max(), freq="B")
+    return df.reindex(idx).ffill()
+
+
+def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
+    """Union B-day panel with ffill that does **not** extend past native as-of.
+
+    Multi-market concat introduces trailing NaNs when one market prints a day
+    another has not. Blanket ``ffill`` would fabricate flat bars and shift
+    SEG_* windows. This helper:
+
+    1. Records each column's ``last_valid_index`` before reindex.
+    2. Reindexes to a shared business-day grid and forward-fills (interior gaps).
+    3. Restores NaN for dates **after** that column's last real observation.
+    4. Drops columns whose non-NaN coverage is below ``coverage``.
+
+    Market labels are unused — US/KR/HK/JPN/future markets are treated the same.
+    """
+    if df is None or df.empty:
+        return df if df is not None else pd.DataFrame()
+
+    work = df.astype(float).copy()
+    last_valid = {col: work[col].last_valid_index() for col in work.columns}
+    idx = pd.date_range(work.index.min(), work.index.max(), freq="B")
+    out = work.reindex(idx).ffill()
+    for col, lv in last_valid.items():
+        if lv is None:
+            out[col] = np.nan
+        else:
+            out.loc[out.index > lv, col] = np.nan
+
+    valid_ratio = out.count().div(len(out))
+    keep_cols = valid_ratio[valid_ratio >= coverage].index
+    return out[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
+
+
+def returns_pct(df: pd.DataFrame, n: int) -> pd.Series:
+    """n-period percentage return at each column's last valid observation.
+
+    Trailing NaNs (other-market-only days after native as-of) are ignored.
+    Interior gaps are forward-filled only within the native span.
+    If a column has ``<= n`` valid points after that, its value is NaN.
+    """
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    out: dict[str, float] = {}
+    for col in df.columns:
+        s = df[col].astype(float)
+        lv = s.last_valid_index()
+        if lv is None:
+            out[col] = np.nan
+            continue
+        hist = s.loc[:lv].ffill().dropna()
+        if len(hist) <= n:
+            out[col] = np.nan
+            continue
+        out[col] = float(hist.iloc[-1] / hist.iloc[-(n + 1)] - 1.0)
+    return pd.Series(out, dtype=float)
 
 
 def r_squared_3m(prices_krw: pd.DataFrame) -> pd.Series:
@@ -95,21 +150,46 @@ def r_squared_3m(prices_krw: pd.DataFrame) -> pd.Series:
 
 
 def ytd_return(df: pd.DataFrame) -> pd.Series:
-    """Year-to-date return from the nearest session on/after Jan 1 to last close."""
-    if df.empty:
+    """Year-to-date return to each column's last valid close (native as-of)."""
+    if df is None or df.empty:
         return pd.Series(dtype=float)
-    dff = df.ffill()
-    last = dff.index[-1]
-    y0 = pd.Timestamp(datetime(last.year, 1, 1))
-    start_idx = dff.index.get_indexer([y0], method="nearest")[0]
-    return dff.iloc[-1] / dff.iloc[start_idx] - 1.0
+    out: dict[str, float] = {}
+    for col in df.columns:
+        s = df[col].astype(float)
+        lv = s.last_valid_index()
+        if lv is None:
+            out[col] = np.nan
+            continue
+        hist = s.loc[:lv].ffill().dropna()
+        if hist.empty:
+            out[col] = np.nan
+            continue
+        y0 = pd.Timestamp(datetime(lv.year, 1, 1))
+        start_idx = hist.index.get_indexer([y0], method="nearest")[0]
+        base = float(hist.iloc[start_idx])
+        last = float(hist.iloc[-1])
+        if base == 0.0:
+            out[col] = np.nan
+        else:
+            out[col] = last / base - 1.0
+    return pd.Series(out, dtype=float)
 
 
 def last_vol_annualized(df: pd.DataFrame, window: int = 20) -> pd.Series:
-    """Annualized volatility of the last ``window`` daily returns (sqrt(252))."""
-    rets = df.ffill().pct_change(fill_method=None).dropna()
-    if rets.empty:
-        return pd.Series(index=df.columns, dtype=float)
-    vol = rets.rolling(window).std().iloc[-1] * np.sqrt(252.0)
-    return vol
-
+    """Annualized volatility at each column's last valid observation (sqrt(252))."""
+    if df is None or df.empty:
+        return pd.Series(dtype=float)
+    out: dict[str, float] = {}
+    for col in df.columns:
+        s = df[col].astype(float)
+        lv = s.last_valid_index()
+        if lv is None:
+            out[col] = np.nan
+            continue
+        hist = s.loc[:lv].ffill()
+        rets = hist.pct_change(fill_method=None).dropna()
+        if len(rets) < window:
+            out[col] = np.nan
+            continue
+        out[col] = float(rets.iloc[-window:].std(ddof=1) * np.sqrt(252.0))
+    return pd.Series(out, dtype=float)

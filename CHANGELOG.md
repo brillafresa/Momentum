@@ -5,6 +5,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.2] - 2026-08-07
+
+### 수정
+
+- **다국가 캘린더 trailing ffill 오염**: `harmonize_calendar`가 공통 B-day로 전 컬럼을
+  연장 ffill하면서, 다른 시장만 열린 날에 가짜 평봉이 생기고 `SEG_*` 창이 밀리던 문제
+  (ITGR: UI FMS ≈10.24 vs 배치 ≈5.15).
+- **종목별 native as-of**: reindex/ffill 전 컬럼 `last_valid_index`를 저장하고, 그 날짜
+  **이후는 NaN 복원**. 시장/classify 분기 없음 — US·KR·HK·JPN·향후 시장 대칭.
+- `returns_pct` / `last_vol_annualized` / `ytd_return`도 패널 전역 `iloc[-1]` 대신
+  컬럼별 last valid에서 평가.
+- `harmonize_calendar` / `align_bday_ffill` SSOT를 `core/indicators.py`로 이동;
+  `analysis_utils`·`app.py`는 re-export/import.
+
+### 검증 하네스
+
+- `tests/unit/test_native_asof_calendar.py` — KR선행·US선행·3시장(HK) clip + FMS 불변
+- `tests/unit/test_indicators.py` — native-asof `returns_pct` · core≡analysis_utils 셔임
+- `tests/unit/test_batch_ui_fms_paths.py` — trailing as-of 보존 + 경로 FMS 일치
+- 푸시 전: `python -m pytest` · `python -m harness.run_fms_snapshot` · app/batch import 스모크
+
 ## [5.0.1] - 2026-08-05
 
 ### 변경

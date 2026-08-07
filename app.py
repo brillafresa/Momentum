@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.1
+# KRW Momentum Radar - v5.0.2
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -31,10 +31,12 @@ from watchlist_utils import (
 )
 from config import FMS_FORMULA
 from analysis_utils import (
+    align_bday_ffill,
     calculate_tradeability_filters as _au_trade_filters,
-    momentum_now_and_delta as _au_momentum_now_and_delta,
     calculate_fms_for_batch as _au_calculate_fms_for_batch,
     get_filter_debug_info,
+    harmonize_calendar,
+    momentum_now_and_delta as _au_momentum_now_and_delta,
 )
 from calibration_utils import (
     create_snapshot_id,
@@ -98,7 +100,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.1", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.2", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -292,24 +294,6 @@ def download_fx(period_="2y", interval="1d"):
     else:
         hkdkrw = pd.Series(dtype=float, name="HKDKRW")
     return usdkrw, usdjpy, jpykrw, hkdkrw, (miss1+miss2+miss3)
-
-def harmonize_calendar(df, coverage=0.9):
-    if df.empty: return df
-    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
-    df = df.reindex(idx).ffill()
-    # coverage 체크
-    valid_ratio = df.count().div(len(df))
-    keep_cols = valid_ratio[valid_ratio >= coverage].index
-    dropped_cols = valid_ratio[valid_ratio < coverage].index
-    if len(dropped_cols) > 0:
-        for col in dropped_cols:
-            log(f"DROP low coverage: {col} (coverage: {valid_ratio[col]:.2%} < {coverage:.0%})")
-    return df[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
-
-def align_bday_ffill(df):
-    if df is None or len(df)==0: return df
-    idx = pd.date_range(df.index.min(), df.index.max(), freq='B')
-    return df.reindex(idx).ffill()
 
 # ------------------------------
 # 로깅 함수
@@ -1078,7 +1062,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.1")
+st.title("⚡ KRW Momentum Radar v5.0.2")
 
 
 

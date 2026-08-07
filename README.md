@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v5.0.1**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v5.0.2**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -227,7 +227,15 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v5.0.1 (현재)
+### v5.0.2 (현재)
+
+- **수정**: 다국가 패널 `harmonize_calendar`가 종목별 마지막 실거래일 너머로 ffill하던
+  trailing phantom 봉을 제거 (컬럼별 native as-of). KR/US/HK 어느 쪽이 앞서도 SEG_* 창이
+  밀리지 않음 (ITGR: UI 10.24 → 배치와 동일 ~5.15).
+- `returns_pct` / `last_vol_annualized` / `ytd_return`도 컬럼별 last valid 기준으로 통일.
+- 회귀: `tests/unit/test_native_asof_calendar.py`
+
+### v5.0.1
 
 - **배치 v5 절대 FMS 문구/게이트**: watchlist≥2 “relative-FMS” 중단 제거 (관심종목 비어도 스캔 계속)
 - **배치↔UI 경로 ΔFMS 하네스**: `harness/compare_batch_ui_fms.py` + unit 계약 (연속 실행 시 max|d|≈0.01·순위 불변 → 경로 통일 보류)

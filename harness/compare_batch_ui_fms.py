@@ -5,9 +5,10 @@ Compare FMS under batch vs UI calendar/panel paths (Validation Harness).
 Purpose
 -------
 v5.0.0 production FMS is absolute (``alive_pullback``): reference panels do not
-change scores. Residual batch↔UI differences come from how KRW price panels are
-built (per-market ``align_bday_ffill`` + ``coverage=0.5`` in the UI vs shared
-index + ``coverage=0.9`` in batch chunks).
+change scores. Residual batch↔UI differences can still come from how KRW price
+panels are built, but ``harmonize_calendar`` (v5.0.2) clips each column to its
+native last observation so trailing other-market days no longer fabricate flat
+bars that shift SEG_* windows.
 
 This harness downloads **once** (or injects fixtures), then builds both panels
 and scores with the same OHLC so wall-clock drift is eliminated. Use it to

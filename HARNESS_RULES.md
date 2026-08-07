@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-08-05 (KST) · 제품 버전 v5.0.1
+최종 갱신: 2026-08-07 (KST) · 제품 버전 v5.0.2
 
 ---
 
@@ -18,7 +18,7 @@
 | `core/fms_features.py` (`score_legacy_sparse_fms_features` / `cash_like_strength`) | **v4.6–v4.7 archived** sparse+상대Z+현금 게이트 | `test_fms_cash_like_gate.py` / `harness.compare_cash_like_gate` |
 | `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS | fixture; `analysis_utils` 셔임 |
 | `core/fms.py` (`score_legacy_fms_from_feature_frame` / `FmsScoreParams`) | **pre-v4.6 archived formula** (tune 스크립트·회귀만) | `test_fms_params` / `test_fms_vol_tune` / `test_fms_recent_continuation` |
-| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` / `mask_non_positive_prices` | `tests/unit/test_indicators.py` |
+| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `ytd_return` / `last_vol_annualized` / `mask_non_positive_prices` / **`harmonize_calendar`(native as-of)** / `align_bday_ffill` | `tests/unit/test_indicators.py` / `test_native_asof_calendar.py` |
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
 | `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 레거시 게이트 + v5 저순위 계약 |
@@ -43,7 +43,8 @@
 | `tests/contract/test_prefilter_not_stricter_than_local.py` | Finviz Perf 사전필터 ≤ 로컬 (배칭용 early cut) | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | 동일 fixture 수동 CLI | `python -m harness.run_fms_snapshot` |
 | `harness/compare_batch_ui_fms.py` | 배치 vs UI 캘린더 경로 dFMS (동일·연속 실행) | `python -m harness.compare_batch_ui_fms --offline` / `--live` |
-| `tests/unit/test_batch_ui_fms_paths.py` | 경로 빌더 bit-identical · coverage 0.5 vs 0.9 드롭 | (pytest 포함) |
+| `tests/unit/test_batch_ui_fms_paths.py` | 경로 빌더 bit-identical · coverage 0.5 vs 0.9 드롭 · **native as-of 보존** | (pytest 포함) |
+| `tests/unit/test_native_asof_calendar.py` | 다국가 trailing ffill 금지 · 양방향/3시장 clip · FMS 불변 | (pytest 포함) |
 | `harness/compare_cash_like_gate.py` | **legacy** 현금성 게이트 기여·영향 비교 | `python -m harness.compare_cash_like_gate` |
 | `harness/diagnose_fms_outlier.py` | 단일 티커 FMS 극단치 원인 LIVE 점검 | `python -m harness.diagnose_fms_outlier SYMBOL` |
 | `harness/check_relative_ranks.py` | (역사적) 관심종목 상대순위 LIVE 점검 — v5에서는 절대점수 확인용으로만 | `python -m harness.check_relative_ranks` |
@@ -60,6 +61,14 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.2 검증 요약 (2026-08-07 — 종목별 native as-of)**
+
+1. `harmonize_calendar`는 컬럼별 `last_valid_index` 너머로 ffill하지 않음 (시장 라벨 무관).
+2. KR선행·US선행·HK만 앞선 3시장 패널에서 trailing phantom → FMS 불변 계약.
+3. `returns_pct` / vol / YTD도 컬럼별 last valid (패널 전역 `iloc[-1]` 재ffill 제거).
+4. `app.py` 로컬 harmonize 복제 제거 → `core.indicators` SSOT.
+5. 회귀: `test_native_asof_calendar` + 전체 pytest; snapshot 골든 순위 유지.
 
 **v5.0.1 검증 요약 (2026-08-05 — 배치 게이트 + 경로 ΔFMS 하네스)**
 

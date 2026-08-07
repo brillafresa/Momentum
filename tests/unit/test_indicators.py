@@ -115,3 +115,16 @@ def test_analysis_utils_reexports_core_indicators() -> None:
     assert au.returns_pct is ci.returns_pct
     assert au.r_squared_3m is ci.r_squared_3m
     assert au.mask_non_positive_prices is ci.mask_non_positive_prices
+    assert au.harmonize_calendar is ci.harmonize_calendar
+    assert au.align_bday_ffill is ci.align_bday_ffill
+
+
+def test_returns_pct_uses_column_native_asof_not_panel_tail() -> None:
+    """Trailing NaN from another market must not shift n-period returns."""
+    idx = pd.bdate_range("2024-01-01", periods=6)
+    a = pd.Series([100.0, 110.0, 120.0, 130.0, 140.0, np.nan], index=idx, name="A")
+    b = pd.Series([10.0, 10.0, 10.0, 10.0, 10.0, 11.0], index=idx, name="B")
+    got = returns_pct(pd.concat([a, b], axis=1), 2)
+    # A as-of idx[4]: 140/120 - 1; not contaminated by idx[5]
+    assert got["A"] == pytest.approx(140.0 / 120.0 - 1.0)
+    assert got["B"] == pytest.approx(11.0 / 10.0 - 1.0)

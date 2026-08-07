@@ -35,5 +35,10 @@ python -m harness.compare_batch_ui_fms --live --mirror-io --limit 40
 2026-08-05 실측: 연속 실행 시 max|dFMS|≈0.01·순위상관 1.0 → 경로 통일 보류.
 상세: `docs/work-plans/2026-08-05-batch-ui-fms-path-compare.md`.
 
+2026-08-07 (v5.0.2): 다국가 trailing ffill 오염은 `core.indicators.harmonize_calendar`
+native as-of clip으로 수정. 오프라인 회귀:
+`python -m pytest tests/unit/test_native_asof_calendar.py -q`
+상세: `docs/work-plans/2026-08-07-native-asof-fms.md`.
+
 자동 assert가 필요하면 `tests/`에 테스트를 추가한다.
 상세 SSOT: [`HARNESS_RULES.md`](../HARNESS_RULES.md) §0.

@@ -5,8 +5,8 @@ Offline contracts for batch vs UI calendar path FMS comparison.
 Purpose
 -------
 - Identical aligned panels → bit-identical FMS (builders are not a hidden scorer fork).
-- After ffill harmonization, staggered native calendars still converge (documents that
-  pure calendar gymnastics rarely move v5 absolute FMS once series are filled).
+- After native-asof harmonize, staggered calendars still agree on shared symbols:
+  interior gaps may ffill, but trailing days past each column's last real bar stay NaN.
 - Coverage 0.5 vs 0.9 can change *which* symbols remain, not the shared-symbol math
   when both keep the name.
 
@@ -42,17 +42,29 @@ def test_identical_calendar_paths_match_fms(
     assert float(abs_d.max()) < 1e-9
 
 
-def test_staggered_calendars_converge_after_ffill(
+def test_staggered_calendars_preserve_native_asof_and_match_fms(
     synthetic_prices_krw: pd.DataFrame,
     synthetic_ohlc: pd.DataFrame,
 ) -> None:
-    """Per-market native gaps still ffill to the same trailing path → same FMS."""
+    """Staggered native ends stay clipped; shared-symbol FMS still matches."""
     gapped = inject_staggered_calendar_gaps(synthetic_prices_krw, gap_frac=0.12)
     frame_a, frame_b = split_into_staggered_market_frames(gapped)
     ui = build_ui_style_from_market_frames(frame_a, frame_b)
     batch_raw = pd.concat([frame_a, frame_b], axis=1).sort_index()
     ordered = [c for c in gapped.columns if c in batch_raw.columns]
     batch = build_batch_style_prices_krw(batch_raw[ordered])
+
+    # Each builder must not invent bars past the pre-harmonize last real print.
+    for col in ordered:
+        if col in ui.columns and col in gapped.columns:
+            native_last = gapped[col].last_valid_index()
+            if native_last is not None and ui.index.max() > native_last:
+                assert pd.isna(ui.loc[ui.index > native_last, col]).all()
+        if col in batch.columns and col in gapped.columns:
+            native_last = gapped[col].last_valid_index()
+            if native_last is not None and batch.index.max() > native_last:
+                assert pd.isna(batch.loc[batch.index > native_last, col]).all()
+
     result = compare_fms_paths(ui, batch, synthetic_ohlc)
     finite = result.comparison[
         (result.comparison["FMS_UI"] != -999.0)
