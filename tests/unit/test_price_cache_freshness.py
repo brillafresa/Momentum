@@ -77,25 +77,39 @@ def _sample_prices():
     return pd.DataFrame({"AAA": range(10, 20), "BBB": range(20, 30)}, index=idx)
 
 
+def test_caching_adapter_cold_path_skips_probe(tmp_path: Path):
+    """No disk entry → one full get_prices only (no 5d probe round-trip)."""
+    prices = _sample_prices()
+    inner = _CountingFixture(prices=prices)
+    cache = DiskPriceCache(root=tmp_path / "md")
+    adapter = CachingMarketDataAdapter(inner, cache=cache, probe_period="5d")
+
+    out1, miss1 = adapter.get_prices(["AAA", "BBB"], "1y", "1d")
+    assert miss1 == []
+    assert list(out1.columns) == ["AAA", "BBB"]
+    assert inner.price_calls == 1
+    assert adapter.stats["probes"] == 0
+    assert adapter.stats["cold_misses"] == 2
+
+
 def test_caching_adapter_second_call_hits_disk(tmp_path: Path):
     prices = _sample_prices()
     inner = _CountingFixture(prices=prices)
     cache = DiskPriceCache(root=tmp_path / "md")
     adapter = CachingMarketDataAdapter(inner, cache=cache, probe_period="5d")
 
-    # First call: probe + full miss → inner get_prices called twice (probe + full)
+    # Cold: full download only
     out1, miss1 = adapter.get_prices(["AAA", "BBB"], "1y", "1d")
     assert miss1 == []
     assert list(out1.columns) == ["AAA", "BBB"]
-    calls_after_first = inner.price_calls
-    assert calls_after_first >= 2
+    assert inner.price_calls == 1
 
-    # Second call: probe still hits inner, but full download skipped (disk HIT)
+    # Warm: probe cached symbols only, then HIT (no second full download)
     out2, miss2 = adapter.get_prices(["AAA", "BBB"], "1y", "1d")
     assert miss2 == []
     assert list(out2.columns) == ["AAA", "BBB"]
-    # Only probe call(s) added — no second full miss download for both
-    assert inner.price_calls == calls_after_first + 1
+    assert inner.price_calls == 2  # +1 probe
+    assert adapter.stats["probes"] == 1
     assert adapter.stats["hits"] >= 2
 
 

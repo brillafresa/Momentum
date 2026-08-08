@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v5.0.3**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v5.0.4**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -45,7 +45,7 @@
 - **유니버스 파일 관리**: 스크린된 유니버스 파일 업로드/다운로드
 - **실시간 진행률 표시**: 유니버스 업데이트 및 FMS 스캔 과정의 실시간 진행률 표시
 - **FMS 스캔**: 사전 필터링된 목록에서 모멘텀 상위 종목 탐색
-- **스캔 결과 영구 저장**: FMS 2.0 이상 종목을 자동으로 파일에 저장하여 세션 간 유지
+- **스캔 결과 영구 저장**: FMS ≥ 0.0(절대 점수 저장 하한) 종목을 자동으로 파일에 저장하여 세션 간 유지
 - **동적 후보 리스트**: 종목 추가 시 후순위 종목이 자동으로 후보로 올라오는 스마트 관리
 - **페이징 시스템**: 5~30개 선택 가능한 페이지당 표시 종목 수로 대량 후보 효율적 탐색
 - **FMS 임계값 필터링**: 슬라이더로 원하는 FMS 점수 이상의 종목만 표시
@@ -227,7 +227,12 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v5.0.3 (현재)
+### v5.0.4 (현재)
+
+- 캐시 adapter cold-path probe 제거 → 배치 시 미국 청크 레이트 실패로 USA가 신규탐색에서 사라지던 문제 수정
+- 검증: `test_price_cache_freshness` · `harness.smoke_multi_market_batch` · `harness.smoke_usa_first_batch` · FREE 풀 배치/UI
+
+### v5.0.3
 
 - 세부보기 DetailViewAtom(심볼↔차트 원자 결합) + 세션 FMS 메모
 - 배치·UI 공유 디스크 캐시 + last-bar probe 신선도

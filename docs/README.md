@@ -12,7 +12,7 @@
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 배포 가이드 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 기여 가이드 |
 | [README_BATCH.md](README_BATCH.md) | 배치 스캔·작업 스케줄러·레이트리밋/delisted 안내 |
-| [work-plans/](work-plans/) | 세션별 작업 일지 — 최신: [2026-08-08-detail-view-cache](work-plans/2026-08-08-detail-view-cache.md) |
+| [work-plans/](work-plans/) | 세션별 작업 일지 — 최신: [2026-08-08-cache-probe-warm-only](work-plans/2026-08-08-cache-probe-warm-only.md) (v5.0.4) · [detail-view-cache](work-plans/2026-08-08-detail-view-cache.md) (v5.0.3) |
 
 ## 루트에 남는 문서
 

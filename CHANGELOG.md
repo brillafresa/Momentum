@@ -5,6 +5,25 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.4] - 2026-08-08
+
+### 수정
+
+- **배치 캐시 probe 과호출**: `CachingMarketDataAdapter`가 매 요청마다 전 심볼에
+  5d probe를 수행해 Yahoo 호출이 약 2~4배(가격 probe+full + OHLC probe+full)로
+  늘어, 유니버스 앞쪽 **미국 청크가 레이트 리밋에 먼저 실패**하고 뒤쪽 한국/홍콩만
+  남는 부작용 (신규 종목 탐색에 USA 없음).
+- **cold path는 probe 생략**: 디스크에 없는 심볼은 바로 full period 다운로드.
+  probe는 **이미 캐시된(warm) 심볼만** 대상으로 함.
+
+### 검증 하네스
+
+- `tests/unit/test_price_cache_freshness.py` — cold path probe=0 · warm HIT
+- `python -m harness.smoke_multi_market_batch` — LIVE USA+KOR+HKG
+- `python -m harness.smoke_usa_first_batch` — LIVE USA-선행 중규모 배치
+- 로컬 운영형 FREE 풀 배치 + UI 신규탐색에서 USA 복구 확인
+- work-plan: `docs/work-plans/2026-08-08-cache-probe-warm-only.md`
+
 ## [5.0.3] - 2026-08-08
 
 ### 추가

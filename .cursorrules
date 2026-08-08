@@ -51,8 +51,9 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
    - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
    - 모드별 배치 스캔 결과 저장 및 로드
 15. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
-16. **세부보기 캐시 (v5.0.3)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
-    배치/UI 공유 디스크 캐시 + last-bar probe (`adapters/price_cache.py`)
+16. **세부보기·디스크 캐시 (v5.0.3–5.0.4)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
+    배치/UI 공유 디스크 캐시 + **warm-only** last-bar probe (`adapters/price_cache.py`;
+    cold miss는 probe 생략 — v5.0.4)
 
 ## 파일 구조
 ```
@@ -61,7 +62,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.3, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.4, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -121,7 +122,9 @@ Momentum/
 - Z-score 재현을 위해 타깃·`reference_prices_krw` 패널을 테스트에서 함께 고정한다.
   (v5.0 production은 절대 점수라 reference가 점수에 영향 없음; 레거시/포트 계약 테스트용.)
 - **디스크 캐시** (`adapters/price_cache.py`, 런타임 `cache/market_data/`): 배치 write-through +
-  UI last-bar probe. `app.py`/`run_scan_batch.py`는 `tests/`·`harness/`를 import하지 않는다.
+  UI **warm-only** last-bar probe (캐시 없는 심볼은 full download만). `app.py`/`run_scan_batch.py`는
+  `tests/`·`harness/`를 import하지 않는다. LIVE 회귀: `harness.smoke_multi_market_batch` /
+  `harness.smoke_usa_first_batch`.
 
 ### 3. 자동화된 테스트 하네스
 - 비즈니스 로직은 `tests/`에서 격리 검증 (극단 변동성, 결측, 필터 실격 `-999` 등 엣지 케이스 포함).

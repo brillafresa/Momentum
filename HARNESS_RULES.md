@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-08-08 (KST) · 제품 버전 v5.0.3
+최종 갱신: 2026-08-08 (KST) · 제품 버전 v5.0.4
 
 ---
 
@@ -15,7 +15,7 @@
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
 | `adapters/ui_data_bundle.py` (`fingerprint_price_panel` / `DetailViewAtom` / `reconcile_detail_selection`) | 세부보기 심볼↔시계열 원자 결합 · 세션 번들 지문 | `test_ui_panel_fingerprint.py` / `test_detail_view_atom.py` |
-| `adapters/price_cache.py` (`needs_refresh` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · last-bar probe | `test_price_cache_freshness.py` |
+| `adapters/price_cache.py` (`needs_refresh` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · **warm-only** last-bar probe | `test_price_cache_freshness.py` / `harness.smoke_multi_market_batch` / `harness.smoke_usa_first_batch` |
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -68,6 +68,14 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.4 검증 요약 (2026-08-08 — 캐시 probe 과호출 수정)**
+
+1. Cold miss는 probe 없이 full download 1회.
+2. Warm 심볼만 5d probe → HIT/MISS.
+3. LIVE: USA+KOR+HKG smoke · USA-선행 중규모 배치에서 3시장 모두 점수 산출.
+4. 로컬 운영형 FREE 풀 배치 + UI 신규탐색에서 USA 복구 확인.
+5. 상세 work-plan: `docs/work-plans/2026-08-08-cache-probe-warm-only.md`.
 
 **v5.0.3 검증 요약 (2026-08-08 — 세부보기 캐시 + last-bar probe)**
 

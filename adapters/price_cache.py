@@ -180,7 +180,15 @@ class DiskPriceCache:
 
 
 class CachingMarketDataAdapter:
-    """MarketDataPort wrapper: last-bar probe → disk HIT or full download + save."""
+    """MarketDataPort wrapper: last-bar probe → disk HIT or full download + save.
+
+    Important: **only symbols that already have a cache entry are probed**.
+    Cold symbols skip the short-period probe and go straight to a full download.
+    Probing every ticker on every batch chunk roughly doubled/quadrupled Yahoo
+    calls (prices probe + full + OHLC probe + full) and caused early (usually
+    USA) outer chunks to fail under rate limits while later KR/HK chunks
+    succeeded — surfacing as “신규 종목 탐색에 미국 종목 없음”.
+    """
 
     def __init__(
         self,
@@ -193,10 +201,13 @@ class CachingMarketDataAdapter:
         self.cache = cache if cache is not None else DiskPriceCache()
         self.probe_period = probe_period
         self.write_through = write_through
-        self.stats = {"hits": 0, "misses": 0, "stale_hits": 0, "probes": 0}
+        self.stats = {"hits": 0, "misses": 0, "stale_hits": 0, "probes": 0, "cold_misses": 0}
 
     def _probe_last_bars(self, tickers: Sequence[str], interval: str) -> dict:
-        """Download short history and map symbol → last bar date."""
+        """Download short history and map symbol → last bar date.
+
+        Callers must pass only symbols that already have disk cache entries.
+        """
         tickers = [str(t) for t in tickers]
         if not tickers:
             return {}
@@ -204,7 +215,7 @@ class CachingMarketDataAdapter:
         try:
             panel, _ = self.inner.get_prices(list(tickers), self.probe_period, interval)
         except Exception:
-            return {}
+            return {t: None for t in tickers}
         out = {}
         for t in tickers:
             if panel is not None and not panel.empty and t in panel.columns:
@@ -213,40 +224,53 @@ class CachingMarketDataAdapter:
                 out[t] = None
         return out
 
+    def _series_from_cached_adj(self, cached: pd.DataFrame, symbol: str) -> pd.Series:
+        col = cached.iloc[:, 0] if cached.shape[1] >= 1 else cached.squeeze()
+        if isinstance(col, pd.DataFrame):
+            col = col.iloc[:, 0]
+        col = col.copy()
+        col.name = symbol
+        return col
+
     def get_prices(self, tickers: List[str], period_: str, interval: str) -> Tuple[pd.DataFrame, List[str]]:
         tickers = [str(t) for t in tickers]
         if not tickers:
             return pd.DataFrame(), []
 
-        probed = self._probe_last_bars(tickers, interval)
-        hit_cols = []
-        miss_syms = []
-        frames = []
-
+        cached_map: dict = {}
+        cold: List[str] = []
         for t in tickers:
             cached = self.cache.load_symbol_series(t, "adj_close")
-            cached_last = last_bar_date(cached) if cached is not None else self.cache.cached_last_bar(t, "adj_close")
+            if cached is not None and not cached.empty:
+                cached_map[t] = cached
+            else:
+                cold.append(t)
+
+        # Probe only warm (already cached) symbols — never the full request set.
+        probed = self._probe_last_bars(list(cached_map.keys()), interval) if cached_map else {}
+
+        frames: List[pd.Series] = []
+        miss_syms: List[str] = list(cold)
+        self.stats["cold_misses"] += len(cold)
+
+        for t, cached in cached_map.items():
+            cached_last = last_bar_date(cached)
             probed_last = probed.get(t)
-            refresh = needs_refresh(cached_last, probed_last)
-            if not refresh and cached is not None and not cached.empty:
+            if not needs_refresh(cached_last, probed_last):
                 if probed_last is None and cached_last is not None:
                     self.stats["stale_hits"] += 1
                 else:
                     self.stats["hits"] += 1
-                col = cached.iloc[:, 0] if cached.shape[1] >= 1 else cached.squeeze()
-                if isinstance(col, pd.DataFrame):
-                    col = col.iloc[:, 0]
-                col = col.copy()
-                col.name = t
-                frames.append(col)
-                hit_cols.append(t)
+                frames.append(self._series_from_cached_adj(cached, t))
             else:
                 miss_syms.append(t)
                 self.stats["misses"] += 1
 
         missing: List[str] = []
         if miss_syms:
-            fresh, miss = self.inner.get_prices(miss_syms, period_, interval)
+            # Preserve request order among misses
+            miss_ordered = [t for t in tickers if t in set(miss_syms)]
+            fresh, miss = self.inner.get_prices(miss_ordered, period_, interval)
             missing.extend(miss)
             if fresh is not None and not fresh.empty:
                 if self.write_through:
@@ -259,7 +283,6 @@ class CachingMarketDataAdapter:
 
         out = pd.concat(frames, axis=1).sort_index()
         out = out.loc[:, ~out.columns.duplicated()]
-        # Preserve request order where possible
         ordered = [t for t in tickers if t in out.columns]
         out = out[ordered]
         still_missing = [t for t in tickers if t not in out.columns]
@@ -271,17 +294,26 @@ class CachingMarketDataAdapter:
         if not tickers:
             return pd.DataFrame(), []
 
-        # Probe via Adj Close last bars (same calendar freshness signal)
-        probed = self._probe_last_bars(tickers, interval)
-        hit_blocks = []
-        miss_syms = []
-
+        cached_map: dict = {}
+        cold: List[str] = []
         for t in tickers:
             cached = self.cache.load_symbol_series(t, "ohlc")
-            cached_last = last_bar_date(cached) if cached is not None else self.cache.cached_last_bar(t, "ohlc")
+            if cached is not None and not cached.empty:
+                cached_map[t] = cached
+            else:
+                cold.append(t)
+
+        # Freshness probe only for warm OHLC entries (Adj Close 5d as calendar signal).
+        probed = self._probe_last_bars(list(cached_map.keys()), interval) if cached_map else {}
+
+        hit_blocks: List[pd.DataFrame] = []
+        miss_syms: List[str] = list(cold)
+        self.stats["cold_misses"] += len(cold)
+
+        for t, cached in cached_map.items():
+            cached_last = last_bar_date(cached)
             probed_last = probed.get(t)
-            refresh = needs_refresh(cached_last, probed_last)
-            if not refresh and cached is not None and not cached.empty:
+            if not needs_refresh(cached_last, probed_last):
                 if probed_last is None and cached_last is not None:
                     self.stats["stale_hits"] += 1
                 else:
@@ -293,7 +325,8 @@ class CachingMarketDataAdapter:
 
         missing: List[str] = []
         if miss_syms:
-            fresh, miss = self.inner.get_ohlc(miss_syms, period_, interval)
+            miss_ordered = [t for t in tickers if t in set(miss_syms)]
+            fresh, miss = self.inner.get_ohlc(miss_ordered, period_, interval)
             missing.extend(miss)
             if fresh is not None and not fresh.empty:
                 if self.write_through:
@@ -304,24 +337,20 @@ class CachingMarketDataAdapter:
             return pd.DataFrame(), list(dict.fromkeys(missing + miss_syms))
 
         out = pd.concat(hit_blocks, axis=1).sort_index()
-        # Drop duplicate symbol blocks if any
         if isinstance(out.columns, pd.MultiIndex):
             seen = set()
             keep = []
             for col in out.columns:
-                sym = col[0]
-                if sym in seen and col in keep:
-                    continue
                 key = (col[0], col[1]) if isinstance(col, tuple) else col
                 if key in seen:
                     continue
                 seen.add(key)
                 keep.append(col)
             out = out.loc[:, keep]
-        still_missing = []
-        if isinstance(out.columns, pd.MultiIndex):
             available = set(out.columns.get_level_values(0))
             still_missing = [t for t in tickers if t not in available]
+        else:
+            still_missing = [t for t in tickers if t not in out.columns]
         missing = list(dict.fromkeys(missing + still_missing))
         return out, missing
 

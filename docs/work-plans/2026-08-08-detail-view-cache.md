@@ -31,3 +31,8 @@ Status: `done` · product **v5.0.3**
 
 - `python -m pytest` EXIT=0
 - 수동: 세부보기 A→B→A, 추가/삭제 후 헤더 티커 = 차트 hover; 캐시 초기화 동작
+
+## Follow-up (v5.0.4)
+
+Cold 심볼까지 probe하던 부작용으로 USA 선행 청크가 레이트 실패 →
+warm-only probe로 수정. 상세: [`2026-08-08-cache-probe-warm-only.md`](2026-08-08-cache-probe-warm-only.md).

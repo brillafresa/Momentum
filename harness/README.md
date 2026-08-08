@@ -40,6 +40,11 @@ native as-of clip으로 수정. 오프라인 회귀:
 `python -m pytest tests/unit/test_native_asof_calendar.py -q`
 상세: `docs/work-plans/2026-08-07-native-asof-fms.md`.
 
+2026-08-08 (v5.0.4): warm-only last-bar probe (cold miss skips probe).
+LIVE smoke: `python -m harness.smoke_multi_market_batch`
+USA-first: `python -m harness.smoke_usa_first_batch`
+상세: `docs/work-plans/2026-08-08-cache-probe-warm-only.md`.
+
 2026-08-08 (v5.0.3): 세부보기 DetailViewAtom + 세션 FMS 메모 + 디스크 last-bar probe.
 오프라인: `python -m pytest tests/unit/test_detail_view_atom.py tests/unit/test_price_cache_freshness.py -q`
 상세: `docs/work-plans/2026-08-08-detail-view-cache.md`.
