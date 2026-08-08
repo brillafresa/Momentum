@@ -1,13 +1,22 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-08-07** (KST) · 제품 버전 **v5.0.2**
+> 최종 갱신: **2026-08-08** (KST) · 제품 버전 **v5.0.3**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-08-08 — 세부보기 캐시 + 공유 디스크 last-bar probe (v5.0.3)
+
+- [x] DetailViewAtom (심볼↔차트 원자 결합 · fail-closed)
+- [x] UI 세션 번들 메모로 세부보기 전환 시 FMS 재계산 생략
+- [x] selectbox 고정 key + reconcile (심볼 SSOT)
+- [x] `CachingMarketDataAdapter` + `cache/market_data/` last-bar probe
+- [x] 배치 write-through · UI 다운로드 위임
+- [x] 하네스: fingerprint / atom / freshness pytest
 
 ### 2026-08-07 — 종목별 native as-of FMS (v5.0.2)
 
@@ -153,9 +162,10 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-08-07**: native as-of(v5.0.2)로 다국가 trailing ffill FMS 오염 수정 완료.  
-> 새 세션 기본 목표는 중기 엔트리포인트/adapters 정리 또는 **사용자가 명시한 신규 pain**.
+> **2026-08-08**: 세부보기 캐시(v5.0.3) 완료.  
+> 다음 기본 축은 중기 엔트리포인트/adapters 잔여 정리 또는 **사용자 명시 신규 pain**.
 
+- [x] **2026-08-08 detail-view cache**: Atom + 세션 메모 + 디스크 last-bar probe
 - [x] **2026-08-07 native as-of**: 컬럼별 last_valid clip → UI/배치 FMS 정합
 - [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0
 - [x] v5 ops 수용 — 추가 잔차 라운드 없음 (재개 조건: 사용자 명시 pain)
@@ -176,7 +186,7 @@
 
 ## 중기 (엔트리포인트 정리)
 
-- [ ] `app.py` 중복 `download_*` / indicator 제거 → adapters + core
+- [~] `app.py` 중복 `download_*` → adapters 캐시 어댑터 위임 (v5.0.3; `_extract_adj_close` 등 잔여 정리 가능)
 - [ ] `universe_utils` / `watchlist_utils` → `adapters/` + 셔임
 - [ ] 배치 fixture 스모크 (네트워크 없이 스코어만)
 

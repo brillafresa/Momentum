@@ -5,6 +5,32 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.3] - 2026-08-08
+
+### 추가
+
+- **세부보기 DetailViewAtom**: 티커·표시명·가격 시계열·FMS 행을 원자 객체로 결합.
+  라벨/차트가 어긋나면 fail-closed(에러 배너, 차트 미표시).
+- **UI 세션 번들 메모**: 동일 패널 지문에서 `momentum_now_and_delta` 재계산 생략
+  (세부보기 종목 전환 체감 지연 완화).
+- **공유 디스크 캐시** (`cache/market_data/`): 배치·UI가
+  `CachingMarketDataAdapter` + last-bar probe로 HIT/MISS 판정.
+  같은 calendar date면 HIT(장중 미세 갱신 무시); probe 실패 시 캐시 유지(stale HIT).
+
+### 변경
+
+- `app.py` `download_prices` / `download_ohlc_prices` / `download_fx` → 캐시 어댑터 위임
+  (`@st.cache_data` TTL 6h 유지).
+- `calculate_fms_for_batch` 기본 `market_data` = 캐싱 YFinance 어댑터(write-through).
+- 캐시 초기화 버튼: Streamlit + 세션 번들/Atom + 디스크 캐시 동시 삭제.
+
+### 검증 하네스
+
+- `tests/unit/test_ui_panel_fingerprint.py`
+- `tests/unit/test_detail_view_atom.py`
+- `tests/unit/test_price_cache_freshness.py`
+- 전체 `python -m pytest`
+
 ## [5.0.2] - 2026-08-07
 
 ### 수정

@@ -44,6 +44,8 @@
 - 타임스탬프가 있는 결과 파일: `scan_results/scan_results_{mode}_YYYYMMDD_HHMMSS.csv`
 - 최신 결과 포인터: `scan_results/latest_scan_results_{mode}.csv` (mode: free 또는 irp)
 - 모든 스캔 결과 파일은 `scan_results/` 디렉토리에만 저장됩니다
+- **시장 데이터 디스크 캐시 (v5.0.3):** 다운로드 성공 청크는 `cache/market_data/`에 write-through
+  (gitignore). UI는 last-bar probe로 HIT/MISS 후 재사용. 강제 갱신은 앱의「데이터 캐시 초기화」.
 
 ## 동작 참고
 - 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리 + `korean_universe.csv` + `hongkong_universe.csv` 병합).

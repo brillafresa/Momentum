@@ -40,5 +40,9 @@ native as-of clip으로 수정. 오프라인 회귀:
 `python -m pytest tests/unit/test_native_asof_calendar.py -q`
 상세: `docs/work-plans/2026-08-07-native-asof-fms.md`.
 
+2026-08-08 (v5.0.3): 세부보기 DetailViewAtom + 세션 FMS 메모 + 디스크 last-bar probe.
+오프라인: `python -m pytest tests/unit/test_detail_view_atom.py tests/unit/test_price_cache_freshness.py -q`
+상세: `docs/work-plans/2026-08-08-detail-view-cache.md`.
+
 자동 assert가 필요하면 `tests/`에 테스트를 추가한다.
 상세 SSOT: [`HARNESS_RULES.md`](../HARNESS_RULES.md) §0.

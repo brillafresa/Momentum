@@ -71,8 +71,10 @@ def main() -> int:
 
     # Watchlist에서 실격 종목 필터링 (이미 보유·관심 목록에서 거래부적합 제외)
     if watchlist:
-        from analysis_utils import download_ohlc_prices, calculate_tradeability_filters
-        watchlist_ohlc, _ = download_ohlc_prices(watchlist, '1y', '1d')
+        from analysis_utils import calculate_tradeability_filters
+        from adapters.price_cache import make_caching_yfinance_adapter
+        md = make_caching_yfinance_adapter()
+        watchlist_ohlc, _ = md.get_ohlc(watchlist, '1y', '1d')
         if not watchlist_ohlc.empty:
             watchlist_flags, _ = calculate_tradeability_filters(watchlist_ohlc, watchlist)
             valid_watchlist = [s for s in watchlist if s in watchlist_flags and not watchlist_flags[s]]
@@ -82,6 +84,7 @@ def main() -> int:
                     "disqualified symbols from watchlist"
                 )
                 watchlist = valid_watchlist
+            print(f"[Batch] Disk market cache warmed for watchlist OHLC ({len(watchlist)} symbols)")
         else:
             print(
                 "[Batch] ⚠️ Failed to download watchlist OHLC; "
@@ -103,6 +106,8 @@ def main() -> int:
                 f"[Batch] ℹ️ Watchlist panel ready ({ref_prices.shape[1]} series; "
                 "v5.0 absolute FMS ignores reference for scoring)."
             )
+            # Persist KRW panel constituents' native downloads already happened via
+            # calculate_fms path; also write-through raw adj closes if available later.
     else:
         print("[Batch] ℹ️ Empty watchlist; scanning full universe with absolute FMS.")
 

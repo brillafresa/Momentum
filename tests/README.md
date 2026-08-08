@@ -20,6 +20,9 @@ tests/
 │   ├── test_nonlinear_mc_features.py         # SEG_* · residual features
 │   ├── test_batch_ui_fms_paths.py   # 배치 vs UI 캘린더 경로 · coverage · native as-of
 │   ├── test_native_asof_calendar.py # 다국가 trailing ffill 금지 · 양방향/3시장 FMS 불변
+│   ├── test_ui_panel_fingerprint.py # UI 세션 번들 패널 지문
+│   ├── test_detail_view_atom.py     # DetailViewAtom 심볼↔시리즈 불변식
+│   ├── test_price_cache_freshness.py # last-bar probe · CachingMarketDataAdapter
 │   ├── test_fms_cash_like_gate.py   # legacy sparse+cash gate
 │   ├── test_fms_recalib_parity.py
 │   ├── test_fms_features.py

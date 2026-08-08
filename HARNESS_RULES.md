@@ -4,11 +4,18 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-08-07 (KST) · 제품 버전 v5.0.2
+최종 갱신: 2026-08-08 (KST) · 제품 버전 v5.0.3
 
 ---
 
 ## 0. 현재 구축된 검증 하네스 (v5.0.x)
+
+### UI / 시장 데이터 캐시 (v5.0.3)
+
+| 자산 | 역할 | 검증 방법 |
+|------|------|-----------|
+| `adapters/ui_data_bundle.py` (`fingerprint_price_panel` / `DetailViewAtom` / `reconcile_detail_selection`) | 세부보기 심볼↔시계열 원자 결합 · 세션 번들 지문 | `test_ui_panel_fingerprint.py` / `test_detail_view_atom.py` |
+| `adapters/price_cache.py` (`needs_refresh` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · last-bar probe | `test_price_cache_freshness.py` |
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -61,6 +68,14 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.3 검증 요약 (2026-08-08 — 세부보기 캐시 + last-bar probe)**
+
+1. DetailViewAtom: symbol == series.name; 없는 심볼 대체 금지; 불일치 fail-closed.
+2. 동일 패널 지문에서 UI 세션 번들이 FMS 재계산을 생략.
+3. `needs_refresh`: 같은 날짜 HIT · 신규일 MISS · probe None이면 캐시 유지.
+4. CachingMarketDataAdapter: 1회 miss 후 디스크 HIT (FixtureAdapter 카운트).
+5. 회귀: 전체 pytest; 운영 `cache/` gitignore.
 
 **v5.0.2 검증 요약 (2026-08-07 — 종목별 native as-of)**
 

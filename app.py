@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.2
+# KRW Momentum Radar - v5.0.3
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -37,6 +37,17 @@ from analysis_utils import (
     get_filter_debug_info,
     harmonize_calendar,
     momentum_now_and_delta as _au_momentum_now_and_delta,
+)
+from adapters.ui_data_bundle import (
+    DETAIL_ATOM_CACHE_KEY,
+    DETAIL_INDEX_KEY,
+    DETAIL_SELECT_KEY,
+    SESSION_BUNDLE_FP_KEY,
+    SESSION_BUNDLE_KEY,
+    build_detail_view_atom,
+    clear_ui_session_caches,
+    reconcile_detail_selection,
+    watchlist_bundle_key,
 )
 from calibration_utils import (
     create_snapshot_id,
@@ -100,7 +111,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.2", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.3", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -126,174 +137,60 @@ if 'watchlist' not in st.session_state:
 # ------------------------------
 # 데이터 다운로드 및 처리 함수들
 # ------------------------------
-def _extract_adj_close(df_chunk, tickers):
-    if df_chunk is None or len(df_chunk)==0:
-        return pd.DataFrame(columns=tickers, dtype=float)
-    if isinstance(df_chunk.columns, pd.MultiIndex):
-        if 'Adj Close' in df_chunk.columns.get_level_values(0):
-            adj = df_chunk['Adj Close'].copy()
-        elif 'Close' in df_chunk.columns.get_level_values(0):
-            adj = df_chunk['Close'].copy()
-        else:
-            parts=[]
-            for t in tickers:
-                try:
-                    if ('Adj Close', t) in df_chunk.columns:
-                        s = df_chunk[('Adj Close', t)].rename(t)
-                    elif ('Close', t) in df_chunk.columns:
-                        s = df_chunk[('Close', t)].rename(t)
-                    else:
-                        s = pd.Series(dtype=float, name=t)
-                except Exception:
-                    s = pd.Series(dtype=float, name=t)
-                parts.append(s)
-            adj = pd.concat(parts, axis=1)
-    else:
-        cols = df_chunk.columns
-        if 'Adj Close' in cols:
-            adj = df_chunk[['Adj Close']].copy(); adj.columns = tickers[:1]
-        elif 'Close' in cols:
-            adj = df_chunk[['Close']].copy(); adj.columns = tickers[:1]
-        else:
-            adj = df_chunk.copy()
-            keep = [c for c in adj.columns if c in tickers]
-            adj = adj[keep] if keep else pd.DataFrame(columns=tickers, dtype=float)
-    adj = adj.loc[:, ~adj.columns.duplicated()]
-    return adj
-
 @st.cache_data(ttl=60*60*6, show_spinner=False)
 def download_prices(tickers, period_="2y", interval="1d", chunk=25):
-    frames=[]; missing=[]
-    tickers = list(dict.fromkeys(tickers))
-    for i in range(0, len(tickers), chunk):
-        part = tickers[i:i+chunk]
-        try:
-            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
-                              group_by='column', progress=False, threads=True)
-            adj = _extract_adj_close(raw, part)
-        except Exception as e:
-            log(f"ERROR download chunk: {part[:3]}... -> {e}")
-            adj = pd.DataFrame()
-        if adj.empty or adj.isna().all().all():
-            pframes=[]
-            for t in part:
-                try:
-                    r = yf.download(t, period=period_, interval=interval, auto_adjust=False,
-                                    group_by='column', progress=False, threads=False)
-                    a = _extract_adj_close(r, [t])
-                    pframes.append(a)
-                except Exception as e:
-                    log(f"ERROR download single: {t} -> {e}")
-                    missing.append(t)
-            if pframes:
-                frames.append(pd.concat(pframes, axis=1))
-        else:
-            frames.append(adj)
-    if not frames:
-        return pd.DataFrame(), missing
-    out = pd.concat(frames, axis=1)
-    out = out.loc[:, ~out.columns.duplicated()].sort_index()
-    all_nan = out.columns[out.isna().all()]
-    if len(all_nan):
-        log(f"DROP all-NaN columns: {list(all_nan)[:5]}{' ...' if len(all_nan)>5 else ''}")
-    out = out.drop(columns=all_nan)
-    return out, sorted(list(dict.fromkeys(list(missing)+list(all_nan))))
+    """Download Adj Close via disk-backed CachingMarketDataAdapter (batch-shared)."""
+    from adapters.price_cache import make_caching_yfinance_adapter
+    tickers = list(dict.fromkeys(tickers or []))
+    if not tickers:
+        return pd.DataFrame(), []
+    md = make_caching_yfinance_adapter(chunk=chunk, threads=True)
+    out, missing = md.get_prices(tickers, period_, interval)
+    if not out.empty:
+        all_nan = out.columns[out.isna().all()]
+        if len(all_nan):
+            log(f"DROP all-NaN columns: {list(all_nan)[:5]}{' ...' if len(all_nan)>5 else ''}")
+            out = out.drop(columns=list(all_nan))
+            missing = sorted(list(dict.fromkeys(list(missing) + list(all_nan))))
+    return out, missing
 
 @st.cache_data(ttl=60*60*6, show_spinner=False)
 def download_ohlc_prices(tickers, period_="2y", interval="1d", chunk=25):
-    """
-    거래 적합성 필터를 위한 OHLC 데이터를 다운로드합니다.
-    
-    Args:
-        tickers (list): 다운로드할 티커 목록
-        period_ (str): 데이터 기간
-        interval (str): 데이터 간격
-        chunk (int): 배치 크기
-    
-    Returns:
-        tuple: (ohlc_data, missing_tickers)
-    """
-    frames=[]; missing=[]
-    tickers = list(dict.fromkeys(tickers))
-    
-    for i in range(0, len(tickers), chunk):
-        part = tickers[i:i+chunk]
-        try:
-            raw = yf.download(part, period=period_, interval=interval, auto_adjust=False,
-                              group_by='column', progress=False, threads=True)
-            
-            if raw.empty:
-                missing.extend(part)
-                continue
-                
-            # OHLC 데이터 추출
-            if isinstance(raw.columns, pd.MultiIndex):
-                ohlc_data = {}
-                for t in part:
-                    if ('High', t) in raw.columns and ('Low', t) in raw.columns and ('Close', t) in raw.columns:
-                        ohlc_data[t] = pd.DataFrame({
-                            'High': raw[('High', t)],
-                            'Low': raw[('Low', t)],
-                            'Close': raw[('Close', t)]
-                        })
-                    else:
-                        missing.append(t)
-            else:
-                # 단일 티커인 경우
-                if len(part) == 1 and 'High' in raw.columns and 'Low' in raw.columns and 'Close' in raw.columns:
-                    t = part[0]
-                    ohlc_data[t] = pd.DataFrame({
-                        'High': raw['High'],
-                        'Low': raw['Low'],
-                        'Close': raw['Close']
-                    })
-                else:
-                    missing.extend(part)
-                    continue
-            
-            if ohlc_data:
-                frames.append(pd.concat(ohlc_data, axis=1))
-                
-        except Exception as e:
-            log(f"ERROR download OHLC chunk: {part[:3]}... -> {e}")
-            missing.extend(part)
-    
-    if not frames:
-        return pd.DataFrame(), missing
-    
-    # 모든 OHLC 데이터를 하나의 DataFrame으로 합치기
-    all_ohlc = pd.concat(frames, axis=1)
-    all_ohlc = all_ohlc.loc[:, ~all_ohlc.columns.duplicated()].sort_index()
-    
-    return all_ohlc, sorted(list(dict.fromkeys(missing)))
+    """OHLC download via disk cache + last-bar probe (shared with batch)."""
+    from adapters.price_cache import make_caching_yfinance_adapter
+    tickers = list(dict.fromkeys(tickers or []))
+    if not tickers:
+        return pd.DataFrame(), []
+    md = make_caching_yfinance_adapter(chunk=chunk, threads=True)
+    return md.get_ohlc(tickers, period_, interval)
 
 @st.cache_data(ttl=60*60*6, show_spinner=False)
 def download_fx(period_="2y", interval="1d"):
-    fx_krw, miss1 = download_prices(["KRW=X"], period_, interval)
-    fx_jpy, miss2 = download_prices(["JPY=X"], period_, interval)
-    fx_hkd, miss3 = download_prices(["HKD=X"], period_, interval)
-    usdkrw = fx_krw.iloc[:,0].rename("USDKRW") if not fx_krw.empty else pd.Series(dtype=float, name="USDKRW")
-    usdjpy = fx_jpy.iloc[:,0].rename("USDJPY") if not fx_jpy.empty else pd.Series(dtype=float, name="USDJPY")
-    hkdusd = fx_hkd.iloc[:,0].rename("HKDUSD") if not fx_hkd.empty else pd.Series(dtype=float, name="HKDUSD")
-    if not usdkrw.empty and not usdjpy.empty:
-        start=min(usdkrw.index.min(), usdjpy.index.min())
-        end=max(usdkrw.index.max(), usdjpy.index.max())
-        idx = pd.date_range(start, end, freq='B')
-        usdkrw = usdkrw.reindex(idx).ffill()
-        usdjpy = usdjpy.reindex(idx).ffill()
-        jpykrw = (usdkrw/usdjpy).rename("JPYKRW")
+    """FX download via caching adapter (write-through to disk)."""
+    from adapters.price_cache import make_caching_yfinance_adapter
+    md = make_caching_yfinance_adapter(threads=True)
+    usdkrw, usdjpy, jpykrw, hkdkrw = md.get_fx(period_, interval)
+    miss = []
+    if usdkrw is None or usdkrw.empty:
+        miss.append("KRW=X")
+        usdkrw = pd.Series(dtype=float, name="USDKRW")
     else:
+        usdkrw = usdkrw.rename("USDKRW")
+    if usdjpy is None or usdjpy.empty:
+        miss.append("JPY=X")
+        usdjpy = pd.Series(dtype=float, name="USDJPY")
+    else:
+        usdjpy = usdjpy.rename("USDJPY")
+    if jpykrw is None or jpykrw.empty:
         jpykrw = pd.Series(dtype=float, name="JPYKRW")
-    if not usdkrw.empty and not hkdusd.empty:
-        start = min(usdkrw.index.min(), hkdusd.index.min())
-        end = max(usdkrw.index.max(), hkdusd.index.max())
-        idx = pd.date_range(start, end, freq='B')
-        usdkrw_h = usdkrw.reindex(idx).ffill()
-        hkdusd_h = hkdusd.reindex(idx).ffill()
-        hkdkrw = (usdkrw_h / hkdusd_h).rename("HKDKRW")
     else:
+        jpykrw = jpykrw.rename("JPYKRW")
+    if hkdkrw is None or hkdkrw.empty:
+        miss.append("HKD=X")
         hkdkrw = pd.Series(dtype=float, name="HKDKRW")
-    return usdkrw, usdjpy, jpykrw, hkdkrw, (miss1+miss2+miss3)
+    else:
+        hkdkrw = hkdkrw.rename("HKDKRW")
+    return usdkrw, usdjpy, jpykrw, hkdkrw, miss
 
 # ------------------------------
 # 로깅 함수
@@ -377,8 +274,9 @@ with st.sidebar.expander("🏦 계좌 모드 선택", expanded=True):
         # 모드 변경 시 관심종목 재로드
         default_symbols = DEFAULT_USD_SYMBOLS + DEFAULT_KRW_SYMBOLS + DEFAULT_JPY_SYMBOLS
         st.session_state.watchlist = load_watchlist(default_symbols, mode=selected_mode)
-        # 캐시 초기화
+        # 캐시 초기화 (Streamlit + UI 세션 번들/DetailViewAtom)
         st.cache_data.clear()
+        clear_ui_session_caches(st.session_state)
         st.rerun()
 
 # 1. 분석 설정
@@ -435,6 +333,7 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
             if new_symbols:
                 st.session_state.watchlist = new_symbols
                 st.cache_data.clear()
+                clear_ui_session_caches(st.session_state)
                 st.success(message)
                 st.session_state.upload_processed = True
                 st.rerun()
@@ -501,6 +400,7 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
                             st.session_state['reassessment_results'] = st.session_state['reassessment_results'].drop(symbol)
                     
                     st.cache_data.clear()
+                    clear_ui_session_caches(st.session_state)
                     st.rerun()
 
 # 3. 신규 종목 탐색
@@ -744,7 +644,10 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     # 도구 버튼들
     if st.button("🗂️ 데이터 캐시 초기화"):
         st.cache_data.clear()
-        st.success("캐시 초기화 완료")
+        clear_ui_session_caches(st.session_state)
+        from adapters.price_cache import clear_disk_market_cache
+        clear_disk_market_cache()
+        st.success("캐시 초기화 완료 (세션·Streamlit·디스크)")
 
 
 def calculate_minimum_data_period(rv_window=63, tail_days=10):
@@ -1062,23 +965,51 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.2")
+st.title("⚡ KRW Momentum Radar v5.0.3")
 
 
 
 # ------------------------------
-# 모멘텀/가속 계산 (거래 적합성 필터 적용)
+# 모멘텀/가속 계산 (거래 적합성 필터 적용) — 세션 번들 메모
 # ------------------------------
-with st.spinner("모멘텀/가속 계산 중…"):
-    # 관심종목의 OHLC 데이터 다운로드 (거래 적합성 필터용)
-    # 거래 적합성 필터는 63일이 필요하므로 최소 1년 데이터 다운로드
-    watchlist_symbols = list(prices_krw.columns)
-    # 차트 기간과 무관하게 계산에 필요한 최소 기간 사용
-    ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, min_data_period, "1d")
-    if ohlc_data.empty:
-        ohlc_data = None
-    
-    mom = momentum_now_and_delta(prices_krw, reference_prices_krw=prices_krw, ohlc_data=ohlc_data, symbols=watchlist_symbols)
+watchlist_symbols = list(prices_krw.columns)
+# 차트 기간과 무관하게 계산에 필요한 최소 기간 사용
+ohlc_data, ohlc_missing = download_ohlc_prices(watchlist_symbols, min_data_period, "1d")
+if ohlc_data.empty:
+    ohlc_data = None
+
+_bundle_fp = watchlist_bundle_key(
+    st.session_state.account_mode,
+    list(st.session_state.watchlist),
+    min_data_period,
+    prices_krw,
+    ohlc_data,
+)
+_reuse_bundle = (
+    st.session_state.get(SESSION_BUNDLE_FP_KEY) == _bundle_fp
+    and isinstance(st.session_state.get(SESSION_BUNDLE_KEY), dict)
+    and st.session_state[SESSION_BUNDLE_KEY].get("mom") is not None
+)
+if _reuse_bundle:
+    mom = st.session_state[SESSION_BUNDLE_KEY]["mom"]
+else:
+    with st.spinner("모멘텀/가속 계산 중…"):
+        mom = momentum_now_and_delta(
+            prices_krw,
+            reference_prices_krw=prices_krw,
+            ohlc_data=ohlc_data,
+            symbols=watchlist_symbols,
+        )
+    st.session_state[SESSION_BUNDLE_KEY] = {
+        "prices_krw": prices_krw,
+        "ohlc_data": ohlc_data,
+        "mom": mom,
+        "miss": miss,
+        "name_map": NAME_MAP,
+    }
+    st.session_state[SESSION_BUNDLE_FP_KEY] = _bundle_fp
+    if DETAIL_ATOM_CACHE_KEY in st.session_state:
+        del st.session_state[DETAIL_ATOM_CACHE_KEY]
 rank_col = {"ΔFMS(1D)":"ΔFMS_1D","ΔFMS(5D)":"ΔFMS_5D","FMS(현재)":"FMS","1M 수익률":"R_1M"}[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
 
@@ -1121,26 +1052,29 @@ fig_comp.update_layout(
 st.plotly_chart(fig_comp, use_container_width=True)
 
 # ------------------------------
-# ③ 세부 보기
+# ③ 세부 보기 (DetailViewAtom: 심볼↔차트 원자 결합)
 # ------------------------------
 st.subheader("세부 보기")
 ordered_options = list(mom_ranked.index)
 
 if not ordered_options:
-    st.session_state.detail_symbol_index = 0
+    st.session_state[DETAIL_INDEX_KEY] = 0
     st.info("표시할 종목이 없습니다. 필터 조건을 조정하거나 데이터를 새로 고침해 주세요.")
 else:
     default_candidates = [sym for sym in sel_syms if sym in ordered_options]
     default_sym = default_candidates[0] if default_candidates else ordered_options[0]
 
-    if "detail_symbol_index" not in st.session_state:
-        st.session_state.detail_symbol_index = ordered_options.index(default_sym)
-
-    # 현재 선택된 인덱스가 유효한 범위를 벗어났는지 확인
-    if st.session_state.detail_symbol_index >= len(ordered_options):
-        st.session_state.detail_symbol_index = len(ordered_options) - 1
-    if st.session_state.detail_symbol_index < 0:
-        st.session_state.detail_symbol_index = 0
+    # 선택 심볼 SSOT — index는 파생. 위젯 세션값과 reconcile.
+    _widget_sym = st.session_state.get(DETAIL_SELECT_KEY)
+    _current_sym = _widget_sym if _widget_sym in ordered_options else st.session_state.get(DETAIL_INDEX_KEY)
+    if isinstance(_current_sym, int):
+        _idx = _current_sym
+        _current_sym = ordered_options[_idx] if 0 <= _idx < len(ordered_options) else None
+    detail_sym, detail_idx = reconcile_detail_selection(
+        ordered_options, _current_sym if isinstance(_current_sym, str) else None, default_sym
+    )
+    st.session_state[DETAIL_INDEX_KEY] = detail_idx
+    st.session_state[DETAIL_SELECT_KEY] = detail_sym
 
     option_count = max(1, len(ordered_options))
     index_width = max(2, len(str(option_count)))
@@ -1149,189 +1083,212 @@ else:
         for idx, sym in enumerate(ordered_options, 1)
     }
 
-    # selectbox와 네비게이션 버튼을 한 줄에 배치
     detail_col1, detail_col2, detail_col3, detail_col4 = st.columns([11, 1, 1, 1])
 
-    # 버튼 클릭 처리
     with detail_col2:
-        # 이전 버튼 (▲)
-        prev_disabled = st.session_state.detail_symbol_index <= 0
+        prev_disabled = detail_idx <= 0
         if st.button("▲", disabled=prev_disabled, key="detail_prev", help="이전 종목", use_container_width=True):
-            if st.session_state.detail_symbol_index > 0:
-                st.session_state.detail_symbol_index -= 1
+            if detail_idx > 0:
+                new_sym = ordered_options[detail_idx - 1]
+                st.session_state[DETAIL_SELECT_KEY] = new_sym
+                st.session_state[DETAIL_INDEX_KEY] = detail_idx - 1
                 st.rerun()
 
     with detail_col3:
-        # 다음 버튼 (▼)
-        next_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+        next_disabled = detail_idx >= len(ordered_options) - 1
         if st.button("▼", disabled=next_disabled, key="detail_next", help="다음 종목", use_container_width=True):
-            if st.session_state.detail_symbol_index < len(ordered_options) - 1:
-                st.session_state.detail_symbol_index += 1
+            if detail_idx < len(ordered_options) - 1:
+                new_sym = ordered_options[detail_idx + 1]
+                st.session_state[DETAIL_SELECT_KEY] = new_sym
+                st.session_state[DETAIL_INDEX_KEY] = detail_idx + 1
                 st.rerun()
 
     with detail_col4:
-        # 맨 끝으로 가기 버튼 (⏬)
-        end_disabled = st.session_state.detail_symbol_index >= len(ordered_options) - 1
+        end_disabled = detail_idx >= len(ordered_options) - 1
         if st.button("⏬", disabled=end_disabled, key="detail_end", help="맨 끝으로 이동", use_container_width=True):
-            if st.session_state.detail_symbol_index < len(ordered_options) - 1:
-                st.session_state.detail_symbol_index = len(ordered_options) - 1
+            if detail_idx < len(ordered_options) - 1:
+                new_sym = ordered_options[-1]
+                st.session_state[DETAIL_SELECT_KEY] = new_sym
+                st.session_state[DETAIL_INDEX_KEY] = len(ordered_options) - 1
                 st.rerun()
 
     with detail_col1:
-        # selectbox의 key를 인덱스 기반으로 동적 생성하여 버튼 클릭 시 새로운 상태로 인식
-        selectbox_key = f"detail_selectbox_{st.session_state.detail_symbol_index}"
-
         detail_sym = st.selectbox(
             "종목 선택",
             options=ordered_options,
-            index=st.session_state.detail_symbol_index,
+            index=detail_idx,
             format_func=lambda s: option_labels.get(s, display_name(s)),
-            key=selectbox_key,
+            key=DETAIL_SELECT_KEY,
             label_visibility="collapsed",
         )
-
-        # selectbox 변경 시 인덱스 업데이트 (사용자가 직접 선택한 경우)
+        # Streamlit already reruns on select change; sync derived index only.
         if detail_sym in ordered_options:
-            new_index = ordered_options.index(detail_sym)
-            if new_index != st.session_state.detail_symbol_index:
-                st.session_state.detail_symbol_index = new_index
-                st.rerun()
+            st.session_state[DETAIL_INDEX_KEY] = ordered_options.index(detail_sym)
 
-    s_full = prices_krw[detail_sym].dropna()
-    # 선택된 차트 기간에 맞춰 데이터 필터링
-    win_map = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
-    win = win_map.get(period, 126)
-    if s_full.shape[0] > win:
-        s = s_full.iloc[-win:]
-    else:
-        s = s_full
-
-    # 세부보기 그래프: Rebased 100 + 로그 스케일 + 관심종목 전체 기준 고정 y-range
-    def _global_rebased_log_range(prices: pd.DataFrame, period_key: str) -> Optional[Tuple[float, float]]:
-        # 전체 관심종목에 대해, 선택된 기간 구간만 잘라서 Rebased 100 후 최소/최대 값 계산
-        if prices.empty:
-            return None
-        win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
-        win_local = win_map_local.get(period_key, 126)
-        if prices.shape[0] > win_local:
-            sub = prices.iloc[-win_local:]
-        else:
-            sub = prices
-        # 각 컬럼별로 개별 리베이스 후 합침
-        rebased_list = []
-        for col in sub.columns:
-            s_col = sub[col].dropna()
-            if s_col.empty:
-                continue
-            r = _rebase_100(s_col)
-            rebased_list.append(r)
-        if not rebased_list:
-            return None
-        all_vals = pd.concat(rebased_list, axis=0).dropna()
-        all_vals = all_vals[all_vals > 0]
-        if all_vals.empty:
-            return None
-        mn = float(all_vals.min())
-        mx = float(all_vals.max())
-        # 패딩 없이, 실제 최소/최대 수익률 피크만을 사용해 y축 범위 결정
-        mn = max(mn, 1e-6)
-        mx = max(mx, mn * 1.000001)
-        return (float(np.log10(mn)), float(np.log10(mx)))
-
-    def _global_drawdown_range(prices: pd.DataFrame, period_key: str) -> Optional[Tuple[float, float]]:
-        # 전체 관심종목에 대해, 선택된 기간 구간의 Drawdown(%) 최소/최대 계산
-        if prices.empty:
-            return None
-        win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
-        win_local = win_map_local.get(period_key, 126)
-        dd_list = []
-        for col in prices.columns:
-            s_col = prices[col].dropna()
-            if s_col.empty:
-                continue
-            s_win = s_col.iloc[-win_local:] if s_col.shape[0] > win_local else s_col
-            roll_max = s_win.cummax()
-            dd_list.append((s_win / roll_max - 1.0) * 100.0)
-        if not dd_list:
-            return None
-        dd_vals = pd.concat(dd_list, axis=0).dropna()
-        if dd_vals.empty:
-            return None
-        mn = float(dd_vals.min())
-        mx = float(dd_vals.max())
-        if mn == mx:
-            return (mn - 1.0, mx + 1.0)
-        pad = (mx - mn) * 0.05
-        return (mn - pad, mx + pad)
-
-    # FMS=-999(거래 부적합) 종목은 y축 스케일 계산에서 제외
-    valid_for_scale = [
-        sym for sym in ordered_options
-        if sym in mom.index and not pd.isna(mom.loc[sym, "FMS"]) and mom.loc[sym, "FMS"] != -999.0
-    ]
-    base_prices = prices_krw[valid_for_scale] if valid_for_scale else prices_krw[ordered_options]
-    y_global_log = _global_rebased_log_range(base_prices, period)
-    y_dd_global = _global_drawdown_range(base_prices, period)
-
-    # 선택된 종목에 대해서도 Rebased 100 + EMA
-    s100 = _rebase_100(s)
-    ma5 = s100.rolling(window=5, min_periods=5).mean()
-    e20, e50, e200 = ema(s100, 20), ema(s100, 50), ema(s100, 200)
-    fig_det = go.Figure()
-    fig_det.add_trace(go.Scatter(x=s100.index, y=s100.values, mode="lines", name="Rebased(100)"))
-    fig_det.add_trace(
-        go.Scatter(
-            x=ma5.index,
-            y=ma5.values,
-            mode="lines",
-            name="5일 MA",
-            line=dict(color="#c8c8c8", width=1),
-            hovertemplate="5일 MA<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+    # Atom: symbol + display_name + series bound together (never index-sliced)
+    _atom_cache = st.session_state.setdefault(DETAIL_ATOM_CACHE_KEY, {})
+    _atom_key = (detail_sym, period, _bundle_fp)
+    atom = _atom_cache.get(_atom_key)
+    if atom is None or not atom.is_consistent() or atom.symbol != detail_sym:
+        atom = build_detail_view_atom(
+            detail_sym, prices_krw, name_map=NAME_MAP, mom=mom, period_key=period
         )
-    )
-    fig_det.add_trace(go.Scatter(x=e20.index, y=e20.values, mode="lines", name="EMA20"))
-    fig_det.add_trace(go.Scatter(x=e50.index, y=e50.values, mode="lines", name="EMA50"))
-    fig_det.add_trace(go.Scatter(x=e200.index, y=e200.values, mode="lines", name="EMA200"))
-    fig_det.update_layout(
-        height=420,
-        margin=dict(l=10, r=10, t=10, b=10),
-        yaxis_title="Rebased 100 (log)",
-        yaxis=dict(type="log"),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.15,
-            xanchor="center",
-            x=0.5,
-        ),
-    )
-    if y_global_log is not None:
-        fig_det.update_yaxes(range=[y_global_log[0], y_global_log[1]])
-    st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
+        if atom is not None:
+            _atom_cache.clear()
+            _atom_cache[_atom_key] = atom
 
-    roll_max = s.cummax()
-    dd = (s / roll_max - 1.0) * 100.0
-    fig_dd = go.Figure([go.Scatter(x=dd.index, y=dd.values, mode="lines", name="Drawdown(%)")])
-    fig_dd.update_layout(height=180, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="%")
-    if y_dd_global is not None:
-        fig_dd.update_yaxes(range=[y_dd_global[0], y_dd_global[1]])
-    st.plotly_chart(fig_dd, use_container_width=True, config={"displayModeBar": False})
+    if atom is None or not atom.is_consistent() or atom.symbol != detail_sym:
+        st.error(
+            "세부 보기 데이터 불일치: 선택한 종목과 차트 시계열을 안전하게 결합하지 못했습니다. "
+            "캐시를 초기화한 뒤 다시 시도해 주세요."
+        )
+    else:
+        st.caption(f"**{atom.symbol}** · {atom.display_name}")
+        s_full = atom.series_krw.dropna()
+        win_map = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+        win = win_map.get(period, 126)
+        s = s_full.iloc[-win:] if s_full.shape[0] > win else s_full
 
-    row = mom.loc[detail_sym]
-    badges = []
-    if row["R_1M"] > 0:
-        badges.append("1M +")
-    if row["AboveEMA50"] > 0:
-        badges.append("EMA50 상회")
+        def _global_rebased_log_range(prices: pd.DataFrame, period_key: str):
+            if prices.empty:
+                return None
+            win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+            win_local = win_map_local.get(period_key, 126)
+            sub = prices.iloc[-win_local:] if prices.shape[0] > win_local else prices
+            rebased_list = []
+            for col in sub.columns:
+                s_col = sub[col].dropna()
+                if s_col.empty:
+                    continue
+                rebased_list.append(_rebase_100(s_col))
+            if not rebased_list:
+                return None
+            all_vals = pd.concat(rebased_list, axis=0).dropna()
+            all_vals = all_vals[all_vals > 0]
+            if all_vals.empty:
+                return None
+            mn = float(all_vals.min())
+            mx = float(all_vals.max())
+            mn = max(mn, 1e-6)
+            mx = max(mx, mn * 1.000001)
+            return (float(np.log10(mn)), float(np.log10(mx)))
 
-    # FMS 지표 표시
-    if "R_3M" in row and row["R_3M"] > 0:
-        badges.append("3M +")
+        def _global_drawdown_range(prices: pd.DataFrame, period_key: str):
+            if prices.empty:
+                return None
+            win_map_local = {"1M": 21, "3M": 63, "6M": 126, "1Y": 252, "2Y": 504}
+            win_local = win_map_local.get(period_key, 126)
+            dd_list = []
+            for col in prices.columns:
+                s_col = prices[col].dropna()
+                if s_col.empty:
+                    continue
+                s_win = s_col.iloc[-win_local:] if s_col.shape[0] > win_local else s_col
+                roll_max = s_win.cummax()
+                dd_list.append((s_win / roll_max - 1.0) * 100.0)
+            if not dd_list:
+                return None
+            dd_vals = pd.concat(dd_list, axis=0).dropna()
+            if dd_vals.empty:
+                return None
+            mn = float(dd_vals.min())
+            mx = float(dd_vals.max())
+            if mn == mx:
+                return (mn - 1.0, mx + 1.0)
+            pad = (mx - mn) * 0.05
+            return (mn - pad, mx + pad)
 
-    if row["ΔFMS_1D"] > 0:
-        badges.append("가속(1D+)")
-    if row["ΔFMS_5D"] > 0:
-        badges.append("가속(5D+)")
+        valid_for_scale = [
+            sym for sym in ordered_options
+            if sym in mom.index and not pd.isna(mom.loc[sym, "FMS"]) and mom.loc[sym, "FMS"] != -999.0
+        ]
+        base_prices = prices_krw[valid_for_scale] if valid_for_scale else prices_krw[ordered_options]
+        y_global_log = _global_rebased_log_range(base_prices, period)
+        y_dd_global = _global_drawdown_range(base_prices, period)
+
+        hover_label = f"{atom.display_name} ({atom.symbol})"
+        s100 = _rebase_100(s)
+        ma5 = s100.rolling(window=5, min_periods=5).mean()
+        e20, e50, e200 = ema(s100, 20), ema(s100, 50), ema(s100, 200)
+        fig_det = go.Figure()
+        fig_det.add_trace(go.Scatter(
+            x=s100.index, y=s100.values, mode="lines", name="Rebased(100)",
+            customdata=np.array([hover_label] * len(s100)),
+            hovertemplate="%{customdata}<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+        ))
+        fig_det.add_trace(
+            go.Scatter(
+                x=ma5.index,
+                y=ma5.values,
+                mode="lines",
+                name="5일 MA",
+                line=dict(color="#c8c8c8", width=1),
+                customdata=np.array([hover_label] * len(ma5)),
+                hovertemplate="%{customdata}<br>5일 MA<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+            )
+        )
+        fig_det.add_trace(go.Scatter(
+            x=e20.index, y=e20.values, mode="lines", name="EMA20",
+            customdata=np.array([hover_label] * len(e20)),
+            hovertemplate="%{customdata}<br>EMA20<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+        ))
+        fig_det.add_trace(go.Scatter(
+            x=e50.index, y=e50.values, mode="lines", name="EMA50",
+            customdata=np.array([hover_label] * len(e50)),
+            hovertemplate="%{customdata}<br>EMA50<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+        ))
+        fig_det.add_trace(go.Scatter(
+            x=e200.index, y=e200.values, mode="lines", name="EMA200",
+            customdata=np.array([hover_label] * len(e200)),
+            hovertemplate="%{customdata}<br>EMA200<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+        ))
+        fig_det.update_layout(
+            height=420,
+            margin=dict(l=10, r=10, t=10, b=10),
+            yaxis_title="Rebased 100 (log)",
+            yaxis=dict(type="log"),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.15,
+                xanchor="center",
+                x=0.5,
+            ),
+        )
+        if y_global_log is not None:
+            fig_det.update_yaxes(range=[y_global_log[0], y_global_log[1]])
+        st.plotly_chart(fig_det, use_container_width=True, config={"displayModeBar": False})
+
+        roll_max = s.cummax()
+        dd = (s / roll_max - 1.0) * 100.0
+        fig_dd = go.Figure([go.Scatter(
+            x=dd.index, y=dd.values, mode="lines", name="Drawdown(%)",
+            customdata=np.array([hover_label] * len(dd)),
+            hovertemplate="%{customdata}<br>Drawdown<br>%{x|%Y-%m-%d}<br>%{y:.2f}%<extra></extra>",
+        )])
+        fig_dd.update_layout(height=180, margin=dict(l=10, r=10, t=10, b=10), yaxis_title="%")
+        if y_dd_global is not None:
+            fig_dd.update_yaxes(range=[y_dd_global[0], y_dd_global[1]])
+        st.plotly_chart(fig_dd, use_container_width=True, config={"displayModeBar": False})
+
+        row = atom.fms_row
+        badges = []
+        if row is not None:
+            if "R_1M" in row and row["R_1M"] > 0:
+                badges.append("1M +")
+            if "AboveEMA50" in row and row["AboveEMA50"] > 0:
+                badges.append("EMA50 상회")
+            if "R_3M" in row and row["R_3M"] > 0:
+                badges.append("3M +")
+            if "ΔFMS_1D" in row and row["ΔFMS_1D"] > 0:
+                badges.append("가속(1D+)")
+            if "ΔFMS_5D" in row and row["ΔFMS_5D"] > 0:
+                badges.append("가속(5D+)")
+            if badges:
+                st.markdown(
+                    " ".join('<span class="badge">%s</span>' % b for b in badges),
+                    unsafe_allow_html=True,
+                )
 # ==============================
 # ④ 수익률–변동성 이동맵
 # ==============================

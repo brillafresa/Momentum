@@ -415,11 +415,13 @@ def build_prices_krw_from_symbols(period_key: str, symbols: List[str]) -> pd.Dat
     jpy_symbols = [str(s) for s in symbols if classify(s) == 'JPN']
     hkg_symbols = [str(s) for s in symbols if classify(s) == 'HKG']
 
-    usdkrw, _, jpykrw, hkdkrw = download_fx(yf_period, interval)
-    usd_df, _ = download_prices(usd_symbols, yf_period, interval)
-    krw_df, _ = download_prices(krw_symbols, yf_period, interval)
-    jpy_df, _ = download_prices(jpy_symbols, yf_period, interval)
-    hkg_df, _ = download_prices(hkg_symbols, yf_period, interval)
+    from adapters.price_cache import make_caching_yfinance_adapter
+    md = make_caching_yfinance_adapter()
+    usdkrw, _, jpykrw, hkdkrw = md.get_fx(yf_period, interval)
+    usd_df, _ = md.get_prices(usd_symbols, yf_period, interval)
+    krw_df, _ = md.get_prices(krw_symbols, yf_period, interval)
+    jpy_df, _ = md.get_prices(jpy_symbols, yf_period, interval)
+    hkg_df, _ = md.get_prices(hkg_symbols, yf_period, interval)
     frames: List[pd.DataFrame] = []
     if not usd_df.empty and not usdkrw.empty:
         usdkrw_matched = usdkrw.reindex(usd_df.index).ffill()
@@ -524,8 +526,8 @@ def calculate_fms_for_batch(
 
     if market_data is None:
         # Local import: adapters.market_data imports this module's download helpers.
-        from adapters.market_data import YFinanceAdapter
-        market_data = YFinanceAdapter(
+        from adapters.price_cache import make_caching_yfinance_adapter
+        market_data = make_caching_yfinance_adapter(
             chunk=chunk, chunk_sleep=chunk_sleep, max_retries=max_retries,
             initial_sleep=YF_RATE_LIMIT_INITIAL_SLEEP, threads=False,
         )
