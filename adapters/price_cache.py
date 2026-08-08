@@ -17,6 +17,31 @@ import pandas as pd
 
 DEFAULT_CACHE_ROOT = Path("cache") / "market_data"
 
+# yfinance period ordering — used to detect batch(1y) HIT serving UI(2y) requests.
+_PERIOD_RANK = {
+    "1d": 1,
+    "5d": 2,
+    "1mo": 3,
+    "3mo": 4,
+    "6mo": 5,
+    "ytd": 5,
+    "1y": 6,
+    "2y": 7,
+    "5y": 8,
+    "10y": 9,
+    "max": 10,
+}
+
+# Soft floor on non-null bars before accepting a HIT for the requested period.
+_PERIOD_MIN_BARS = {
+    "6mo": 80,
+    "1y": 180,
+    "2y": 360,
+    "5y": 900,
+    "10y": 1800,
+    "max": 1800,
+}
+
 
 def last_bar_date(obj: Optional[pd.Series | pd.DataFrame]) -> Optional[pd.Timestamp]:
     """Return the last valid timestamp on a Series or DataFrame, or None."""
@@ -60,6 +85,38 @@ def needs_refresh(
     c = pd.Timestamp(cached_last).normalize()
     p = pd.Timestamp(probed_last).normalize()
     return p > c
+
+
+def cache_covers_request(
+    cached: Optional[pd.DataFrame | pd.Series],
+    requested_period: str,
+    cached_period: Optional[str] = None,
+) -> bool:
+    """True if a disk entry is long enough for the requested yfinance period.
+
+    Batch write-through often stores ``period='1y'`` while the UI asks for
+    ``2y`` (``calculate_minimum_data_period``). A date-only HIT then returns a
+    short series; after concat with longer watchlist columns, leading NaNs push
+    coverage below the UI threshold and the ticker vanishes
+    (\"데이터 부족으로 표시되지 않습니다\").
+    """
+    if cached is None or (hasattr(cached, "empty") and cached.empty):
+        return False
+    req = str(requested_period or "").strip().lower()
+    cached_p = str(cached_period or "").strip().lower()
+    req_rank = _PERIOD_RANK.get(req)
+    cached_rank = _PERIOD_RANK.get(cached_p) if cached_p else None
+    if req_rank is not None and cached_rank is not None and cached_rank < req_rank:
+        return False
+    min_bars = _PERIOD_MIN_BARS.get(req)
+    if min_bars is not None:
+        if isinstance(cached, pd.DataFrame):
+            n = int(cached.notna().any(axis=1).sum())
+        else:
+            n = int(pd.Series(cached).notna().sum())
+        if n < min_bars:
+            return False
+    return True
 
 
 def _safe_symbol_filename(symbol: str) -> str:
@@ -152,6 +209,14 @@ class DiskPriceCache:
         df = self.load_symbol_series(symbol, kind)
         return last_bar_date(df)
 
+    def cached_period(self, symbol: str, kind: str = "adj_close") -> Optional[str]:
+        """Return the yfinance period string stored when the entry was saved."""
+        entry = self._manifest.get("symbols", {}).get(str(symbol), {}).get(kind)
+        if not entry:
+            return None
+        period = entry.get("period")
+        return str(period) if period else None
+
     def save_price_panel(self, prices: pd.DataFrame, period: str = "1y") -> None:
         """Write each column of an Adj Close panel as its own cache entry."""
         if prices is None or prices.empty:
@@ -182,12 +247,13 @@ class DiskPriceCache:
 class CachingMarketDataAdapter:
     """MarketDataPort wrapper: last-bar probe → disk HIT or full download + save.
 
-    Important: **only symbols that already have a cache entry are probed**.
-    Cold symbols skip the short-period probe and go straight to a full download.
-    Probing every ticker on every batch chunk roughly doubled/quadrupled Yahoo
-    calls (prices probe + full + OHLC probe + full) and caused early (usually
-    USA) outer chunks to fail under rate limits while later KR/HK chunks
-    succeeded — surfacing as “신규 종목 탐색에 미국 종목 없음”.
+    Important:
+    - **Only symbols that already have a cache entry are probed.**
+      Cold symbols skip the short-period probe and go straight to a full download.
+    - **HIT also requires the cached history to cover the requested period**
+      (``cache_covers_request``). Batch often stores ``1y`` while the UI asks for
+      ``2y``; a date-only HIT would return a short series that fails UI coverage
+      after concat with longer watchlist columns.
     """
 
     def __init__(
@@ -201,7 +267,14 @@ class CachingMarketDataAdapter:
         self.cache = cache if cache is not None else DiskPriceCache()
         self.probe_period = probe_period
         self.write_through = write_through
-        self.stats = {"hits": 0, "misses": 0, "stale_hits": 0, "probes": 0, "cold_misses": 0}
+        self.stats = {
+            "hits": 0,
+            "misses": 0,
+            "stale_hits": 0,
+            "probes": 0,
+            "cold_misses": 0,
+            "period_misses": 0,
+        }
 
     def _probe_last_bars(self, tickers: Sequence[str], interval: str) -> dict:
         """Download short history and map symbol → last bar date.
@@ -239,19 +312,26 @@ class CachingMarketDataAdapter:
 
         cached_map: dict = {}
         cold: List[str] = []
+        period_miss: List[str] = []
         for t in tickers:
             cached = self.cache.load_symbol_series(t, "adj_close")
-            if cached is not None and not cached.empty:
-                cached_map[t] = cached
-            else:
+            if cached is None or cached.empty:
                 cold.append(t)
+                continue
+            stored_period = self.cache.cached_period(t, "adj_close")
+            if not cache_covers_request(cached, period_, stored_period):
+                # Shorter history than requested (e.g. batch 1y vs UI 2y) → re-download.
+                period_miss.append(t)
+                continue
+            cached_map[t] = cached
 
-        # Probe only warm (already cached) symbols — never the full request set.
+        # Probe only warm (already cached + period-sufficient) symbols.
         probed = self._probe_last_bars(list(cached_map.keys()), interval) if cached_map else {}
 
         frames: List[pd.Series] = []
-        miss_syms: List[str] = list(cold)
+        miss_syms: List[str] = list(cold) + list(period_miss)
         self.stats["cold_misses"] += len(cold)
+        self.stats["period_misses"] += len(period_miss)
 
         for t, cached in cached_map.items():
             cached_last = last_bar_date(cached)
@@ -296,19 +376,25 @@ class CachingMarketDataAdapter:
 
         cached_map: dict = {}
         cold: List[str] = []
+        period_miss: List[str] = []
         for t in tickers:
             cached = self.cache.load_symbol_series(t, "ohlc")
-            if cached is not None and not cached.empty:
-                cached_map[t] = cached
-            else:
+            if cached is None or cached.empty:
                 cold.append(t)
+                continue
+            stored_period = self.cache.cached_period(t, "ohlc")
+            if not cache_covers_request(cached, period_, stored_period):
+                period_miss.append(t)
+                continue
+            cached_map[t] = cached
 
-        # Freshness probe only for warm OHLC entries (Adj Close 5d as calendar signal).
+        # Freshness probe only for warm, period-sufficient OHLC entries.
         probed = self._probe_last_bars(list(cached_map.keys()), interval) if cached_map else {}
 
         hit_blocks: List[pd.DataFrame] = []
-        miss_syms: List[str] = list(cold)
+        miss_syms: List[str] = list(cold) + list(period_miss)
         self.stats["cold_misses"] += len(cold)
+        self.stats["period_misses"] += len(period_miss)
 
         for t, cached in cached_map.items():
             cached_last = last_bar_date(cached)

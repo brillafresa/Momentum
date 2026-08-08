@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-08-08 (KST) · 제품 버전 v5.0.4
+최종 갱신: 2026-08-08 (KST) · 제품 버전 v5.0.5
 
 ---
 
@@ -15,7 +15,7 @@
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
 | `adapters/ui_data_bundle.py` (`fingerprint_price_panel` / `DetailViewAtom` / `reconcile_detail_selection`) | 세부보기 심볼↔시계열 원자 결합 · 세션 번들 지문 | `test_ui_panel_fingerprint.py` / `test_detail_view_atom.py` |
-| `adapters/price_cache.py` (`needs_refresh` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · **warm-only** last-bar probe | `test_price_cache_freshness.py` / `harness.smoke_multi_market_batch` / `harness.smoke_usa_first_batch` |
+| `adapters/price_cache.py` (`needs_refresh` / `cache_covers_request` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · **warm-only** probe · **period-sufficient HIT** | `test_price_cache_freshness.py` / `harness.smoke_multi_market_batch` / `harness.smoke_usa_first_batch` |
 
 ### FMS / 퀀트 스코어 (오프라인)
 
@@ -68,6 +68,12 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.5 검증 요약 (2026-08-08 — 캐시 period 불일치)**
+
+1. 요청 period가 캐시 period/바 수보다 길면 HIT 금지 → full 재다운로드.
+2. 회귀: 1y 캐시 + 2y 요청 → `period_misses=1`, 결과 ≥360 bars.
+3. UI: ITGR(배치 1y 캐시) 관심종목 추가 후 「데이터 부족」 경고 없음 · 보드/차트 표시.
 
 **v5.0.4 검증 요약 (2026-08-08 — 캐시 probe 과호출 수정)**
 

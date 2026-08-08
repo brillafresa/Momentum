@@ -62,7 +62,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.4, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.5, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -122,7 +122,8 @@ Momentum/
 - Z-score 재현을 위해 타깃·`reference_prices_krw` 패널을 테스트에서 함께 고정한다.
   (v5.0 production은 절대 점수라 reference가 점수에 영향 없음; 레거시/포트 계약 테스트용.)
 - **디스크 캐시** (`adapters/price_cache.py`, 런타임 `cache/market_data/`): 배치 write-through +
-  UI **warm-only** last-bar probe (캐시 없는 심볼은 full download만). `app.py`/`run_scan_batch.py`는
+  UI **warm-only** last-bar probe (캐시 없는 심볼은 full download만). 요청 period가 캐시보다
+  길면 period miss로 재다운로드 (v5.0.5; 배치 1y vs UI 2y). `app.py`/`run_scan_batch.py`는
   `tests/`·`harness/`를 import하지 않는다. LIVE 회귀: `harness.smoke_multi_market_batch` /
   `harness.smoke_usa_first_batch`.
 

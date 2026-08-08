@@ -5,6 +5,23 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.5] - 2026-08-08
+
+### 수정
+
+- **배치 1y 캐시 HIT → UI 2y 요청 불일치**: 배치 write-through는 `period=1y`인데
+  UI `calculate_minimum_data_period`는 `2y`를 요청. date-only HIT가 짧은 시계열을
+  그대로 쓰면, 이미 2y인 관심종목과 concat 시 leading NaN으로 coverage&lt;0.5 →
+  「데이터 부족으로 표시되지 않습니다」(예: ITGR).
+- `cache_covers_request`: 저장된 period/바 수가 요청 period보다 짧으면 **period miss**
+  로 full 재다운로드 (warm probe 생략).
+
+### 검증 하네스
+
+- `tests/unit/test_price_cache_freshness.py` — period rank/bar floor · 1y→2y refresh
+- UI: ITGR를 1y 캐시 상태로 두고 관심종목 로드 → 경고 없이 가속보드/비교차트 표시,
+  캐시 period `2y`/501 bars로 승격
+
 ## [5.0.4] - 2026-08-08
 
 ### 수정

@@ -24,6 +24,7 @@ from adapters.market_data import FixtureAdapter
 from adapters.price_cache import (
     CachingMarketDataAdapter,
     DiskPriceCache,
+    cache_covers_request,
     last_bar_date,
     needs_refresh,
 )
@@ -72,9 +73,10 @@ class _CountingFixture(FixtureAdapter):
         return super().get_ohlc(tickers, period_, interval)
 
 
-def _sample_prices():
-    idx = pd.bdate_range("2024-01-01", periods=10)
-    return pd.DataFrame({"AAA": range(10, 20), "BBB": range(20, 30)}, index=idx)
+def _sample_prices(n: int = 200):
+    """Enough bars to satisfy the 1y HIT floor (``_PERIOD_MIN_BARS``)."""
+    idx = pd.bdate_range("2024-01-01", periods=n)
+    return pd.DataFrame({"AAA": range(n, 2 * n), "BBB": range(2 * n, 3 * n)}, index=idx)
 
 
 def test_caching_adapter_cold_path_skips_probe(tmp_path: Path):
@@ -122,3 +124,43 @@ def test_disk_cache_roundtrip(tmp_path: Path):
     assert loaded is not None
     assert last_bar_date(loaded) == idx[-1]
     assert cache.cached_last_bar("AAA") == idx[-1]
+    assert cache.cached_period("AAA") == "1y"
+
+
+def test_cache_covers_request_period_rank_and_bars():
+    idx_1y = pd.bdate_range("2024-01-01", periods=200)
+    short = pd.DataFrame({"AAA": range(200)}, index=idx_1y)
+    assert cache_covers_request(short, "1y", "1y") is True
+    assert cache_covers_request(short, "2y", "1y") is False  # meta period shorter
+    assert cache_covers_request(short, "2y", None) is False  # bar floor for 2y
+
+    idx_2y = pd.bdate_range("2023-01-01", periods=400)
+    long = pd.DataFrame({"AAA": range(400)}, index=idx_2y)
+    assert cache_covers_request(long, "2y", "2y") is True
+    assert cache_covers_request(long, "2y", "1y") is False  # meta still wins
+
+
+def test_caching_adapter_period_miss_refreshes_for_longer_request(tmp_path: Path):
+    """Batch-like 1y cache must not HIT when UI asks for 2y (ITGR coverage bug)."""
+    idx_1y = pd.bdate_range("2024-06-01", periods=200)
+    idx_2y = pd.bdate_range("2023-06-01", periods=400)
+    # Inner serves 2y panel when asked; cache starts with 1y-only write.
+    prices_2y = pd.DataFrame({"ITGR": range(400)}, index=idx_2y)
+    inner = _CountingFixture(prices=prices_2y)
+    cache = DiskPriceCache(root=tmp_path / "md")
+    cache.save_symbol_series(
+        "ITGR",
+        pd.Series(range(200), index=idx_1y, name="ITGR"),
+        kind="adj_close",
+        period="1y",
+    )
+    adapter = CachingMarketDataAdapter(inner, cache=cache, probe_period="5d")
+
+    out, miss = adapter.get_prices(["ITGR"], "2y", "1d")
+    assert miss == []
+    assert "ITGR" in out.columns
+    assert len(out["ITGR"].dropna()) >= 360
+    assert adapter.stats["period_misses"] == 1
+    assert adapter.stats["probes"] == 0  # period miss skips probe
+    assert inner.price_calls == 1  # full 2y download
+    assert cache.cached_period("ITGR") == "2y"
