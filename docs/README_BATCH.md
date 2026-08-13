@@ -50,6 +50,9 @@
   레이트 실패 방지). 강제 갱신은 앱의「데이터 캐시 초기화」.
   LIVE 회귀: `python -m harness.smoke_multi_market_batch` /
   `python -m harness.smoke_usa_first_batch`.
+  **v5.0.6:** `harmonize_calendar` coverage는 컬럼 native span 밀도 (상장 전 leading
+  NaN 제외). 최근 IPO가 배치 `coverage=0.9` / UI `0.5`에서 유니온 달력 길이 때문에
+  빠지지 않는다. 회귀: `python -m pytest tests/unit/test_native_asof_calendar.py -q`.
 
 ## 동작 참고
 - 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리 + `korean_universe.csv` + `hongkong_universe.csv` 병합).

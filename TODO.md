@@ -1,13 +1,20 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-08-08** (KST) · 제품 버전 **v5.0.5**
+> 최종 갱신: **2026-08-13** (KST) · 제품 버전 **v5.0.6**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-08-13 — 최근 IPO native-span coverage 오탈락 (v5.0.6)
+
+- [x] 원인: `harmonize_calendar`가 유니온 2y 길이 대비 coverage → LBRX/VIA(~11m) 탈락
+- [x] coverage 분모 = 컬럼 `[first_valid, last_valid]` (leading/trailing NaN 제외)
+- [x] pytest: `test_native_asof_calendar` · `test_batch_ui_fms_paths` · 전체 스위트
+- [x] work-plan: `docs/work-plans/2026-08-13-ipo-native-span-coverage.md`
 
 ### 2026-08-08 — 캐시 period 불일치로 UI 데이터 부족 (v5.0.5)
 
@@ -176,9 +183,10 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-08-08**: v5.0.5 period-sufficient 캐시 HIT + v5.0.4 warm-only probe.  
+> **2026-08-13**: v5.0.6 native-span coverage (LBRX/VIA IPO 오탈락).  
 > 다음 기본 축은 중기 엔트리포인트/adapters 잔여 정리 또는 **사용자 명시 신규 pain**.
 
+- [x] **2026-08-13 IPO coverage**: native-span 밀도 → 최근 상장 종목 UI 유지
 - [x] **2026-08-08 detail-view cache**: Atom + 세션 메모 + 디스크 last-bar probe
 - [x] **2026-08-07 native as-of**: 컬럼별 last_valid clip → UI/배치 FMS 정합
 - [x] **2026-08-02 원점 재피팅 승격**: `alive_pullback` → production v5.0.0

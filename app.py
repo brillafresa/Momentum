@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.5
+# KRW Momentum Radar - v5.0.6
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -111,7 +111,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.5", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.6", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -764,8 +764,7 @@ def build_prices_krw(period_key="6M", watchlist_symbols=None, min_data_period=No
     
     # harmonize_calendar 전에 원본 컬럼 수 기록
     original_cols = set(prices_krw.columns)
-    # coverage 임계값을 0.5로 낮춰서 최소한의 데이터가 있으면 포함
-    # 0.9는 너무 엄격하여 신규 상장 종목이나 데이터가 부족한 종목이 제외될 수 있음
+    # Native-span coverage: pre-listing leading NaNs do not count against the ratio.
     prices_krw = harmonize_calendar(prices_krw, coverage=0.5)
     # harmonize_calendar 후 제외된 종목 확인
     excluded_cols = original_cols - set(prices_krw.columns)
@@ -965,7 +964,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.5")
+st.title("⚡ KRW Momentum Radar v5.0.6")
 
 
 

@@ -8,7 +8,9 @@ v5.0.0 production FMS is absolute (``alive_pullback``): reference panels do not
 change scores. Residual batch↔UI differences can still come from how KRW price
 panels are built, but ``harmonize_calendar`` (v5.0.2) clips each column to its
 native last observation so trailing other-market days no longer fabricate flat
-bars that shift SEG_* windows.
+bars that shift SEG_* windows. Coverage (v5.0.6) is **native-span density**:
+leading NaNs before a listing do not drop a dense IPO history at either
+UI 0.5 or batch 0.9.
 
 This harness downloads **once** (or injects fixtures), then builds both panels
 and scores with the same OHLC so wall-clock drift is eliminated. Use it to

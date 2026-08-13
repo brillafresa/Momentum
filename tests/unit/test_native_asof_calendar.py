@@ -8,10 +8,11 @@ Multi-market union panels must not extend a symbol past its last real
 observation via blanket ``ffill``. Trailing phantom flats shift SEG_* windows
 and can roughly double FMS (ITGR 2026-08-07: KR-open / US-closed).
 
-Coverage is market-agnostic (column ``last_valid_index`` only):
+Coverage is market-agnostic (column ``last_valid_index`` / native span):
 - market A ahead of B
 - market B ahead of A
 - three markets with only one ahead
+- recent IPO leading NaNs vs a long peer calendar must not drop a dense native span
 
 No network I/O. Production ``app.py`` / ``run_scan_batch.py`` must not import this
 module.
@@ -129,3 +130,49 @@ def test_harmonize_still_ffills_interior_gaps_within_native_span() -> None:
     # Gap at idx[2] should be filled from prior close within native span.
     assert out.loc[idx[2], "A"] == pytest.approx(101.0)
     assert out["A"].last_valid_index() == idx[-1]
+
+
+def _lbrx_style_panel() -> pd.DataFrame:
+    """2y established peer + ~11m IPO (LBRX/VIA vs UI 2y watchlist)."""
+    idx = pd.bdate_range("2024-08-13", periods=504)
+    established = pd.Series(np.linspace(100.0, 150.0, len(idx)), index=idx, name="GOOG")
+    ipo = established.copy().rename("LBRX")
+    ipo.iloc[:-230] = np.nan
+    return pd.concat([established, ipo], axis=1)
+
+
+def test_harmonize_keeps_recent_ipo_on_long_peer_calendar() -> None:
+    """Leading NaNs vs a 2y peer must not drop a dense native IPO span.
+
+    LBRX/VIA (IPO 2025-09) have ~11 months of Yahoo bars. UI downloads 2y for
+    the rest of the watchlist; union-length coverage was ~0.46 and the tickers
+    vanished as 「데이터 부족」 even though the history is FMS-sufficient.
+    """
+    panel = _lbrx_style_panel()
+    out = harmonize_calendar(panel, coverage=0.5)
+    assert "GOOG" in out.columns
+    assert "LBRX" in out.columns
+    assert int(out["LBRX"].notna().sum()) == 230
+    assert out["LBRX"].first_valid_index() == panel["LBRX"].first_valid_index()
+
+
+def test_fms_unchanged_when_recent_ipo_column_concatenated() -> None:
+    """Keeping an IPO column must not alter the established peer's FMS."""
+    panel = _lbrx_style_panel()
+    solo = panel[["GOOG"]].dropna(how="all")
+    solo_h = harmonize_calendar(solo, coverage=0.5)
+    mixed_h = harmonize_calendar(panel, coverage=0.5)
+    solo_fms = float(compute_fms_snapshot(solo_h).loc["GOOG", "FMS"])
+    mixed_fms = float(compute_fms_snapshot(mixed_h[["GOOG"]]).loc["GOOG", "FMS"])
+    assert mixed_fms == pytest.approx(solo_fms, abs=1e-9)
+    assert "LBRX" in mixed_h.columns
+
+
+def test_harmonize_drops_all_nan_column() -> None:
+    """A column with no observations is still excluded."""
+    idx = pd.bdate_range("2025-01-02", periods=20)
+    good = pd.Series(np.linspace(100.0, 110.0, 20), index=idx, name="GOOD")
+    empty = pd.Series(np.nan, index=idx, name="EMPTY")
+    out = harmonize_calendar(pd.concat([good, empty], axis=1), coverage=0.5)
+    assert "GOOD" in out.columns
+    assert "EMPTY" not in out.columns

@@ -47,6 +47,24 @@ def align_bday_ffill(df: pd.DataFrame) -> pd.DataFrame:
     return df.reindex(idx).ffill()
 
 
+def _native_span_coverage(s: pd.Series) -> float:
+    """Non-NaN density inside ``[first_valid, last_valid]`` (0 if empty).
+
+    Leading NaNs before listing and trailing NaNs after native as-of are
+    excluded from the denominator so a recent IPO is not scored against a
+    longer peer calendar.
+    """
+    first = s.first_valid_index()
+    last = s.last_valid_index()
+    if first is None or last is None:
+        return 0.0
+    native = s.loc[first:last]
+    n = len(native)
+    if n == 0:
+        return 0.0
+    return float(native.count()) / float(n)
+
+
 def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
     """Union B-day panel with ffill that does **not** extend past native as-of.
 
@@ -57,7 +75,9 @@ def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
     1. Records each column's ``last_valid_index`` before reindex.
     2. Reindexes to a shared business-day grid and forward-fills (interior gaps).
     3. Restores NaN for dates **after** that column's last real observation.
-    4. Drops columns whose non-NaN coverage is below ``coverage``.
+    4. Drops columns whose **native-span** non-NaN coverage is below
+       ``coverage``. Leading (pre-listing) and trailing (other-market-only)
+       NaNs do not count against the ratio.
 
     Market labels are unused — US/KR/HK/JPN/future markets are treated the same.
     """
@@ -74,7 +94,7 @@ def harmonize_calendar(df: pd.DataFrame, coverage: float = 0.9) -> pd.DataFrame:
         else:
             out.loc[out.index > lv, col] = np.nan
 
-    valid_ratio = out.count().div(len(out))
+    valid_ratio = out.apply(_native_span_coverage, axis=0)
     keep_cols = valid_ratio[valid_ratio >= coverage].index
     return out[keep_cols] if len(keep_cols) > 0 else pd.DataFrame()
 

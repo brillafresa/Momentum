@@ -49,5 +49,10 @@ USA-first: `python -m harness.smoke_usa_first_batch`
 오프라인: `python -m pytest tests/unit/test_detail_view_atom.py tests/unit/test_price_cache_freshness.py -q`
 상세: `docs/work-plans/2026-08-08-detail-view-cache.md`.
 
+2026-08-13 (v5.0.6): coverage 분모 = 컬럼 native span. 최근 IPO leading NaN은
+유니온 2y 길이에 걸려 탈락하지 않음. 오프라인:
+`python -m pytest tests/unit/test_native_asof_calendar.py tests/unit/test_batch_ui_fms_paths.py -q`
+상세: `docs/work-plans/2026-08-13-ipo-native-span-coverage.md`.
+
 자동 assert가 필요하면 `tests/`에 테스트를 추가한다.
 상세 SSOT: [`HARNESS_RULES.md`](../HARNESS_RULES.md) §0.

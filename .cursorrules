@@ -62,7 +62,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.5, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.6, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -177,9 +177,10 @@ Momentum/
 - **정규화**: 절대 피처 점수(동결 파라미터 `PRODUCTION_ALIVE_PULLBACK_PARAMS`).
   앱·배치 동일 수식; reference panel은 API 호환용이며 점수에 영향 없음.
   배치는 관심종목 비어 있어도 스캔 계속 (v5.0.1; 관심종목은 스캔 제외·필터용).
-- **다국가 캘린더 (v5.0.2)**: `harmonize_calendar` / `align_bday_ffill` SSOT는
+- **다국가 캘린더 (v5.0.2 / v5.0.6)**: `harmonize_calendar` / `align_bday_ffill` SSOT는
   `core/indicators.py`. 공통 B-day ffill은 컬럼별 `last_valid_index` **이후를 연장하지
-  않음** (trailing phantom → SEG_* 창 밀림 방지). 시장/classify 분기 없음.
+  않음** (trailing phantom → SEG_* 창 밀림 방지). coverage는 **native-span** 밀도
+  (상장 전 leading NaN은 분모에서 제외; LBRX/VIA류 IPO 오탈락 방지). 시장/classify 분기 없음.
 - **SSOT**: 피처는 `core/fms_features.py`, production 점수는
   `score_alive_pullback_from_params` / `score_production_fms_features`,
   orchestration과 `-999`는 `core/fms.py`.

@@ -5,6 +5,24 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.6] - 2026-08-13
+
+### 수정
+
+- **최근 IPO가 「데이터 부족」으로 UI 탈락**: LBRX·VIA(2025-09 상장, Yahoo ~11개월)를
+  관심종목에 넣으면 경고 후 보드에서 사라짐. 다운로드 실패가 아니라
+  `harmonize_calendar`가 **유니온 2y 달력 길이** 대비 non-NaN 비율을 재서
+  coverage≈0.46 < 0.5로 제외한 것 (v5.0.5 ITGR 캐시 period 이슈와 별개).
+- coverage 분모를 컬럼 native span `[first_valid, last_valid]`로 변경.
+  상장 전 leading NaN·다른 시장 trailing NaN은 분모에서 제외. all-NaN은 계속 드롭.
+
+### 검증 하네스
+
+- `tests/unit/test_native_asof_calendar.py` — 2y 피어 + 230d IPO 유지 · 피어 FMS 불변 · all-NaN 드롭
+- `tests/unit/test_batch_ui_fms_paths.py` — UI/배치 경로 모두 late-listing 유지
+- 전체 `python -m pytest`
+- work-plan: `docs/work-plans/2026-08-13-ipo-native-span-coverage.md`
+
 ## [5.0.5] - 2026-08-08
 
 ### 수정

@@ -7,10 +7,15 @@ Purpose
 - Identical aligned panels → bit-identical FMS (builders are not a hidden scorer fork).
 - After native-asof harmonize, staggered calendars still agree on shared symbols:
   interior gaps may ffill, but trailing days past each column's last real bar stay NaN.
-- Coverage 0.5 vs 0.9 can change *which* symbols remain, not the shared-symbol math
-  when both keep the name.
+- Late-listing leading NaNs (IPO vs long peers) stay in both UI and batch panels;
+  coverage is native-span density, not union-calendar length.
 
-No network I/O.
+No network I/O. Production ``app.py`` / ``run_scan_batch.py`` must not import this
+module.
+
+Usage (from repo root)
+----------------------
+    python -m pytest tests/unit/test_batch_ui_fms_paths.py -q
 """
 
 from __future__ import annotations
@@ -74,19 +79,22 @@ def test_staggered_calendars_preserve_native_asof_and_match_fms(
     assert float(finite["abs_d"].max()) < 1e-9
 
 
-def test_stricter_batch_coverage_can_drop_sparse_symbol() -> None:
-    """coverage=0.9 may drop a name that coverage=0.5 keeps."""
-    idx = pd.date_range("2024-01-01", periods=100, freq="B")
+def test_late_listing_kept_by_ui_and_batch_coverage() -> None:
+    """IPO-style leading NaNs are not a coverage fail (native-span density).
+
+    Union-length coverage used to drop ~11m listings on a 2y peer calendar
+    (LBRX/VIA). Both UI (0.5) and batch (0.9) must keep a dense native span.
+    """
+    idx = pd.date_range("2024-01-01", periods=504, freq="B")
     dense = pd.Series(np.linspace(100.0, 110.0, len(idx)), index=idx, name="DENSE")
-    sparse = dense.copy().rename("SPARSE")
-    # Leading NaNs survive ffill; ~55% coverage → kept by UI(0.5), dropped by batch(0.9)
-    sparse.iloc[:45] = np.nan
-    panel = pd.concat([dense, sparse], axis=1)
+    ipo = dense.copy().rename("IPO")
+    ipo.iloc[:-230] = np.nan
+    panel = pd.concat([dense, ipo], axis=1)
     ui = build_ui_style_from_krw_panel(panel)
     batch = build_batch_style_prices_krw(panel)
     assert "DENSE" in ui.columns and "DENSE" in batch.columns
-    assert "SPARSE" in ui.columns
-    assert "SPARSE" not in batch.columns
+    assert "IPO" in ui.columns
+    assert "IPO" in batch.columns
 
 
 def test_inject_gaps_introduces_nans(synthetic_prices_krw: pd.DataFrame) -> None:

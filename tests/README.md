@@ -18,8 +18,8 @@ tests/
 │   ├── test_fms_scoring.py          # 골든 순위 · reference 불변(v5 절대)
 │   ├── test_fms_alive_pullback_production.py  # v5 동결 파라미터 · parity
 │   ├── test_nonlinear_mc_features.py         # SEG_* · residual features
-│   ├── test_batch_ui_fms_paths.py   # 배치 vs UI 캘린더 경로 · coverage · native as-of
-│   ├── test_native_asof_calendar.py # 다국가 trailing ffill 금지 · 양방향/3시장 FMS 불변
+│   ├── test_batch_ui_fms_paths.py   # 배치 vs UI 경로 · native-span IPO · native as-of
+│   ├── test_native_asof_calendar.py # trailing ffill 금지 · native-span IPO coverage · FMS 불변
 │   ├── test_ui_panel_fingerprint.py # UI 세션 번들 패널 지문
 │   ├── test_detail_view_atom.py     # DetailViewAtom 심볼↔시리즈 불변식
 │   ├── test_price_cache_freshness.py # last-bar probe · CachingMarketDataAdapter
@@ -60,7 +60,7 @@ python -m harness.compare_batch_ui_fms --offline
   `test_fms_alive_pullback_production.py`(v5 SSOT),
   `test_nonlinear_mc_features.py`(SEG_*/잔차),
   `test_batch_ui_fms_paths.py`(배치 vs UI 경로 · coverage · native as-of),
-  `test_native_asof_calendar.py`(다국가 trailing ffill 금지 · FMS 불변),
+  `test_native_asof_calendar.py`(다국가 trailing ffill 금지 · FMS 불변 · native-span IPO),
   `test_fms_recalib_parity.py`(feature≡snapshot),
   `test_fms_cash_like_gate.py`(**legacy** sparse+gate).
 - legacy 수식 회귀: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune` /
