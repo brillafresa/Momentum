@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-09-22 (KST) · 제품 버전 v5.0.8
+최종 갱신: 2026-09-22 (KST) · 제품 버전 v5.0.9
 
 ---
 
@@ -68,6 +68,12 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.9 검증 요약 (2026-09-22 — 정렬 기본값 FMS 복원)**
+
+1. 사이드바 정렬 기본 = `FMS(현재)` (옵션 순서: FMS → NAIVE_KELLY_20D → …).
+2. `momentum_now_and_delta` 기본 인덱스 정렬 = FMS 내림차순.
+3. 회귀: `test_fms_scoring` · `test_fms_cash_like_gate` · `test_naive_kelly`.
 
 **v5.0.8 검증 요약 (2026-09-22 — 테이블/사이드바 UI + NAIVE_KELLY + dead ytd)**
 

@@ -61,16 +61,12 @@ def test_momentum_now_and_delta_rank_order_matches_golden(
         symbols=symbols,
     )
 
-    assert list(result["FMS"].sort_values(ascending=False).index) == golden_fms_ranks["symbols_desc_fms"]
+    assert list(result.index) == golden_fms_ranks["symbols_desc_fms"]
     for symbol, expected in golden_fms_ranks["disqualified"].items():
         assert result.loc[symbol, "FMS"] == pytest.approx(expected)
     assert "NAIVE_KELLY_20D" in result.columns
     assert "R_YTD" not in result.columns
     assert "R_1W" not in result.columns
-    # Table-only R_4M append removed; feature-frame R_4M is not in snapshot display cols.
-    assert list(result.index) == list(
-        result.sort_values("NAIVE_KELLY_20D", ascending=False, na_position="last").index
-    )
 
 
 def test_reference_panel_does_not_change_production_fms(

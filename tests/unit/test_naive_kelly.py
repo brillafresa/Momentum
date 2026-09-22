@@ -4,8 +4,11 @@ Unit tests for ``core.indicators.naive_kelly`` (Validation Harness).
 Purpose
 -------
 Lock the diagnostic ``NAIVE_KELLY_20D`` metric used by the momentum table /
-default UI sort: ``mean(last N daily returns) / var(last N, ddof=1)`` with
+optional sidebar sort: ``mean(last N daily returns) / var(last N, ddof=1)`` with
 risk-free rate treated as 0 and no cross-asset covariance.
+
+This is **not** an FMS production input. Default UI / ``momentum_now_and_delta``
+sort remains FMS-descending; Kelly is available as an alternate rank key.
 
 This is **not** an FMS production input. FMS remains ``alive_pullback`` over
 SEG_* / residual features. Kelly is attached in ``momentum_now_and_delta``

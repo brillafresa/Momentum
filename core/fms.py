@@ -552,5 +552,5 @@ def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optio
     df['ΔFMS_5D'] = df['FMS'] - d5['FMS']
     # Diagnostic (not an FMS input): rf=0, single-name, no covariance.
     df['NAIVE_KELLY_20D'] = naive_kelly(prices_krw, window=20)
-    return df.sort_values('NAIVE_KELLY_20D', ascending=False, na_position='last')
+    return df.sort_values('FMS', ascending=False)
 

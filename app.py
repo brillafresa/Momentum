@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.8
+# KRW Momentum Radar - v5.0.9
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -109,7 +109,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.8", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.9", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -267,7 +267,7 @@ with st.sidebar.expander("📊 분석 설정", expanded=True):
     
     rank_by = st.selectbox(
         "정렬 기준",
-        ["나이브 켈리(20D)", "ΔFMS(1D)", "ΔFMS(5D)", "FMS(현재)", "1M 수익률"],
+        ["FMS(현재)", "나이브 켈리(20D)", "ΔFMS(1D)", "ΔFMS(5D)", "1M 수익률"],
         index=0,
     )
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
@@ -892,7 +892,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.8")
+st.title("⚡ KRW Momentum Radar v5.0.9")
 
 
 
@@ -938,10 +938,10 @@ else:
     if DETAIL_ATOM_CACHE_KEY in st.session_state:
         del st.session_state[DETAIL_ATOM_CACHE_KEY]
 rank_col = {
+    "FMS(현재)": "FMS",
     "나이브 켈리(20D)": "NAIVE_KELLY_20D",
     "ΔFMS(1D)": "ΔFMS_1D",
     "ΔFMS(5D)": "ΔFMS_5D",
-    "FMS(현재)": "FMS",
     "1M 수익률": "R_1M",
 }[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
@@ -1532,8 +1532,8 @@ final_column_order = [
 ]
 disp_reordered = disp[final_column_order]
 
-# Default / sidebar sort key (NAIVE_KELLY_20D by default)
-sort_key = rank_col if rank_col in disp_reordered.columns else "NAIVE_KELLY_20D"
+# Default / sidebar sort key (FMS by default)
+sort_key = rank_col if rank_col in disp_reordered.columns else "FMS"
 if sort_key not in disp_reordered.columns:
     sort_key = "FMS"
 disp_reordered = disp_reordered.sort_values(

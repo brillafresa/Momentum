@@ -5,6 +5,14 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.9] - 2026-09-22
+
+### 변경
+
+- **정렬 기본값 복원**: 사이드바 정렬 기준 기본을 다시 **FMS(현재)** 로 두고,
+  선택 순서를 `FMS(현재)` → `나이브 켈리(20D)` → ΔFMS → 1M으로 조정.
+  `momentum_now_and_delta` 기본 인덱스 정렬도 FMS 내림차순으로 복원.
+
 ## [5.0.8] - 2026-09-22
 
 ### 변경
