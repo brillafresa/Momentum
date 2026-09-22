@@ -28,7 +28,6 @@ from core.indicators import (  # noqa: F401
     harmonize_calendar,
     last_vol_annualized,
     mask_non_positive_prices,
-    naive_kelly,
     returns_pct,
     r_squared_3m,
 )

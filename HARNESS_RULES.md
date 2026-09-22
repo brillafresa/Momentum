@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-09-22 (KST) · 제품 버전 v5.0.9
+최종 갱신: 2026-09-22 (KST) · 제품 버전 v5.0.10
 
 ---
 
@@ -23,9 +23,9 @@
 |------|------|-----------|
 | `core/fms_features.py` (`PRODUCTION_ALIVE_PULLBACK_PARAMS` / `score_alive_pullback_from_params` / `score_production_fms_features`) | **v5.0 production SSOT**: alive_pullback 절대 비선형 점수 | `test_fms_alive_pullback_production.py` / `test_nonlinear_mc_features.py` |
 | `core/fms_features.py` (`score_legacy_sparse_fms_features` / `cash_like_strength`) | **v4.6–v4.7 archived** sparse+상대Z+현금 게이트 | `test_fms_cash_like_gate.py` / `harness.compare_cash_like_gate` |
-| `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS · **NAIVE_KELLY_20D** | fixture; `analysis_utils` 셔임 |
+| `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS | fixture; `analysis_utils` 셔임 |
 | `core/fms.py` (`score_legacy_fms_from_feature_frame` / `FmsScoreParams`) | **pre-v4.6 archived formula** (tune 스크립트·회귀만) | `test_fms_params` / `test_fms_vol_tune` / `test_fms_recent_continuation` |
-| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `last_vol_annualized` / `naive_kelly` / `mask_non_positive_prices` / **`harmonize_calendar`(native as-of · native-span coverage)** / `align_bday_ffill` | `tests/unit/test_indicators.py` / `test_naive_kelly.py` / `test_native_asof_calendar.py` |
+| `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `last_vol_annualized` / `mask_non_positive_prices` / **`harmonize_calendar`(native as-of · native-span coverage)** / `align_bday_ffill` | `tests/unit/test_indicators.py` / `test_native_asof_calendar.py` |
 | `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
 | `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 레거시 게이트 + v5 저순위 계약 |
@@ -68,6 +68,12 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.10 검증 요약 (2026-09-22 — NAIVE_KELLY 전면 제거)**
+
+1. `naive_kelly` / `NAIVE_KELLY_20D` / 정렬 옵션 / `test_naive_kelly` 삭제.
+2. production FMS·모멘텀 테이블 기타 컬럼·FMS 기본 정렬 불변.
+3. 회귀: `test_fms_scoring`(컬럼 부재) · 전체 pytest.
 
 **v5.0.9 검증 요약 (2026-09-22 — 정렬 기본값 FMS 복원)**
 

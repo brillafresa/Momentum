@@ -23,7 +23,6 @@ from core.fms_features import (
 )
 from core.indicators import (
     mask_non_positive_prices,
-    naive_kelly,
 )
 from core.tradeability import calculate_tradeability_filters
 
@@ -550,7 +549,5 @@ def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optio
     df = now.copy()
     df['ΔFMS_1D'] = df['FMS'] - d1['FMS']
     df['ΔFMS_5D'] = df['FMS'] - d5['FMS']
-    # Diagnostic (not an FMS input): rf=0, single-name, no covariance.
-    df['NAIVE_KELLY_20D'] = naive_kelly(prices_krw, window=20)
     return df.sort_values('FMS', ascending=False)
 

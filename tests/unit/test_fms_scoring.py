@@ -64,7 +64,7 @@ def test_momentum_now_and_delta_rank_order_matches_golden(
     assert list(result.index) == golden_fms_ranks["symbols_desc_fms"]
     for symbol, expected in golden_fms_ranks["disqualified"].items():
         assert result.loc[symbol, "FMS"] == pytest.approx(expected)
-    assert "NAIVE_KELLY_20D" in result.columns
+    assert "NAIVE_KELLY_20D" not in result.columns
     assert "R_YTD" not in result.columns
     assert "R_1W" not in result.columns
 

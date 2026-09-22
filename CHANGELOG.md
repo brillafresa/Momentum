@@ -5,6 +5,18 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.10] - 2026-09-22
+
+### 제거
+
+- **NAIVE_KELLY_20D 전면 제거**: `core.indicators.naive_kelly` · 모멘텀 테이블 컬럼 ·
+  사이드바 정렬 옵션 · 관련 테스트(`test_naive_kelly.py`). FMS/`alive_pullback`·기타 표 컬럼 불변.
+
+### 검증 하네스
+
+- `test_fms_scoring`: `NAIVE_KELLY_20D` 부재 assert · FMS 골든 순위 유지
+- `python -m pytest`
+
 ## [5.0.9] - 2026-09-22
 
 ### 변경

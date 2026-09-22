@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.9
+# KRW Momentum Radar - v5.0.10
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -109,7 +109,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.9", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.10", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -267,7 +267,7 @@ with st.sidebar.expander("📊 분석 설정", expanded=True):
     
     rank_by = st.selectbox(
         "정렬 기준",
-        ["FMS(현재)", "나이브 켈리(20D)", "ΔFMS(1D)", "ΔFMS(5D)", "1M 수익률"],
+        ["FMS(현재)", "ΔFMS(1D)", "ΔFMS(5D)", "1M 수익률"],
         index=0,
     )
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
@@ -587,7 +587,6 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     - FMS 계산: R_3M(63일) + ΔFMS_5D(5일) = 68일
     - 거래 적합성 필터: 63일
     - 피처 프레임 R_4M(레거시/표시 겸용): 84일
-    - NAIVE_KELLY_20D: 21일 (20 수익 + 1)
     - 수익률-변동성 이동맵: rv_window + tail_days
     
     Args:
@@ -608,11 +607,8 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     
     # 3. R_4M (feature frame): 84일
     requirements.append(84)
-
-    # 4. NAIVE_KELLY_20D
-    requirements.append(21)
     
-    # 5. 수익률-변동성 이동맵: rv_window + tail_days
+    # 4. 수익률-변동성 이동맵: rv_window + tail_days
     requirements.append(rv_window + tail_days)
     
     # 최소 필요 거래일 계산 (여유분 10% 추가하여 휴일/데이터 누락 대비)
@@ -892,7 +888,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.9")
+st.title("⚡ KRW Momentum Radar v5.0.10")
 
 
 
@@ -939,7 +935,6 @@ else:
         del st.session_state[DETAIL_ATOM_CACHE_KEY]
 rank_col = {
     "FMS(현재)": "FMS",
-    "나이브 켈리(20D)": "NAIVE_KELLY_20D",
     "ΔFMS(1D)": "ΔFMS_1D",
     "ΔFMS(5D)": "ΔFMS_5D",
     "1M 수익률": "R_1M",
@@ -1503,19 +1498,18 @@ for c in ["R_1M", "R_3M", "AboveEMA50"]:
 if "R2_3M" in disp:
     disp["R2_3M"] = disp["R2_3M"].round(3)
 
-for c in ["FMS", "ΔFMS_1D", "ΔFMS_5D", "NAIVE_KELLY_20D"]:
+for c in ["FMS", "ΔFMS_1D", "ΔFMS_5D"]:
     if c in disp:
         disp[c] = disp[c].round(2)
 
 
 def momentum_table_column_order(available_columns):
-    """FMS → NAIVE_KELLY_20D → FMS-impact features → deltas/filter → rest."""
+    """FMS → FMS-impact features → deltas/filter → rest."""
     column_order = []
     if "Symbol" in available_columns:
         column_order.append("Symbol")
-    for col in ("FMS", "NAIVE_KELLY_20D"):
-        if col in available_columns:
-            column_order.append(col)
+    if "FMS" in available_columns:
+        column_order.append("FMS")
     for col in MOMENTUM_TABLE_FMS_FEATURE_ORDER:
         if col in available_columns and col not in column_order:
             column_order.append(col)

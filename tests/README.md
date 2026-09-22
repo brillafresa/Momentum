@@ -23,7 +23,6 @@ tests/
 │   ├── test_ui_panel_fingerprint.py # UI 세션 번들 패널 지문
 │   ├── test_detail_view_atom.py     # DetailViewAtom 심볼↔시리즈 불변식
 │   ├── test_price_cache_freshness.py # last-bar probe · CachingMarketDataAdapter
-│   ├── test_naive_kelly.py          # NAIVE_KELLY_20D mean/var · native as-of (FMS 입력 아님)
 │   ├── test_fms_cash_like_gate.py   # legacy sparse+cash gate
 │   ├── test_fms_recalib_parity.py
 │   ├── test_fms_features.py
@@ -43,7 +42,7 @@ Fixture **재생성기**는 `scripts/fixtures/`에 둔다 (운영 코드 미impo
 # 저장소 루트에서
 python -m pytest
 python -m pytest tests/unit/ -q
-python -m pytest tests/unit/test_naive_kelly.py tests/unit/test_fms_scoring.py -q
+python -m pytest tests/unit/test_fms_scoring.py -q
 python -m pytest tests/unit/test_native_asof_calendar.py -q
 python -m harness.run_fms_snapshot
 python -m harness.compare_cash_like_gate
@@ -64,7 +63,6 @@ python -m harness.compare_batch_ui_fms --offline
   `test_batch_ui_fms_paths.py`(배치 vs UI 경로 · coverage · native as-of),
   `test_native_asof_calendar.py`(다국가 trailing ffill 금지 · FMS 불변 · native-span IPO),
   `test_fms_recalib_parity.py`(feature≡snapshot),
-  `test_fms_cash_like_gate.py`(**legacy** sparse+gate),
-  `test_naive_kelly.py`(`NAIVE_KELLY_20D` 진단 지표 · FMS 입력 아님).
+  `test_fms_cash_like_gate.py`(**legacy** sparse+gate).
 - legacy 수식 회귀: `test_fms_recent_continuation` / `test_fms_params` / `test_fms_vol_tune` /
   `test_short_horizon_*` (`score_legacy_fms_from_feature_frame` 경로).

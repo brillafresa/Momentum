@@ -185,34 +185,3 @@ def last_vol_annualized(df: pd.DataFrame, window: int = 20) -> pd.Series:
             continue
         out[col] = float(rets.iloc[-window:].std(ddof=1) * np.sqrt(252.0))
     return pd.Series(out, dtype=float)
-
-
-def naive_kelly(df: pd.DataFrame, window: int = 20) -> pd.Series:
-    """Naive Kelly fraction: mean(r) / var(r) over the last ``window`` daily returns.
-
-    Treats the risk-free rate as 0 and ignores cross-asset covariance (hence
-    \"naive\"). Evaluated at each column's last valid close (native as-of).
-    Sample variance uses ``ddof=1``. Returns NaN when fewer than ``window``
-    returns exist or variance is zero.
-    """
-    if df is None or df.empty:
-        return pd.Series(dtype=float, name="NAIVE_KELLY_20D")
-    out: dict[str, float] = {}
-    for col in df.columns:
-        s = df[col].astype(float)
-        lv = s.last_valid_index()
-        if lv is None:
-            out[col] = np.nan
-            continue
-        hist = s.loc[:lv].ffill()
-        rets = hist.pct_change(fill_method=None).dropna()
-        if len(rets) < window:
-            out[col] = np.nan
-            continue
-        tail = rets.iloc[-window:]
-        variance = float(tail.var(ddof=1))
-        if not np.isfinite(variance) or variance <= 0.0:
-            out[col] = np.nan
-            continue
-        out[col] = float(tail.mean() / variance)
-    return pd.Series(out, dtype=float, name="NAIVE_KELLY_20D")
