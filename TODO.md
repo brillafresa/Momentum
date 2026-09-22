@@ -1,13 +1,27 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-08-13** (KST) · 제품 버전 **v5.0.6**
+> 최종 갱신: **2026-09-22** (KST) · 제품 버전 **v5.0.8**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-09-22 — 사이드바 UI 정리 + 푸시 전 정리 (v5.0.8)
+
+- [x] 미사용 관심종목 재평가 UI·앱 전용 래퍼/`get_button_states` 제거 (배치 `calculate_fms_for_batch` 유지)
+- [x] 「데이터 캐시 초기화」를 도구·도움말 상단으로 이동
+- [x] Dead `ytd_return` 제거 · 문서/SSOT/work-plan 동기화
+- [x] pytest 전체 · app/batch import 스모크
+
+### 2026-09-22 — 모멘텀 테이블 정리 + 나이브 켈리 (v5.0.7→5.0.8 흡수)
+
+- [x] 표 전용 `R_1W`/`R_YTD`/append `R_4M` 제거 (`momentum_now_and_delta`)
+- [x] `NAIVE_KELLY_20D` = mean/var(20d daily returns); 기본 정렬·컬럼 2번째
+- [x] 컬럼 순서: FMS → 켈리 → FMS 영향도순 (`MOMENTUM_TABLE_FMS_FEATURE_ORDER`)
+- [x] pytest: `test_naive_kelly` + FMS 골든 순위(값 기준) 회귀
 
 ### 2026-08-13 — 최근 IPO native-span coverage 오탈락 (v5.0.6)
 
@@ -183,9 +197,10 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-08-13**: v5.0.6 native-span coverage (LBRX/VIA IPO 오탈락).  
-> 다음 기본 축은 중기 엔트리포인트/adapters 잔여 정리 또는 **사용자 명시 신규 pain**.
+> **2026-09-22**: v5.0.8 모멘텀 테이블·사이드바·`NAIVE_KELLY_20D` 푸시 준비 완료.  
+> 다음 기본 축은 추가 UI 작업(사용자 명시) 또는 중기 엔트리포인트/adapters 잔여 정리.
 
+- [x] **2026-09-22 모멘텀 테이블·UI**: 표전용 필드 제거 · 나이브 켈리 · 재평가 제거 · 푸시 전 정리
 - [x] **2026-08-13 IPO coverage**: native-span 밀도 → 최근 상장 종목 UI 유지
 - [x] **2026-08-08 detail-view cache**: Atom + 세션 메모 + 디스크 last-bar probe
 - [x] **2026-08-07 native as-of**: 컬럼별 last_valid clip → UI/배치 FMS 정합

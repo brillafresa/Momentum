@@ -268,7 +268,9 @@ def test_existing_golden_rank_order_preserved(
         ohlc_data=synthetic_ohlc,
         symbols=list(synthetic_prices_krw.columns),
     )
-    assert list(result.index) == golden_fms_ranks["symbols_desc_fms"]
+    assert list(result["FMS"].sort_values(ascending=False).index) == golden_fms_ranks[
+        "symbols_desc_fms"
+    ]
 
 
 def test_threshold_constants_match_plan_candidate_range() -> None:

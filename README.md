@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v5.0.6**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v5.0.8**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -37,7 +37,7 @@
 - **계좌 모드별 관리**: 자유투자계좌와 퇴직연금IRP 모드별로 독립적인 관심종목 관리
 - **파일 업로드/다운로드**: CSV 파일로 관심종목 백업 및 복원
 - **수동 관리**: 개별 종목 추가/삭제 (즉시 파일 저장)
-- **FMS 기반 재평가**: 저성과 종목 자동 식별 및 제거 제안
+- 동적 관심종목 관리 (다운로드/업로드)
 - **실시간 동기화**: 파일 변경 시 자동 새로고침
 
 ### 🚀 신규 종목 탐색
@@ -227,7 +227,14 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v5.0.6 (현재)
+### v5.0.8 (현재)
+
+- 모멘텀 테이블: 표 전용 `R_1W`/`R_YTD`/append `R_4M` 제거; `NAIVE_KELLY_20D` 추가(기본 정렬)
+- 미사용 관심종목 재평가 UI 제거; 캐시 초기화 버튼을 도움말 위로 이동
+- Dead `ytd_return` 제거 (FMS/운영 경로 미사용)
+- 검증: `test_naive_kelly` · FMS 골든 · 전체 pytest · app/batch import
+
+### v5.0.6
 
 - 최근 IPO(LBRX/VIA)가 유니온 2y coverage에 걸려 「데이터 부족」으로 탈락하던 문제 수정
 - `harmonize_calendar` coverage를 컬럼 native span 밀도로 변경

@@ -54,5 +54,10 @@ USA-first: `python -m harness.smoke_usa_first_batch`
 `python -m pytest tests/unit/test_native_asof_calendar.py tests/unit/test_batch_ui_fms_paths.py -q`
 상세: `docs/work-plans/2026-08-13-ipo-native-span-coverage.md`.
 
+2026-09-22 (v5.0.8): 모멘텀 테이블 정리 + `NAIVE_KELLY_20D`(FMS 입력 아님) + 재평가 UI 제거.
+오프라인:
+`python -m pytest tests/unit/test_naive_kelly.py tests/unit/test_fms_scoring.py -q`
+상세: `docs/work-plans/2026-09-22-momentum-table-naive-kelly-ui.md`.
+
 자동 assert가 필요하면 `tests/`에 테스트를 추가한다.
 상세 SSOT: [`HARNESS_RULES.md`](../HARNESS_RULES.md) §0.

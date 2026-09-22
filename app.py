@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.6
+# KRW Momentum Radar - v5.0.8
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import pytz
-import re
 import streamlit as st
 from typing import Optional, Tuple
 import yfinance as yf
@@ -29,11 +28,10 @@ from watchlist_utils import (
     load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, 
     export_watchlist_to_csv, import_watchlist_from_csv, MODE_FREE, MODE_IRP
 )
-from config import FMS_FORMULA
+from core.fms_features import MOMENTUM_TABLE_FMS_FEATURE_ORDER
 from analysis_utils import (
     align_bday_ffill,
     calculate_tradeability_filters as _au_trade_filters,
-    calculate_fms_for_batch as _au_calculate_fms_for_batch,
     get_filter_debug_info,
     harmonize_calendar,
     momentum_now_and_delta as _au_momentum_now_and_delta,
@@ -111,7 +109,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.6", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.8", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -215,25 +213,9 @@ def ema(s, span):
 calculate_tradeability_filters = _au_trade_filters
 momentum_now_and_delta = _au_momentum_now_and_delta
 
-def calculate_fms_for_batch(symbols_batch, period_="1y", interval="1d", reference_prices_krw=None):
-    return _au_calculate_fms_for_batch(symbols_batch, period_, interval, reference_prices_krw)
-
 # ------------------------------
 # UI 관련 함수들
 # ------------------------------
-def get_button_states():
-    """
-    버튼 비활성화 상태를 반환합니다.
-    
-    Returns:
-        tuple: (is_scanning, is_reassessing, button_disabled)
-            - is_scanning (bool): 유니버스 스캔 진행 중 여부
-            - is_reassessing (bool): 재평가 진행 중 여부
-            - button_disabled (bool): 버튼 비활성화 여부
-    """
-    is_scanning = False  # 배치 스캔은 별도 프로세스로 실행됨
-    is_reassessing = 'reassessing' in st.session_state and st.session_state.reassessing
-    return is_scanning, is_reassessing, is_scanning or is_reassessing
 def display_name(sym):
     """심볼을 표시용 이름으로 변환합니다."""
     if 'NAME_MAP' not in globals():
@@ -283,7 +265,11 @@ with st.sidebar.expander("🏦 계좌 모드 선택", expanded=True):
 with st.sidebar.expander("📊 분석 설정", expanded=True):
     period = st.selectbox("차트 기간", ["1M","3M","6M","1Y","2Y"], index=1)
     
-    rank_by = st.selectbox("정렬 기준", ["ΔFMS(1D)","ΔFMS(5D)","FMS(현재)","1M 수익률"], index=2)
+    rank_by = st.selectbox(
+        "정렬 기준",
+        ["나이브 켈리(20D)", "ΔFMS(1D)", "ΔFMS(5D)", "FMS(현재)", "1M 수익률"],
+        index=0,
+    )
     TOP_N = st.slider("Top N", 5, 60, 20, step=5)
     # 수익률-변동성 이동맵 설정 (데이터 로드 시점에 필요)
     st.divider()
@@ -346,62 +332,6 @@ with st.sidebar.expander("📋 관심종목 관리", expanded=False):
     # 업로드 처리 완료 후 플래그 리셋
     if st.session_state.get('upload_processed', False):
         st.session_state.upload_processed = False
-    
-    # 구분선
-    st.divider()
-    
-    # 재평가 기능
-    st.markdown("**🔄 재평가**")
-    is_scanning, is_reassessing, button_disabled = get_button_states()
-    button_text = '⏳ 재평가 중...' if is_reassessing else '📊 재평가 실행'
-    
-    if st.button(button_text, disabled=button_disabled, help="현재 관심종목의 FMS를 재계산하여 저성과 종목을 식별합니다."):
-        # 재평가 상태 설정
-        st.session_state.reassessing = True
-        
-        with st.spinner("관심종목을 재평가 중입니다..."):
-            watchlist_fms = calculate_fms_for_batch(st.session_state.watchlist, period_="1y")
-            
-            if not watchlist_fms.empty:
-                fms_25th = watchlist_fms['FMS'].quantile(0.25)
-                stale_candidates = watchlist_fms[watchlist_fms['FMS'] < fms_25th].sort_values('FMS')
-                
-                if not stale_candidates.empty:
-                    st.warning(f"FMS 하위 25% 종목 ({len(stale_candidates)}개) 발견")
-                    st.session_state['reassessment_results'] = stale_candidates
-                else:
-                    st.success("모든 관심종목이 양호한 상태입니다!")
-                    st.session_state['reassessment_results'] = None
-            else:
-                st.error("재평가 데이터를 가져올 수 없습니다.")
-                st.session_state['reassessment_results'] = None
-        
-        # 재평가 완료
-        st.session_state.reassessing = False
-    
-    # 재평가 결과 표시
-    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
-        st.markdown("**📋 제거 제안 종목:**")
-        stale_candidates = st.session_state['reassessment_results']
-        
-        for symbol in stale_candidates.index[:5]:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                fms_score = stale_candidates.loc[symbol, 'FMS']
-                st.write(f"**{symbol}** (FMS: {fms_score:.1f})")
-            with col2:
-                if st.button("🗑️", key=f"remove_{symbol}"):
-                    # 관심종목에서 제거
-                    st.session_state.watchlist = remove_from_watchlist(st.session_state.watchlist, [symbol], mode=st.session_state.account_mode)
-                    
-                    # 재평가 결과에서도 제거
-                    if 'reassessment_results' in st.session_state and st.session_state['reassessment_results'] is not None:
-                        if symbol in st.session_state['reassessment_results'].index:
-                            st.session_state['reassessment_results'] = st.session_state['reassessment_results'].drop(symbol)
-                    
-                    st.cache_data.clear()
-                    clear_ui_session_caches(st.session_state)
-                    st.rerun()
 
 # 3. 신규 종목 탐색
 with st.sidebar.expander("🚀 신규 종목 탐색", expanded=False):
@@ -600,6 +530,15 @@ with st.sidebar.expander("✏️ 수동 관리", expanded=False):
                 st.error("삭제할 종목을 선택해주세요.")
 
 with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
+    if st.button("🗂️ 데이터 캐시 초기화"):
+        st.cache_data.clear()
+        clear_ui_session_caches(st.session_state)
+        from adapters.price_cache import clear_disk_market_cache
+        clear_disk_market_cache()
+        st.success("캐시 초기화 완료 (세션·Streamlit·디스크)")
+
+    st.markdown("---")
+
     # FMS 설명 (SSOT: core/fms.py · config.FMS_FORMULA — UI 문구는 여기와 동기화)
     st.markdown("**📊 FMS (Fast Momentum Score)**")
     
@@ -638,16 +577,6 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
     - **“이전 지지 + 최근 회복이 확인된 연속 상승”을 선호하고,
       “절대 저수익·죽은 대상승 정체·단발 급등”을 억제하는 비선형 점수입니다.**
     """)
-    
-    st.markdown("---")
-    
-    # 도구 버튼들
-    if st.button("🗂️ 데이터 캐시 초기화"):
-        st.cache_data.clear()
-        clear_ui_session_caches(st.session_state)
-        from adapters.price_cache import clear_disk_market_cache
-        clear_disk_market_cache()
-        st.success("캐시 초기화 완료 (세션·Streamlit·디스크)")
 
 
 def calculate_minimum_data_period(rv_window=63, tail_days=10):
@@ -657,9 +586,9 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     각 기능별 최소 거래일 요구사항:
     - FMS 계산: R_3M(63일) + ΔFMS_5D(5일) = 68일
     - 거래 적합성 필터: 63일
-    - R_4M: 84일
-    - 수익률-변동성 이동맵: rv_window + tail_days (최대 73일)
-    - YTD Return: 연초부터 (1년 데이터면 충분)
+    - 피처 프레임 R_4M(레거시/표시 겸용): 84일
+    - NAIVE_KELLY_20D: 21일 (20 수익 + 1)
+    - 수익률-변동성 이동맵: rv_window + tail_days
     
     Args:
         rv_window (int): 수익률-변동성 이동맵 창 크기 (기본값: 최대값 63)
@@ -677,15 +606,14 @@ def calculate_minimum_data_period(rv_window=63, tail_days=10):
     # 2. 거래 적합성 필터: 63일
     requirements.append(63)
     
-    # 3. R_4M: 84일
+    # 3. R_4M (feature frame): 84일
     requirements.append(84)
+
+    # 4. NAIVE_KELLY_20D
+    requirements.append(21)
     
-    # 4. 수익률-변동성 이동맵: rv_window + tail_days
+    # 5. 수익률-변동성 이동맵: rv_window + tail_days
     requirements.append(rv_window + tail_days)
-    
-    # 5. YTD Return: 연초부터 (1년 데이터면 충분)
-    # 실제로는 연초부터만 필요하지만, 안전하게 1년 데이터를 다운로드
-    requirements.append(252)
     
     # 최소 필요 거래일 계산 (여유분 10% 추가하여 휴일/데이터 누락 대비)
     min_trading_days = int(max(requirements) * 1.1)
@@ -964,7 +892,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.6")
+st.title("⚡ KRW Momentum Radar v5.0.8")
 
 
 
@@ -1009,7 +937,13 @@ else:
     st.session_state[SESSION_BUNDLE_FP_KEY] = _bundle_fp
     if DETAIL_ATOM_CACHE_KEY in st.session_state:
         del st.session_state[DETAIL_ATOM_CACHE_KEY]
-rank_col = {"ΔFMS(1D)":"ΔFMS_1D","ΔFMS(5D)":"ΔFMS_5D","FMS(현재)":"FMS","1M 수익률":"R_1M"}[rank_by]
+rank_col = {
+    "나이브 켈리(20D)": "NAIVE_KELLY_20D",
+    "ΔFMS(1D)": "ΔFMS_1D",
+    "ΔFMS(5D)": "ΔFMS_5D",
+    "FMS(현재)": "FMS",
+    "1M 수익률": "R_1M",
+}[rank_by]
 mom_ranked = mom.sort_values(rank_col, ascending=False)
 
 # ------------------------------
@@ -1560,109 +1494,51 @@ st.plotly_chart(fig_mv, use_container_width=True)
 st.subheader("모멘텀 테이블 (가속/추세/수익률)")
 disp = mom.copy()
 
-# FMS 컬럼 표시
-for c in ["R_1W","R_1M","R_3M","R_4M","R_YTD","AboveEMA50"]:
+# Percent-like return / position columns (fraction → %)
+for c in ["R_1M", "R_3M", "AboveEMA50"]:
     if c in disp:
-        disp[c] = (disp[c]*100).round(2)
+        disp[c] = (disp[c] * 100).round(2)
 
 # R2_3M 컬럼 표시 (0~1 사이 값이므로 100 곱하지 않음, 소수점 3자리)
 if "R2_3M" in disp:
     disp["R2_3M"] = disp["R2_3M"].round(3)
 
-for c in ["FMS","ΔFMS_1D","ΔFMS_5D"]:
-    if c in disp: disp[c] = disp[c].round(2)
+for c in ["FMS", "ΔFMS_1D", "ΔFMS_5D", "NAIVE_KELLY_20D"]:
+    if c in disp:
+        disp[c] = disp[c].round(2)
 
-# 컬럼 자동 재구성: FMS 전략에 맞춰 동적 컬럼 순서 생성
-def generate_dynamic_column_order(fms_formula, available_columns):
-    """
-    FMS 전략에 맞춰 동적 컬럼 순서를 생성합니다.
-    
-    Args:
-        fms_formula (str): FMS 공식 문자열
-        available_columns (list): 사용 가능한 컬럼 목록
-    
-    Returns:
-        list: 재구성된 컬럼 순서
-    """
-    
-    # 1. Symbol 컬럼 (가장 왼쪽)
+
+def momentum_table_column_order(available_columns):
+    """FMS → NAIVE_KELLY_20D → FMS-impact features → deltas/filter → rest."""
     column_order = []
-    if 'Symbol' in available_columns:
-        column_order.append('Symbol')
-    
-    # 2. FMS 컬럼 (두 번째)
-    if 'FMS' in available_columns:
-        column_order.append('FMS')
-    
-    # 3. FMS 공식에서 사용된 변수들을 순서대로 추출
-    fms_variables = []
-    
-    # 공식에서 Z(...) 변수명을 순서대로 추출
-    variable_pattern = r"Z\(([^)]+)\)"
-    matches = re.findall(variable_pattern, fms_formula)
-    
-    # 변수명을 실제 컬럼명으로 매핑
-    variable_mapping = {
-        '1M수익률': 'R_1M',
-        '3M수익률': 'R_3M',
-        '3M_R2': 'R2_3M',
-        'EMA50상대위치': 'AboveEMA50',
-        '20일변동성': 'Vol20(ann)',
-        'R2_3M': 'R2_3M',
-        'DD_RECOVERY': 'DD_RECOVERY',
-        'TREND_QUALITY_21D': 'TREND_QUALITY_21D',
-        'JUMP_DISCONTINUITY_3M': 'JUMP_DISCONTINUITY_3M',
-        'UNDER_EMA20_DAYS': 'UNDER_EMA20_DAYS',
-        'R_3M': 'R_3M',
-        'STALE_AGE': 'STALE_AGE',
-        'UP_STREAK_5D': 'UP_STREAK_5D',
-        'TREND_EFFICIENCY_REWARD_15D': 'TREND_EFFICIENCY_REWARD_15D',
-        'RANGE_COMPRESSION_20D': 'RANGE_COMPRESSION_20D',
-    }
-    
-    for var_name in matches:
-        var_name = var_name.strip().strip("'\"")
-        if var_name in variable_mapping:
-            col_name = variable_mapping[var_name]
-            if col_name in available_columns and col_name not in column_order:
-                fms_variables.append(col_name)
-    
-    # FMS 변수들을 공식에 나타난 순서대로 추가
-    column_order.extend(fms_variables)
-    
-    # 4. 나머지 보조 변수들 추가
-    remaining_columns = [col for col in available_columns if col not in column_order]
-    
-    # 보조 변수들을 우선순위에 따라 정렬
-    priority_order = ['ΔFMS_1D', 'ΔFMS_5D', 'R_1W', 'R_4M', 'R_YTD']
-    prioritized_remaining = []
-    for priority_col in priority_order:
-        if priority_col in remaining_columns:
-            prioritized_remaining.append(priority_col)
-            remaining_columns.remove(priority_col)
-    
-    # 나머지 컬럼들을 알파벳 순으로 정렬
-    remaining_columns.sort()
-    
-    column_order.extend(prioritized_remaining)
-    column_order.extend(remaining_columns)
-    
+    if "Symbol" in available_columns:
+        column_order.append("Symbol")
+    for col in ("FMS", "NAIVE_KELLY_20D"):
+        if col in available_columns:
+            column_order.append(col)
+    for col in MOMENTUM_TABLE_FMS_FEATURE_ORDER:
+        if col in available_columns and col not in column_order:
+            column_order.append(col)
+    for col in ("ΔFMS_1D", "ΔFMS_5D", "Filter_Status"):
+        if col in available_columns and col not in column_order:
+            column_order.append(col)
+    remaining = sorted(c for c in available_columns if c not in column_order)
+    column_order.extend(remaining)
     return column_order
 
-# 현재 FMS 전략의 공식 가져오기
-current_fms_formula = FMS_FORMULA
 
-# 동적 컬럼 순서 생성
-dynamic_column_order = generate_dynamic_column_order(current_fms_formula, list(disp.columns))
-
-# 컬럼 순서 적용 (존재하는 컬럼만)
-final_column_order = [col for col in dynamic_column_order if col in disp.columns]
-
-# 데이터프레임 재구성
+final_column_order = [
+    col for col in momentum_table_column_order(list(disp.columns)) if col in disp.columns
+]
 disp_reordered = disp[final_column_order]
 
-# 정렬 적용
-disp_reordered = disp_reordered.sort_values(rank_col if rank_col in disp_reordered.columns else "FMS", ascending=False)
+# Default / sidebar sort key (NAIVE_KELLY_20D by default)
+sort_key = rank_col if rank_col in disp_reordered.columns else "NAIVE_KELLY_20D"
+if sort_key not in disp_reordered.columns:
+    sort_key = "FMS"
+disp_reordered = disp_reordered.sort_values(
+    sort_key, ascending=False, na_position="last"
+)
 
 st.dataframe(disp_reordered, use_container_width=True)
 

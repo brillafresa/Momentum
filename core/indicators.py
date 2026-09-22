@@ -9,8 +9,6 @@ See HARNESS_RULES.md §2.1 / §2.5.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
@@ -169,32 +167,6 @@ def r_squared_3m(prices_krw: pd.DataFrame) -> pd.Series:
     return pd.Series(r2_dict, name="R2_3M")
 
 
-def ytd_return(df: pd.DataFrame) -> pd.Series:
-    """Year-to-date return to each column's last valid close (native as-of)."""
-    if df is None or df.empty:
-        return pd.Series(dtype=float)
-    out: dict[str, float] = {}
-    for col in df.columns:
-        s = df[col].astype(float)
-        lv = s.last_valid_index()
-        if lv is None:
-            out[col] = np.nan
-            continue
-        hist = s.loc[:lv].ffill().dropna()
-        if hist.empty:
-            out[col] = np.nan
-            continue
-        y0 = pd.Timestamp(datetime(lv.year, 1, 1))
-        start_idx = hist.index.get_indexer([y0], method="nearest")[0]
-        base = float(hist.iloc[start_idx])
-        last = float(hist.iloc[-1])
-        if base == 0.0:
-            out[col] = np.nan
-        else:
-            out[col] = last / base - 1.0
-    return pd.Series(out, dtype=float)
-
-
 def last_vol_annualized(df: pd.DataFrame, window: int = 20) -> pd.Series:
     """Annualized volatility at each column's last valid observation (sqrt(252))."""
     if df is None or df.empty:
@@ -213,3 +185,34 @@ def last_vol_annualized(df: pd.DataFrame, window: int = 20) -> pd.Series:
             continue
         out[col] = float(rets.iloc[-window:].std(ddof=1) * np.sqrt(252.0))
     return pd.Series(out, dtype=float)
+
+
+def naive_kelly(df: pd.DataFrame, window: int = 20) -> pd.Series:
+    """Naive Kelly fraction: mean(r) / var(r) over the last ``window`` daily returns.
+
+    Treats the risk-free rate as 0 and ignores cross-asset covariance (hence
+    \"naive\"). Evaluated at each column's last valid close (native as-of).
+    Sample variance uses ``ddof=1``. Returns NaN when fewer than ``window``
+    returns exist or variance is zero.
+    """
+    if df is None or df.empty:
+        return pd.Series(dtype=float, name="NAIVE_KELLY_20D")
+    out: dict[str, float] = {}
+    for col in df.columns:
+        s = df[col].astype(float)
+        lv = s.last_valid_index()
+        if lv is None:
+            out[col] = np.nan
+            continue
+        hist = s.loc[:lv].ffill()
+        rets = hist.pct_change(fill_method=None).dropna()
+        if len(rets) < window:
+            out[col] = np.nan
+            continue
+        tail = rets.iloc[-window:]
+        variance = float(tail.var(ddof=1))
+        if not np.isfinite(variance) or variance <= 0.0:
+            out[col] = np.nan
+            continue
+        out[col] = float(tail.mean() / variance)
+    return pd.Series(out, dtype=float, name="NAIVE_KELLY_20D")

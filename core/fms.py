@@ -23,8 +23,7 @@ from core.fms_features import (
 )
 from core.indicators import (
     mask_non_positive_prices,
-    returns_pct,
-    ytd_return,
+    naive_kelly,
 )
 from core.tradeability import calculate_tradeability_filters
 
@@ -551,8 +550,7 @@ def momentum_now_and_delta(prices_krw: pd.DataFrame, reference_prices_krw: Optio
     df = now.copy()
     df['ΔFMS_1D'] = df['FMS'] - d1['FMS']
     df['ΔFMS_5D'] = df['FMS'] - d5['FMS']
-    df['R_1W'] = returns_pct(prices_krw, 5)
-    df['R_4M'] = returns_pct(prices_krw, HORIZON_DAYS_4M)
-    df['R_YTD'] = ytd_return(prices_krw)
-    return df.sort_values('FMS', ascending=False)
+    # Diagnostic (not an FMS input): rf=0, single-name, no covariance.
+    df['NAIVE_KELLY_20D'] = naive_kelly(prices_krw, window=20)
+    return df.sort_values('NAIVE_KELLY_20D', ascending=False, na_position='last')
 

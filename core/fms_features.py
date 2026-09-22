@@ -63,6 +63,22 @@ PRODUCTION_FMS_COLUMNS = (
     "TREND_EFFICIENCY_REWARD_15D",
 )
 
+# Momentum-table order for production FMS inputs by approximate impact
+# (alive_pullback weight magnitude / gate role). Display SSOT for app.py.
+MOMENTUM_TABLE_FMS_FEATURE_ORDER = (
+    "STALE_AFTER_RUN",  # w_stale_run ~202 (denominator)
+    "SEG_RET_5_21",  # w_mid_pos ~92
+    "SEG_RET_0_5",  # w_recent + alive_boost
+    "MID_DIP_RECOVERY",
+    "PRIOR_SUPPORT_SIGN",
+    "R_3M",  # softplus floor multiplies the whole score
+    "RECENT_JUMP_SHARE_5D",
+    "R2_3M",
+    "TREND_EFFICIENCY_REWARD_15D",
+    "RECENT_UP_DAYS_5D",
+    "SEG_RET_21_63",
+)
+
 # ---------------------------------------------------------------------------
 # Legacy v4.6–v4.7 sparse-linear (harness / comparison only — not production)
 # ---------------------------------------------------------------------------

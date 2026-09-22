@@ -5,6 +5,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.8] - 2026-09-22
+
+### 변경
+
+- **모멘텀 테이블 (v5.0.7 병합)**: 표 전용 `R_1W` / append `R_4M` / `R_YTD` 제거.
+  `NAIVE_KELLY_20D` = mean/var(20d daily returns); 기본 정렬·컬럼 순서
+  `FMS` → 켈리 → alive_pullback 영향도순. Kelly는 FMS 입력이 아님.
+- **관심종목 재평가 UI 제거**: 미사용 제거 제안 패널 + 앱 전용
+  `get_button_states` / `calculate_fms_for_batch` 래퍼 삭제.
+  배치 CLI·하네스의 `analysis_utils.calculate_fms_for_batch`는 유지.
+- **도구 및 도움말**: 「데이터 캐시 초기화」를 FMS 도움말 **위**로 이동.
+- **Dead code**: 소비자 없는 `core.indicators.ytd_return` 및 YTD min-period(252d) 요구 제거.
+
+### 검증 하네스
+
+- `tests/unit/test_naive_kelly.py` — mean/var · 영분산 · 단기 · native as-of
+- `test_fms_scoring` / `test_fms_cash_like_gate` — FMS 골든은 값 기준; 기본 정렬=켈리
+- 전체 `python -m pytest` · `app.py` / `run_scan_batch.py` import 스모크
+- work-plan: `docs/work-plans/2026-09-22-momentum-table-naive-kelly-ui.md`
+
+## [5.0.7] - 2026-09-22
+
+> 동일 세션에서 v5.0.8로 흡수됨. 상세는 [5.0.8] 참고.
+
 ## [5.0.6] - 2026-08-13
 
 ### 수정

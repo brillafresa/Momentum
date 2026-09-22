@@ -1,7 +1,7 @@
 """Pure business logic package (no network I/O).
 
 Migrated so far:
-- ``core.indicators`` — ``ema``, ``returns_pct``, ``r_squared_3m``, ``ytd_return``, ``last_vol_annualized``
+- ``core.indicators`` — ``ema``, ``returns_pct``, ``r_squared_3m``, ``last_vol_annualized``, ``naive_kelly``
 - ``core.tradeability`` — ``calculate_tradeability_filters``
 - ``core.fms_features`` — production feature builder + **alive_pullback** absolute scorer
   (+ archived legacy sparse / cash-like gate for harness)

@@ -42,18 +42,17 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
 7. **상세 분석**: 개별 종목의 EMA 분석 및 Drawdown 추적
 8. **동적 관심종목 관리**: 영구 저장 및 실시간 추가/삭제
 9. **시장 탐색 엔진**: Finviz.com 스크리닝(`set_filter` + 티커 정규화) + 한국·홍콩 유니버스 병합 스캔
-10. **진부한 종목 자동 편출**: FMS 기반 저성과 종목 제거 제안
-11. **배치 스캔 시스템**: CLI 오프라인 배치 — 레이트리밋 백오프·outer batch·커버리지 우선
-12. **다국가 통합 스캔**: 미국(Finviz 스크리닝) + 한국(KOSPI200/KOSDAQ150) + 홍콩(HSI/HSCEI/HSTECH) 유니버스 병합
-13. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
-14. **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
-   - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
-   - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
-   - 모드별 배치 스캔 결과 저장 및 로드
-15. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
-16. **세부보기·디스크 캐시 (v5.0.3–5.0.4)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
-    배치/UI 공유 디스크 캐시 + **warm-only** last-bar probe (`adapters/price_cache.py`;
-    cold miss는 probe 생략 — v5.0.4)
+10. **배치 스캔 시스템**: CLI 오프라인 배치 — 레이트리밋 백오프·outer batch·커버리지 우선
+11. **다국가 통합 스캔**: 미국(Finviz 스크리닝) + 한국(KOSPI200/KOSDAQ150) + 홍콩(HSI/HSCEI/HSTECH) 유니버스 병합
+12. **레버리지/인버스 ETF 필터링**: 배치 스캔 시 레버리지/인버스 ETF 자동 제외 (수동 추가는 제한 없음)
+13. **계좌 모드 지원**: 자유투자계좌(FREE)와 퇴직연금IRP(IRP) 모드 분리 지원
+ - 각 모드별 독립적인 관심종목 관리 (watchlist_free.csv, watchlist_irp.csv)
+ - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
+ - 모드별 배치 스캔 결과 저장 및 로드
+14. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
+15. **세부보기·디스크 캐시 (v5.0.3–5.0.4)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
+ 배치/UI 공유 디스크 캐시 + **warm-only** last-bar probe (`adapters/price_cache.py`;
+ cold miss는 probe 생략 — v5.0.4)
 
 ## 파일 구조
 ```
@@ -62,7 +61,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.6, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.8, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -177,6 +176,8 @@ Momentum/
 - **정규화**: 절대 피처 점수(동결 파라미터 `PRODUCTION_ALIVE_PULLBACK_PARAMS`).
   앱·배치 동일 수식; reference panel은 API 호환용이며 점수에 영향 없음.
   배치는 관심종목 비어 있어도 스캔 계속 (v5.0.1; 관심종목은 스캔 제외·필터용).
+- **모멘텀 테이블 진단 (v5.0.8)**: `NAIVE_KELLY_20D` = mean/var(20d daily returns);
+  **FMS 입력이 아님**. 기본 정렬·해석용. 표 전용 `R_YTD`/`R_1W`는 제거됨.
 - **다국가 캘린더 (v5.0.2 / v5.0.6)**: `harmonize_calendar` / `align_bday_ffill` SSOT는
   `core/indicators.py`. 공통 B-day ffill은 컬럼별 `last_valid_index` **이후를 연장하지
   않음** (trailing phantom → SEG_* 창 밀림 방지). coverage는 **native-span** 밀도
@@ -186,6 +187,7 @@ Momentum/
   orchestration과 `-999`는 `core/fms.py`.
 - **경로 ΔFMS 하네스**: `harness/compare_batch_ui_fms.py` (운영 미import).
 - **native as-of 회귀**: `tests/unit/test_native_asof_calendar.py` (운영 미import).
+- **나이브 켈리 회귀**: `tests/unit/test_naive_kelly.py` (운영 미import).
 - **재보정**: NL → 비선형 MC (`calibration/fms_recalib_nonlinear_mc.py`).
   레거시 sparse는 `score_legacy_sparse_fms_features` + `fms_recalib_refit.py`.
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
