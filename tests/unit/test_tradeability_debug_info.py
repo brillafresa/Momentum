@@ -1,12 +1,23 @@
 """
-Validation Harness: get_filter_debug_info outputs
-match core tradeability True Range / downside-risk decisions.
+Validation Harness: get_filter_debug_info matches tradeability DQ decisions.
 
-Goal
-----
-Lock ``analysis_utils.get_filter_debug_info`` as the transitional debug
-surface for the tradeability filters. When we migrate the function into
-``core/tradeability.py`` later, this test suite will guard against logic drift.
+Purpose
+-------
+Lock ``core.tradeability.get_filter_debug_info`` (and the
+``analysis_utils`` re-export facade) so debug artifacts stay aligned with
+True Range fatal-volatility and SMA5 (latest available Close) repeated-downside
+rules. No network I/O.
+
+Covered behaviors
+-----------------
+- Empty / missing OHLC → structured error
+- Short history (<63) matches ``calculate_tradeability_filters`` reason
+- Zero High/Low open-print glitch → prior H/L substituted in debug
+- Combined fatal TR + four SMA5 downside days → counts match filter
+
+Usage (from repo root)
+----------------------
+    python -m pytest tests/unit/test_tradeability_debug_info.py -q
 """
 
 from __future__ import annotations
@@ -45,7 +56,6 @@ def test_debug_info_empty_ohlc() -> None:
 
 
 def test_debug_info_missing_columns_multindex() -> None:
-    # Build MultiIndex OHLC but omit the requested symbol.
     quiet = _quiet_ohlc()
     ohlc = _multiindex_ohlc({"KEEP": quiet})
     debug = get_filter_debug_info(ohlc, "MISSING")
@@ -67,8 +77,6 @@ def test_debug_info_short_history_matches_tradeability_reason() -> None:
 
 
 def test_debug_info_zero_high_low_replaced_by_prior() -> None:
-    # When High==Low==0 (open-print glitch), the debug surface should report
-    # high_low_fixed and use the prior H/L in the computed range components.
     frame = _quiet_ohlc(n=80)
     prev_high = frame["High"].iloc[-2]
     prev_low = frame["Low"].iloc[-2]
@@ -93,16 +101,16 @@ def test_debug_info_zero_high_low_replaced_by_prior() -> None:
 def test_debug_info_extreme_and_repeated_downside_counts() -> None:
     # Construct a panel where:
     # - 1 day in the last 63 triggers fatal volatility (>30% TR/prev_close)
-    # - 4 days in the last 20 trigger repeated downside (<-7% low/prev_close - 1)
+    # - 4 days in the last 20 trigger repeated downside
+    #   (<-7% low / same-bar SMA5(close) - 1)
     frame = _quiet_ohlc(n=80)
 
-    # Fatal volatility: spike high on one day.
     frame.iloc[-5, frame.columns.get_loc("High")] = frame["Close"].iloc[-6] * 1.35
 
-    # Repeated downside: set low to 90% of prev_close for 4 days.
+    ma5 = frame["Close"].rolling(5, min_periods=5).mean()
     for offset in (-2, -4, -6, -8):
-        prev = frame["Close"].iloc[offset - 1]
-        frame.iloc[offset, frame.columns.get_loc("Low")] = prev * 0.90
+        ref = float(ma5.iloc[offset])
+        frame.iloc[offset, frame.columns.get_loc("Low")] = ref * 0.90
 
     ohlc = _multiindex_ohlc({"DQ": frame})
 
@@ -110,10 +118,12 @@ def test_debug_info_extreme_and_repeated_downside_counts() -> None:
     assert flags["DQ"] is True
     assert "치명적 변동성" in reasons["DQ"]
     assert "반복적 하방리스크" in reasons["DQ"]
+    assert "SMA5" in reasons["DQ"]
 
     debug = get_filter_debug_info(ohlc, "DQ")
     assert debug["error"] is None
     assert debug["has_ohlc"] is True
     assert debug["extreme_days_count"] == 1
     assert debug["severe_days_count"] == 4
-
+    assert "sma5" in debug["severe_days_detail"][0]
+    assert "sma20_prev" not in debug["severe_days_detail"][0]

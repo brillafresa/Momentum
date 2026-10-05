@@ -5,6 +5,40 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.12] - 2026-10-05
+
+### 변경
+
+- **반복적 하방리스크 기준**: SMA20(전일·`shift(1)`) → **SMA5(최신 가용 Close, shift 없음)**.
+  `(low / SMA5(close)_t) - 1 < -7%` 인 날이 최근 20거래일 중 **≥ 4일**이면 실격(FMS=-999).
+  패널에 당일 Close가 있으면 당일 포함, 없으면 마지막 가용일까지(장중/마감 분기 없음).
+  치명적 변동성(63일 TR/prev_close > 30%) 규칙은 불변.
+- **디버그 상세**: 하방 실격일 필드 `sma20_prev` → `sma5`.
+
+### 검증 하네스
+
+- `test_tradeability` / `test_tradeability_debug_info`: SMA5 계약 · mild(-6%) 미실격 · `sma5` 필드
+- `test_fms_scoring`: CRASHY → -999 · 골든 순위 유지
+- work-plan: `docs/work-plans/2026-10-05-tradeability-sma5-downside.md`
+
+## [5.0.11] - 2026-10-05
+
+### 변경
+
+- **반복적 하방리스크 기준**: `(low / prev_close) - 1 < -7%` →
+  `(low / SMA20(close)_{t-1}) - 1 < -7%` (전일까지의 종가 단순이동평균).
+  최근 20거래일 중 **≥ 4일**이면 실격(FMS=-999)은 동일.
+  치명적 변동성(63일 TR/prev_close > 30%) 규칙은 불변.
+- **디버그 상세**: 하방 실격일 필드 `prev_close` → `sma20_prev` (기준값과 일치).
+
+### 검증 하네스
+
+- `test_tradeability` / `test_tradeability_debug_info`: SMA20_prev 계약 +
+  prev_close-only 경계(급상승 경로에서 하방 실격 없음)
+- `test_fms_scoring`: CRASHY → -999 · 골든 순위 유지
+- work-plan: `docs/work-plans/2026-10-05-tradeability-sma20-downside.md`
+- `python -m pytest tests/unit/test_tradeability.py tests/unit/test_tradeability_debug_info.py tests/unit/test_fms_scoring.py`
+
 ## [5.0.10] - 2026-09-22
 
 ### 제거

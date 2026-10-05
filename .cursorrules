@@ -61,7 +61,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.10, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.12, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -191,7 +191,7 @@ Momentum/
   레거시 sparse는 `score_legacy_sparse_fms_features` + `fms_recalib_refit.py`.
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
   - 치명적 변동성: 63거래일 내 True Range 기반 일일 변동폭 30% 초과 시 실격(가격 갭 포함)
-  - 반복적 하방리스크: 20거래일 내 하방리스크 -7% 미만 4일 이상 시 실격
+  - 반복적 하방리스크: 20거래일 내 (저가/최신 가용 종가 SMA5 − 1) < −7% 인 날 4일 이상 시 실격
   - 당일 고가/저가 0 처리: 국장 개장 시간(9시~9시 20분) Yahoo Finance 데이터 이슈 대응 (전일 고가/저가로 대체)
 - **API 제한 대응**: 청크 슬립·outer batch·`shared._ERRORS` 레이트리밋 감지 후 지수 백오프(배치 기본 재시도 상한·대기 상한은 `analysis_utils` 상수). 상장폐지/`no data`는 스킵.
 - **가격 계열**: 수익/FMS는 Adj Close(배당 반영), 거래적합성은 raw High/Low/Close.

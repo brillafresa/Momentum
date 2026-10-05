@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-09-22 (KST) · 제품 버전 v5.0.10
+최종 갱신: 2026-10-05 (KST) · 제품 버전 v5.0.12
 
 ---
 
@@ -26,7 +26,7 @@
 | `core/fms.py` (`compute_fms_snapshot` / `momentum_now_and_delta` / `score_fms_from_feature_frame`) | production orchestration · `-999` · ΔFMS | fixture; `analysis_utils` 셔임 |
 | `core/fms.py` (`score_legacy_fms_from_feature_frame` / `FmsScoreParams`) | **pre-v4.6 archived formula** (tune 스크립트·회귀만) | `test_fms_params` / `test_fms_vol_tune` / `test_fms_recent_continuation` |
 | `core/indicators.py` | `ema` / `returns_pct` / `r_squared_3m` / `last_vol_annualized` / `mask_non_positive_prices` / **`harmonize_calendar`(native as-of · native-span coverage)** / `align_bday_ffill` | `tests/unit/test_indicators.py` / `test_native_asof_calendar.py` |
-| `core/tradeability.py` | True Range 거래적합성 실격 | `tests/unit/test_tradeability.py` |
+| `core/tradeability.py` | True Range 치명적 변동성 · **SMA5 하방리스크** 실격 | `tests/unit/test_tradeability.py` |
 | `tests/fixtures/synthetic_*.csv` + `golden_fms_ranks.json` | 체크인 Mock 패널 (seed=42) | 골든 순위·실격 |
 | `tests/fixtures/cash_like_paths_prices_krw.csv` | 현금성/채권/주식 경로 Mock | 레거시 게이트 + v5 저순위 계약 |
 | `tests/unit/test_fms_scoring.py` | 골든 순위 / `-999` / **reference 불변(절대 점수)** / 결측 / yfinance 미호출 | `python -m pytest` |
@@ -68,6 +68,22 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.12 검증 요약 (2026-10-05 — 반복 하방리스크 SMA5)**
+
+1. SMA20_prev(`shift(1)`) → **SMA5** (`rolling(5).mean()`, shift 없음 · 최신 가용 Close).
+2. `(low / SMA5_t) - 1 < -7%` · 20일 창 · ≥4일 · 치명적 변동성(TR) 규칙 불변.
+3. 경계: SMA5 대비 -6%×4일은 미실격; -10%×4일은 실격.
+4. 회귀: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`.
+5. work-plan: `docs/work-plans/2026-10-05-tradeability-sma5-downside.md`.
+
+**v5.0.11 검증 요약 (2026-10-05 — 반복 하방리스크 SMA20)**
+
+1. `(low / prev_close) - 1` → `(low / SMA20(close)_{t-1}) - 1` (raw Close SMA20, shift 1).
+2. 임계 −7% · 20일 창 · ≥4일 · 치명적 변동성(TR) 규칙 불변.
+3. 경계: 급상승 경로에서 prev_close만 -7% 이탈·SMA20은 미이탈 → 하방 실격 없음.
+4. 회귀: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`.
+5. work-plan: `docs/work-plans/2026-10-05-tradeability-sma20-downside.md`.
 
 **v5.0.10 검증 요약 (2026-09-22 — NAIVE_KELLY 전면 제거)**
 

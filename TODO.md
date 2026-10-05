@@ -1,13 +1,25 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-09-22** (KST) · 제품 버전 **v5.0.10**
+> 최종 갱신: **2026-10-05** (KST) · 제품 버전 **v5.0.12**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-10-05 — 반복 하방리스크 SMA5 (v5.0.12)
+
+- [x] `(low / SMA5(close)_t) - 1 < -7%` × ≥4일/20d → FMS=-999 (shift 없음 · 최신 가용)
+- [x] pytest: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`
+- [x] work-plan: `docs/work-plans/2026-10-05-tradeability-sma5-downside.md`
+
+### 2026-10-05 — 반복 하방리스크 SMA20 (v5.0.11)
+
+- [x] `(low / SMA20(close)_{t-1}) - 1 < -7%` × ≥4일/20d → FMS=-999
+- [x] pytest: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`
+- [x] work-plan: `docs/work-plans/2026-10-05-tradeability-sma20-downside.md`
 
 ### 2026-09-22 — NAIVE_KELLY 전면 제거 (v5.0.10)
 
@@ -206,9 +218,11 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-09-22**: v5.0.10 `NAIVE_KELLY` 제거.  
+> **2026-10-05**: v5.0.12 반복 하방리스크 = 최신 가용 종가 SMA5 대비 -7% (≥4일/20d).  
 > 다음 기본 축은 추가 UI 작업(사용자 명시) 또는 중기 엔트리포인트/adapters 잔여 정리.
 
+- [x] **2026-10-05 하방리스크 SMA5**: `(low/SMA5_t)-1 < -7%` × ≥4일/20d (shift 없음)
+- [x] **2026-10-05 하방리스크 SMA20**: `(low/SMA20_prev)-1 < -7%` × ≥4일/20d
 - [x] **2026-09-22 NAIVE_KELLY 제거**: 계산·표·정렬·테스트 전면 삭제
 - [x] **2026-09-22 모멘텀 테이블·UI**: 표전용 필드 제거 · 재평가 제거
 - [x] **2026-08-13 IPO coverage**: native-span 밀도 → 최근 상장 종목 UI 유지

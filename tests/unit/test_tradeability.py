@@ -12,7 +12,8 @@ Covered behaviors
 - Missing OHLC columns → disqualify (``OHLC 데이터 부족``)
 - History shorter than 63 bars → ``데이터 기간 부족``
 - Single extreme True Range day (>30%) → fatal volatility DQ
-- Four downside days (<-7% in 20d) → repeated downside DQ
+- Four downside days (low vs same-bar SMA5(close) <-7% in 20d) → repeated downside DQ
+- Four mild SMA5 dips (-6%) do not DQ
 - Zero high/low replaced by prior bar does not invent false extremes
 - ``analysis_utils`` re-export shim stays identity-equal to ``core``
 
@@ -95,15 +96,30 @@ def test_extreme_true_range_day_disqualifies() -> None:
 
 
 def test_repeated_downside_disqualifies() -> None:
-    """Four lows more than 7% below prior close within 20d → DQ."""
+    """Four lows more than 7% below same-bar SMA5(close) within 20d → DQ."""
     frame = _quiet_ohlc(n=80)
+    ma5 = frame["Close"].rolling(5, min_periods=5).mean()
     for offset in (-2, -4, -6, -8):
-        prev = frame["Close"].iloc[offset - 1]
-        frame.iloc[offset, frame.columns.get_loc("Low")] = prev * 0.90
+        ref = float(ma5.iloc[offset])
+        frame.iloc[offset, frame.columns.get_loc("Low")] = ref * 0.90
     ohlc = _multiindex_ohlc({"DOWN": frame})
     flags, reasons = calculate_tradeability_filters(ohlc, ["DOWN"])
     assert flags["DOWN"] is True
     assert "반복적 하방리스크" in reasons["DOWN"]
+    assert "SMA5" in reasons["DOWN"]
+
+
+def test_mild_sma5_dips_do_not_dq() -> None:
+    """Four lows only 6% below SMA5 (above -7% threshold) → pass."""
+    frame = _quiet_ohlc(n=80)
+    ma5 = frame["Close"].rolling(5, min_periods=5).mean()
+    for offset in (-2, -4, -6, -8):
+        ref = float(ma5.iloc[offset])
+        frame.iloc[offset, frame.columns.get_loc("Low")] = ref * 0.94
+    ohlc = _multiindex_ohlc({"MILD": frame})
+    flags, reasons = calculate_tradeability_filters(ohlc, ["MILD"])
+    assert flags["MILD"] is False
+    assert reasons["MILD"] == "정상"
 
 
 def test_zero_high_low_replaced_by_prior_does_not_false_dq() -> None:

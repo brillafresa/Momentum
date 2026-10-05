@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.10
+# KRW Momentum Radar - v5.0.12
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -109,7 +109,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.10", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.12", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -571,7 +571,8 @@ with st.sidebar.expander("🔧 도구 및 도움말", expanded=False):
 
     **추가 필터 (거래 적합성)**  
     - True Range 기반 **치명적 변동성 30% 초과** 또는  
-      **20일 내 -7% 미만 하락 4일 이상**이면 FMS = -999 로 실격 처리합니다.
+      **20일 내 종가 SMA5(최신 가용) 대비 -7% 미만 저가 4일 이상**이면
+      FMS = -999 로 실격 처리합니다.
 
     **한 줄 요약:**
     - **“이전 지지 + 최근 회복이 확인된 연속 상승”을 선호하고,
@@ -888,7 +889,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.10")
+st.title("⚡ KRW Momentum Radar v5.0.12")
 
 
 
@@ -1997,7 +1998,10 @@ with st.expander("디버그 로그 / 진단 (복사해서 붙여넣기 가능)")
                     
                     # 하방리스크 상세
                     if 'severe_days_detail' in debug_info and debug_info['severe_days_detail']:
-                        st.markdown(f"#### ⚠️ 반복적 하방리스크 (-7% 미만) - 총 {debug_info.get('severe_days_count', 0)}일")
+                        st.markdown(
+                            f"#### ⚠️ 반복적 하방리스크 (SMA5대비 -7% 미만) - "
+                            f"총 {debug_info.get('severe_days_count', 0)}일"
+                        )
                         severe_df = pd.DataFrame(debug_info['severe_days_detail'])
                         st.dataframe(severe_df, use_container_width=True, hide_index=True)
             

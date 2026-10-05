@@ -6,7 +6,8 @@ Migrated from ``analysis_utils.calculate_tradeability_filters``.
 
 Rules (see HARNESS_RULES / .cursorrules):
 - Fatal volatility: any day in last 63 with True Range / prev_close > 30%
-- Repeated downside: >= 4 days in last 20 with (low / prev_close - 1) < -7%
+- Repeated downside: >= 4 days in last 20 with
+  (low / SMA5(close)_t - 1) < -7%  (latest available Close SMA5; raw OHLC; no shift)
 - Open-print glitch: if high==low==0 and prior bar valid, substitute prior H/L
 """
 
@@ -92,7 +93,8 @@ def calculate_tradeability_filters(
                 axis=1,
             ).max(axis=1, skipna=False)
             daily_true_range_vol = true_range / prev_close
-            daily_downside_risk = (low_fixed / prev_close) - 1
+            ma5 = close.rolling(5, min_periods=5).mean()
+            daily_downside_risk = (low_fixed / ma5) - 1
 
             extreme_days = daily_true_range_vol.tail(63)
             extreme_days_filtered = extreme_days[extreme_days > 0.30]
@@ -104,7 +106,7 @@ def calculate_tradeability_filters(
                 reasons.append(f"치명적 변동성 ({len(extreme_days_filtered)}일 30% 초과)")
             if len(severe_days_filtered) >= 4:
                 reasons.append(
-                    f"반복적 하방리스크 ({len(severe_days_filtered)}일 -7% 미만)"
+                    f"반복적 하방리스크 ({len(severe_days_filtered)}일 SMA5대비 -7% 미만)"
                 )
 
             disqualification[symbol] = len(reasons) > 0
@@ -188,7 +190,8 @@ def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
             axis=1,
         ).max(axis=1, skipna=False)
         daily_true_range_vol = true_range / prev_close
-        daily_downside_risk = (low_fixed / prev_close) - 1
+        ma5 = close.rolling(5, min_periods=5).mean()
+        daily_downside_risk = (low_fixed / ma5) - 1
 
         extreme_days = daily_true_range_vol.tail(63)
         extreme_days_filtered = extreme_days[extreme_days > 0.30]
@@ -265,9 +268,14 @@ def get_filter_debug_info(ohlc_data: pd.DataFrame, symbol: str) -> Dict:
                             {
                                 "date": date_str,
                                 "downside_pct": round(downside_pct, 2),
-                                "close": float(close.loc[date_idx]) if date_idx in close.index else None,
-                                "prev_close": float(close.iloc[date_pos - 1]) if date_pos > 0 else None,
                                 "low": float(low.loc[date_idx]) if date_idx in low.index else None,
+                                "sma5": (
+                                    float(ma5.loc[date_idx])
+                                    if date_idx in ma5.index
+                                    and not pd.isna(ma5.loc[date_idx])
+                                    else None
+                                ),
+                                "close": float(close.loc[date_idx]) if date_idx in close.index else None,
                             }
                         )
             debug_info["severe_days_detail"] = severe_details
