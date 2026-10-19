@@ -144,18 +144,37 @@ FINVIZ_HTTP_HEADERS = {
 }
 
 
-def parse_finviz_total_count(soup: BeautifulSoup) -> Optional[int]:
-    """Parse ``#1 / 1090 Total`` style result count from Finviz screener HTML."""
-    count_el = soup.find(class_="count-text")
-    if not count_el:
-        return None
-    text = count_el.get_text(" ", strip=True)
-    match = re.search(r"/\s*([0-9,]+)\s+Total", text, flags=re.I)
-    if not match:
-        match = re.search(r"of\s+([0-9,]+)", text, flags=re.I)
+_FINVIZ_TOTAL_RE = re.compile(r"/\s*([0-9,]+)\s+Total", flags=re.I)
+_FINVIZ_OF_RE = re.compile(r"of\s+([0-9,]+)", flags=re.I)
+
+# Current grid labels that differ from the legacy ``screener_table`` header text.
+# Local filters and ``number_covert`` key off the legacy names (``Change``, ``Price``).
+_FV_HEADER_ALIASES = {
+    "Change %": "Change",
+}
+
+
+def _parse_total_count_text(text: str) -> Optional[int]:
+    """Extract an integer total from ``#1 / 1,090 Total`` or ``of 1,090`` text."""
+    match = _FINVIZ_TOTAL_RE.search(text) or _FINVIZ_OF_RE.search(text)
     if not match:
         return None
     return int(match.group(1).replace(",", ""))
+
+
+def parse_finviz_total_count(soup: BeautifulSoup) -> Optional[int]:
+    """Parse the screener result total from current or legacy Finviz HTML.
+
+    Current pages put ``#1 / N Total`` on ``.fv-table_toolbar-count``. The
+    legacy ``.count-text`` node now holds filter codes (``Filters: sh_price:o10``)
+    and is only used when it still contains a total phrase.
+    """
+    for class_name in ("fv-table_toolbar-count", "count-text"):
+        for el in soup.find_all(class_=class_name):
+            parsed = _parse_total_count_text(el.get_text(" ", strip=True))
+            if parsed is not None:
+                return parsed
+    return None
 
 
 def finviz_reported_page_count(soup: BeautifulSoup) -> int:
@@ -166,8 +185,95 @@ def finviz_reported_page_count(soup: BeautifulSoup) -> int:
         return 0
 
 
+def _fv_grid_headers(soup: BeautifulSoup) -> list:
+    """Column names for the current ``fv-table`` grid, in DOM order.
+
+    Uses the long label (``Market Cap``) and ignores the short label
+    (``Mkt Cap``) so names stay aligned with the legacy Overview table.
+    """
+    headers = []
+    for cell in soup.select(".fv-table_header-cell"):
+        label = cell.select_one(".fv-table_header-label")
+        if label is not None:
+            name = label.get_text(" ", strip=True)
+        else:
+            name = (cell.get("data-column-id") or "").strip()
+        headers.append(_FV_HEADER_ALIASES.get(name, name))
+    return headers
+
+
+def _fv_cell_value(cell: Any, header: str) -> Any:
+    """One grid cell, with ticker and numeric columns matching the legacy parser.
+
+    The ticker link renders a logo initial plus the symbol (``A`` + ``A``), so
+    the visible text is ``A A``. ``data-ticker`` is the symbol the screener
+    actually filtered on.
+    """
+    from finvizfinance.constants import NUMBER_COL
+    from finvizfinance.util import number_covert
+
+    col_id = (cell.get("data-column-id") or "").strip().lower()
+    if col_id == "ticker" or header == "Ticker":
+        ticker = (cell.get("data-ticker") or "").strip()
+        if ticker:
+            return ticker
+        spans = cell.find_all("span")
+        if spans:
+            return spans[-1].get_text(" ", strip=True)
+    text = cell.get_text(" ", strip=True)
+    if header in NUMBER_COL:
+        try:
+            return number_covert(text)
+        except (TypeError, ValueError):
+            return text
+    return text
+
+
+def parse_finviz_grid_page(df: Optional[pd.DataFrame], soup: BeautifulSoup, limit: int = -1) -> pd.DataFrame:
+    """Parse one current Finviz ``fv-table`` page and append it to ``df``.
+
+    Args:
+        df: Rows already collected. ``None`` or empty starts a new frame.
+        soup: One screener page.
+        limit: Max rows to take from this page. ``-1`` keeps every row.
+
+    Returns:
+        Combined DataFrame. Column names match the legacy Overview headers
+        that ``update_universe_file`` filters on (``Ticker``, ``Price``, …).
+    """
+    headers = list(df.columns) if df is not None and len(df.columns) else _fv_grid_headers(soup)
+    rows = soup.select(".fv-table_row")
+    if limit != -1:
+        rows = rows[:limit]
+    frame = []
+    for row in rows:
+        cells = row.select(".fv-table_cell")
+        info = {}
+        for i, header in enumerate(headers):
+            if not header:
+                continue
+            info[header] = _fv_cell_value(cells[i], header) if i < len(cells) else None
+        if info:
+            frame.append(info)
+    page_df = pd.DataFrame(frame, columns=[h for h in headers if h])
+    if df is None or df.empty:
+        return page_df
+    return pd.concat([df, page_df], ignore_index=True)
+
+
+def _parse_screener_page(overview: Any, df: Optional[pd.DataFrame], soup: BeautifulSoup, limit: int) -> pd.DataFrame:
+    """Dispatch one page to the grid parser or the legacy ``screener_table`` parser."""
+    if soup.select(".fv-table_row"):
+        return parse_finviz_grid_page(df, soup, limit=limit)
+    return overview._parse_table(df, soup, limit=limit)
+
+
 def finviz_effective_page_count(soup: BeautifulSoup, page_size: int = FINVIZ_PAGE_SIZE) -> int:
-    """Cap pageSelect by ceil(total/page_size) when Finviz exposes a total count."""
+    """Cap pageSelect by ceil(total/page_size) when Finviz exposes a total count.
+
+    The current screener has no ``#pageSelect``. A toolbar total alone is enough:
+    page count is ``ceil(total / page_size)``.
+    """
     reported = finviz_reported_page_count(soup)
     total = parse_finviz_total_count(soup)
     if total is not None:
@@ -240,7 +346,7 @@ def finviz_screener_view_resilient(
         overview.reset()
         return pd.DataFrame()
 
-    df = overview._parse_table(None, soup, limit=100_000)
+    df = _parse_screener_page(overview, None, soup, limit=100_000)
     if page_count <= 1 or len(df) < overview.size:
         overview.reset()
         return df
@@ -265,7 +371,7 @@ def finviz_screener_view_resilient(
             raise
 
         prev_len = len(df)
-        df = overview._parse_table(df, soup, limit=100_000)
+        df = _parse_screener_page(overview, df, soup, limit=100_000)
         added = len(df) - prev_len
         if added <= 0:
             if verbose:
@@ -446,7 +552,8 @@ def update_universe_file(progress_callback=None, status_callback=None):
         # 실제 진행률은 콘솔에 [Info] loading page [####------] 형태로 표시됩니다.
         df = finviz_screener_view_resilient(foverview, verbose=1, sleep_sec=1.25)
 
-        # Repair spurious leading 'A' on tickers (finvizfinance/Finviz HTML parse shift)
+        # data-ticker is already the symbol. This only repairs a legacy doubled
+        # prefix (AAAPL) if a page still returns that text.
         if not df.empty and 'Ticker' in df.columns:
             raw_tickers = df['Ticker'].astype(str).tolist()
             fixed_tickers = normalize_finviz_tickers(raw_tickers)
@@ -463,8 +570,6 @@ def update_universe_file(progress_callback=None, status_callback=None):
         # 2단계: 추세 품질 중심 필터링 적용
         if progress_callback:
             progress_callback(0.25, "🔍 추세 품질 중심 필터링 적용 중...")
-        
-        original_count = len(df)
         
         # 1. 유동성 필터 (기준 강화)
         if 'Price' in df.columns:

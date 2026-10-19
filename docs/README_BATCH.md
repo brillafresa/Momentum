@@ -56,9 +56,10 @@
 
 ## 동작 참고
 - 배치 실행 시 유니버스를 강제로 재스크린합니다 (FREE: Finviz `set_filter` + 로컬 후처리 + `korean_universe.csv` + `hongkong_universe.csv` 병합).
-- Finviz Overview 페이지 fetch는 `finviz_screener_view_resilient()`로 per-page 재시도·partial fallback 합니다 (마지막 페이지 hang 방지).
+- Finviz Overview fetch는 `finviz_screener_view_resilient()`로 per-page 재시도·partial fallback 합니다 (마지막 페이지 hang 방지).
+- **v5.0.13:** 스크리너 HTML은 `fv-table` 그리드다. 총건수는 `.fv-table_toolbar-count`, 티커는 `data-ticker`. `#pageSelect` / `screener_table`이 없어도 페이지 수는 `ceil(총건수/20)`. 회귀: `python -m pytest tests/unit/test_finviz_screener_pagination.py -q`.
 - 개발 시 Finviz 갱신 생략: `python run_scan_batch.py --skip-universe-update`
-- Finviz Overview가 티커 첫 글자를 중복하는 경우(예: `AAPL`→`AAAPL`) 자동 보정합니다.
+- 티커 첫 글자 중복(`AAPL`→`AAAPL`) 보정은 레거시 텍스트용으로 남아 있다. 현재 그리드는 `data-ticker`를 쓰므로 이 보정이 돌지 않는 것이 정상이다.
 - 앱과 동일한 FMS/거래 적합성 필터 로직(`analysis_utils.py`)을 사용합니다.
 - **v5.0.0 절대 FMS** (`alive_pullback`): 관심종목 reference 패널은 점수에 **영향 없음**.
   관심종목은 스캔 대상 제외·거래적합성 걸러내기에만 쓰이며, 비어 있어도 스캔을 중단하지 않습니다.

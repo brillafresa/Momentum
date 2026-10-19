@@ -2,11 +2,14 @@
 """
 Batch pre-filter tightness evidence collector.
 
-**LIVE API**: This script calls finviz.com (count pages only, one request per
-filter combo). It is an offline analysis aid — never imported by production
-entrypoints. Run manually from repo root:
+**LIVE API**: This script calls finviz.com. Default mode fetches one page per
+filter combo and reads the total via ``parse_finviz_total_count``.
+``--sample N`` downloads the screener through ``finviz_screener_view_resilient``
+(the same grid parser as the batch). Never imported by ``app.py`` or
+``run_scan_batch.py``. Run manually from repo root:
 
     python scripts/analyze_prefilter_impact.py
+    python scripts/analyze_prefilter_impact.py --sample 20
 
 Purpose
 -------
@@ -20,12 +23,12 @@ under the older Q+10%/H+20% policy (2026-07-17).
 
 import argparse
 import os
-import re
 import sys
 import time
 
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from finvizfinance.screener.overview import Overview
 
 # Allow running as `python scripts/analyze_prefilter_impact.py` from repo root
@@ -57,10 +60,12 @@ def fetch_total(filters_dict: dict) -> str:
     view = Overview()
     view.set_filter(filters_dict=filters_dict)
     html = requests.get(view.url, params=view.request_params, headers=HEADERS, timeout=30).text
-    m = re.search(r'#\d+\s*/\s*([\d,]+)\s*Total', html)
-    if m:
-        return m.group(1)
-    return f'count not found (html {len(html)} chars)'
+    from universe_utils import parse_finviz_total_count
+
+    total = parse_finviz_total_count(BeautifulSoup(html, "lxml"))
+    if total is None:
+        return f'count not found (html {len(html)} chars)'
+    return f"{total:,}"
 
 
 def sample_borderline_fms(sample_size: int) -> int:
@@ -77,13 +82,15 @@ def sample_borderline_fms(sample_size: int) -> int:
     (Post-hoc split avoids trusting Finviz perf columns, whose units drift.)
     """
     from finvizfinance.screener.performance import Performance
+    from universe_utils import finviz_screener_view_resilient
 
     print('[Prefilter] Fetching relaxed universe (Quarter Up / Half Up)...')
     view = Performance()
     view.set_filter(filters_dict=dict(BASE_FILTERS, **{
         'Performance': 'Quarter Up', 'Performance 2': 'Half Up',
     }))
-    df = view.screener_view(verbose=0)
+    # finvizfinance screener_view still expects table.screener_table / #pageSelect.
+    df = finviz_screener_view_resilient(view, verbose=0, sleep_sec=1.25)
     if df is None or df.empty:
         print('[Prefilter] No screener rows returned; aborting sample stage.')
         return 1

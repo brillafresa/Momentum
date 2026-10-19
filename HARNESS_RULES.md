@@ -4,7 +4,7 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-10-05 (KST) · 제품 버전 v5.0.12
+최종 갱신: 2026-10-19 (KST) · 제품 버전 v5.0.13
 
 ---
 
@@ -68,6 +68,24 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.13 검증 요약 (2026-10-19 — Finviz `fv-table` 스크리너)**
+
+1. 총건수는 `.fv-table_toolbar-count` (`#1 / N Total`). `.count-text`가 필터 코드만일 때는 무시.
+2. `#pageSelect`가 없으면 페이지 수 = `ceil(N / 20)`. 페이지 인자 `r`은 유지.
+3. 행은 `.fv-table_row`. 티커는 `data-ticker` (로고 이니셜이 붙은 표시 텍스트를 쓰지 않음).
+4. 컬럼명은 레거시 Overview와 동일 (`Ticker`, `Price`, `Change`, `Market Cap`, …).
+   `screener_table` HTML은 `overview._parse_table` 경로를 유지.
+5. **FMS·거래적합성 수식은 변경하지 않음.** production SSOT는 그대로
+   `score_production_fms_features` / SMA5 하방리스크. 이번 검증은 스크리너 I/O만 잠근다.
+   FMS 골든 순위·`-999`는 기존 `test_fms_scoring` · `test_fms_alive_pullback_production` ·
+   `test_tradeability`가 담당한다 (이번 세션에서 새 FMS 하네스를 추가하지 않음).
+6. 회귀: `test_finviz_screener_pagination` · `test_prefilter_not_stricter_than_local`.
+   Mock 그리드 HTML은 `tests/unit/test_finviz_screener_pagination.py` 안에만 있다.
+   `app.py` / `run_scan_batch.py`는 그 파일을 import하지 않는다.
+7. 수동 LIVE 실측 `scripts/analyze_prefilter_impact.py`는 운영 미import.
+   건수는 `parse_finviz_total_count`, `--sample` 행 수집은 `finviz_screener_view_resilient`.
+8. work-plan: `docs/work-plans/2026-10-19-finviz-screener-grid.md`.
 
 **v5.0.12 검증 요약 (2026-10-05 — 반복 하방리스크 SMA5)**
 
@@ -178,7 +196,7 @@
 |------|------|-----------|
 | `tests/unit/test_yf_rate_limit_retry.py` | yfinance `shared._ERRORS` 레이트리밋 감지·재시도 | mock `yf.download` |
 | `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫 글자 중복 보정 | 순수 함수 assert |
-| `tests/unit/test_finviz_screener_pagination.py` | Finviz 페이지별 재시도·partial fallback | mock Overview |
+| `tests/unit/test_finviz_screener_pagination.py` | Finviz 페이지 재시도·partial fallback · **`fv-table` 총건수/티커** | mock Overview |
 | `tests/unit/test_hk_classify.py` | `.HK → HKG` classify | (pytest 포함) |
 | `tests/unit/test_hk_fx_conversion.py` | `HKDKRW = USDKRW / HKDUSD` | (pytest 포함) |
 | `tests/unit/test_hk_universe_loader.py` | FREE HK 병합 / IRP 제외 | (pytest 포함) |

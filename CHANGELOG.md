@@ -5,6 +5,28 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.13] - 2026-10-19
+
+### 수정
+
+- **FREE 배치 유니버스 갱신 0건**: Finviz 스크리너가 `table.screener_table` / `#pageSelect` 대신
+  `div.fv-table` 그리드를 쓰면서 `finviz_screener_view_resilient`가 페이지 수 0으로
+  빈 프레임을 반환하고, `update_universe_file`이 「스크리닝 결과가 비어있습니다」로 종료했다.
+  필터 조건은 그대로이며 같은 조건의 실측 총건수는 약 470개였다.
+- 총건수는 `.fv-table_toolbar-count`의 `#1 / N Total` (레거시 `.count-text` 유지).
+  `pageSelect`가 없으면 `ceil(N / 20)`. 행은 `.fv-table_row`에서 읽고 티커는 `data-ticker`.
+  컬럼명은 기존 Overview와 같다 (`Change %` → `Change`, 숫자 열은 `number_covert`).
+  레거시 `screener_table` 페이지는 기존 `overview._parse_table` 경로를 유지한다.
+- UI 조회·관심종목 추가·시세는 Finviz HTML을 읽지 않는다 (배치 결과 CSV · yfinance).
+  수동 실측 `scripts/analyze_prefilter_impact.py --sample`만 라이브러리 `screener_view`를
+  쓰고 있어 같은 그리드 파서로 교체했다. 건수 조회는 `parse_finviz_total_count`를 공유한다.
+
+### 검증 하네스
+
+- `tests/unit/test_finviz_screener_pagination.py`: toolbar 총건수 · pageSelect 없는 페이지 수 ·
+  그리드 2페이지 결합 · `data-ticker` · `Price`/`Change` 타입 · 레거시 partial fallback
+- work-plan: `docs/work-plans/2026-10-19-finviz-screener-grid.md`
+
 ## [5.0.12] - 2026-10-05
 
 ### 변경
