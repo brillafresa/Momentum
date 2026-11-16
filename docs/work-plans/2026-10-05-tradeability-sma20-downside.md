@@ -1,7 +1,7 @@
 # 2026-10-05 — 반복 하방리스크: prev_close → SMA20(전일까지)
 
 Status: `superseded` · product **v5.0.11** (same-day follow-up: **v5.0.12 SMA5**)
-Current SSOT: [`2026-10-05-tradeability-sma5-downside.md`](2026-10-05-tradeability-sma5-downside.md)
+Current SSOT: [`2026-11-16-tradeability-med3-downside.md`](2026-11-16-tradeability-med3-downside.md) (via v5.0.12 SMA5 → v5.0.15 MED3)
 
 ## Pain / Intent
 

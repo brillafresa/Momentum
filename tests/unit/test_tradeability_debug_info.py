@@ -5,7 +5,7 @@ Purpose
 -------
 Lock ``core.tradeability.get_filter_debug_info`` (and the
 ``analysis_utils`` re-export facade) so debug artifacts stay aligned with
-True Range fatal-volatility and SMA5 (latest available Close) repeated-downside
+True Range fatal-volatility and MED3 (3-day close median) repeated-downside
 rules. No network I/O.
 
 Covered behaviors
@@ -13,7 +13,7 @@ Covered behaviors
 - Empty / missing OHLC → structured error
 - Short history (<63) matches ``calculate_tradeability_filters`` reason
 - Zero High/Low open-print glitch → prior H/L substituted in debug
-- Combined fatal TR + four SMA5 downside days → counts match filter
+- Combined fatal TR + four MED3 downside days → counts match filter
 
 Usage (from repo root)
 ----------------------
@@ -27,6 +27,7 @@ import pandas as pd
 import pytest
 
 from analysis_utils import get_filter_debug_info
+from core.indicators import rolling_close_median
 from core.tradeability import calculate_tradeability_filters
 
 
@@ -102,14 +103,14 @@ def test_debug_info_extreme_and_repeated_downside_counts() -> None:
     # Construct a panel where:
     # - 1 day in the last 63 triggers fatal volatility (>30% TR/prev_close)
     # - 4 days in the last 20 trigger repeated downside
-    #   (<-7% low / same-bar SMA5(close) - 1)
+    #   (<-7% low / same-bar MED3(close) - 1)
     frame = _quiet_ohlc(n=80)
 
     frame.iloc[-5, frame.columns.get_loc("High")] = frame["Close"].iloc[-6] * 1.35
 
-    ma5 = frame["Close"].rolling(5, min_periods=5).mean()
+    med3 = rolling_close_median(frame["Close"], window=3)
     for offset in (-2, -4, -6, -8):
-        ref = float(ma5.iloc[offset])
+        ref = float(med3.iloc[offset])
         frame.iloc[offset, frame.columns.get_loc("Low")] = ref * 0.90
 
     ohlc = _multiindex_ohlc({"DQ": frame})
@@ -118,12 +119,12 @@ def test_debug_info_extreme_and_repeated_downside_counts() -> None:
     assert flags["DQ"] is True
     assert "치명적 변동성" in reasons["DQ"]
     assert "반복적 하방리스크" in reasons["DQ"]
-    assert "SMA5" in reasons["DQ"]
+    assert "MED3" in reasons["DQ"]
 
     debug = get_filter_debug_info(ohlc, "DQ")
     assert debug["error"] is None
     assert debug["has_ohlc"] is True
     assert debug["extreme_days_count"] == 1
     assert debug["severe_days_count"] == 4
-    assert "sma5" in debug["severe_days_detail"][0]
-    assert "sma20_prev" not in debug["severe_days_detail"][0]
+    assert "med3" in debug["severe_days_detail"][0]
+    assert "sma5" not in debug["severe_days_detail"][0]

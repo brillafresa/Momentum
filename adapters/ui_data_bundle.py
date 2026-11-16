@@ -5,9 +5,9 @@ Fingerprint helpers and ``DetailViewAtom`` keep detail-view labels bound to the
 exact price series used for charts so ticker/index drift cannot silently
 mismatch chart data.
 
-Chart-overlay math that is UI-only (e.g. ``rolling_close_median`` / MED3) also
-lives here so it stays offline-testable without Streamlit. Production FMS and
-tradeability filters must not import these overlays as scoring inputs.
+``rolling_close_median`` is re-exported from ``core.indicators`` (MED3 SSOT)
+for detail-chart orchestration. Tradeability uses the same core helper;
+alive_pullback FMS does not.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
+
+from core.indicators import rolling_close_median  # noqa: F401 — re-export for app.py
 
 
 def _ts_key(ts: Any) -> Optional[str]:
@@ -203,13 +205,3 @@ def clear_ui_session_caches(session_state: Dict[str, Any]) -> None:
     ):
         if key in session_state:
             del session_state[key]
-
-
-def rolling_close_median(s: pd.Series, window: int = 3) -> pd.Series:
-    """Rolling median of closes for the detail-chart MED3 overlay (UI only).
-
-    Not used by production FMS or tradeability filters (those keep SMA5 mean).
-    """
-    if s is None:
-        return pd.Series(dtype=float)
-    return s.astype(float).rolling(window=window, min_periods=window).median()

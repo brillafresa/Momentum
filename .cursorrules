@@ -50,10 +50,10 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
  - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
  - 모드별 배치 스캔 결과 저장 및 로드
 14. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
-15. **세부보기·디스크 캐시 (v5.0.3–5.0.4 / v5.0.14)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
+15. **세부보기·디스크 캐시 (v5.0.3–5.0.4 / v5.0.14–5.0.15)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
  배치/UI 공유 디스크 캐시 + **warm-only** last-bar probe (`adapters/price_cache.py`;
  cold miss는 probe 생략 — v5.0.4). Rebased 오버레이 **MED3**(3일 종가 중앙값,
- `rolling_close_median`; UI 전용 — FMS·거래적합성 SMA5와 무관)
+ `core.indicators.rolling_close_median`; 거래적합성 하방리스크와 동일 SSOT — FMS 입력 아님)
 
 ## 파일 구조
 ```
@@ -62,7 +62,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.14, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.15, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -192,7 +192,7 @@ Momentum/
   레거시 sparse는 `score_legacy_sparse_fms_features` + `fms_recalib_refit.py`.
 - **거래 적합성 필터**: True Range 기반 OHLC 데이터로 부적합 종목을 자동 실격 처리(FMS = -999)
   - 치명적 변동성: 63거래일 내 True Range 기반 일일 변동폭 30% 초과 시 실격(가격 갭 포함)
-  - 반복적 하방리스크: 20거래일 내 (저가/최신 가용 종가 SMA5 − 1) < −7% 인 날 4일 이상 시 실격
+  - 반복적 하방리스크: 20거래일 내 (저가/종가 MED3 − 1) < −7% 인 날 4일 이상 시 실격
   - 당일 고가/저가 0 처리: 국장 개장 시간(9시~9시 20분) Yahoo Finance 데이터 이슈 대응 (전일 고가/저가로 대체)
 - **API 제한 대응**: 청크 슬립·outer batch·`shared._ERRORS` 레이트리밋 감지 후 지수 백오프(배치 기본 재시도 상한·대기 상한은 `analysis_utils` 상수). 상장폐지/`no data`는 스킵.
 - **가격 계열**: 수익/FMS는 Adj Close(배당 반영), 거래적합성은 raw High/Low/Close.

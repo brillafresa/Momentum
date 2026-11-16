@@ -5,13 +5,31 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.15] - 2026-11-16
+
+### 변경
+
+- **반복적 하방리스크 기준**: 종가 **SMA5**(5일 평균) → **MED3**(3일 종가 중앙값).
+  `(low / MED3(close)_t) - 1 < -7%` × ≥4일/20d → FMS=-999 (shift 없음).
+  치명적 변동성(TR) 규칙·alive_pullback FMS 수식은 불변.
+- **MED3 SSOT**: `core.indicators.rolling_close_median` — 거래적합성 + 세부보기 차트 공유.
+  디버그 필드 `sma5` → `med3`, 실격 문구 `MED3대비`.
+
+### 검증 하네스
+
+- `test_tradeability` / `test_tradeability_debug_info`: MED3 −10%×4 실격 · −6%×4 통과 · `med3` 필드
+- `test_fms_scoring`: CRASHY→-999 · 골든 순위 유지
+- `test_detail_chart_med3` / `test_indicators`: core≡adapters re-export
+- work-plan: `docs/work-plans/2026-11-16-tradeability-med3-downside.md`
+
 ## [5.0.14] - 2026-11-16
 
 ### 변경
 
 - **세부 보기 차트 추세선**: Rebased(100) 오버레이 `5일 MA`(5거래일 단순이동평균) →
   **MED3**(3일 종가 중앙값, `rolling(3).median()`). 표시명·호버·변수명(`med3`) 동기화.
-  UI 차트 전용; production FMS(`alive_pullback`)·거래적합성 SMA5 하방리스크는 불변.
+  UI 차트 전용; production FMS(`alive_pullback`)·거래적합성 SMA5 하방리스크는 당시 불변
+  (하방리스크 MED3 전환은 v5.0.15).
 
 ### 검증 하네스
 

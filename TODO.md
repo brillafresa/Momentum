@@ -1,13 +1,23 @@
 # TODO — Harness Engineering & Refactor Roadmap
 
 > 세션 시작 시 `HARNESS_RULES.md` 다음으로 본 파일을 읽어 **직전 완료점 / 다음 액션**을 파악한다.  
-> 최종 갱신: **2026-11-16** (KST) · 제품 버전 **v5.0.14**
+> 최종 갱신: **2026-11-16** (KST) · 제품 버전 **v5.0.15**
 
 상태 범례: `[x]` 완료 · `[ ]` 미착수 · `[~]` 진행 중
 
 ---
 
 ## 완료됨
+
+### 2026-11-16 — 거래적합성 하방리스크 MED3 (v5.0.15)
+
+- [x] `(low / MED3_t) - 1 < -7%` × ≥4일/20d → FMS=-999 (SMA5 대체)
+- [x] MED3 SSOT → `core.indicators.rolling_close_median` (차트·필터 공유)
+- [x] pytest: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring` · 전체 스위트
+- [x] 경계: app/batch `tests`·`harness` 미import · config Mock 경로 없음 · TR/FMS 불변
+- [x] 문서/버전 SSOT: CHANGELOG · HARNESS_RULES · TODO · .cursorrules · docs/
+- [x] work-plan: `docs/work-plans/2026-11-16-tradeability-med3-downside.md`
+- [x] 푸시 전: app/batch import·compile 스모크 · bat 엔트리 확인
 
 ### 2026-11-16 — 세부보기 MED3 오버레이 (v5.0.14)
 
@@ -213,7 +223,7 @@
 | `tests/unit/test_fms_horizon_map.py` | 복리/√t 매핑, R²=63d 불변 | (pytest 포함) |
 | `tests/unit/test_fms_params.py` | params 기본값=production, 오버라이드, tune 위임 | (pytest 포함) |
 | `tests/unit/test_fms_recalib_parity.py` | recalib feature→score = production snapshot FMS | (pytest 포함) |
-| `tests/unit/test_tradeability.py` | True Range 실격·엣지 + analysis_utils 셔임 | (pytest 포함) |
+| `tests/unit/test_tradeability.py` | True Range + **MED3 하방리스크** 실격·엣지 + analysis_utils 셔임 | (pytest 포함) |
 | `tests/unit/test_indicators.py` | `core.indicators` EMA/returns/R² + analysis_utils 셔임 | (pytest 포함) |
 | `tests/unit/test_yf_rate_limit_retry.py` | 429/`shared._ERRORS` 재시도 | (pytest 포함) |
 | `tests/unit/test_finviz_ticker_normalize.py` | Finviz 티커 첫글자 중복 보정 | (pytest 포함) |
@@ -222,7 +232,7 @@
 | `tests/unit/test_hk_fx_conversion.py` | HKD→KRW FX 경로 | (pytest 포함) |
 | `tests/unit/test_hk_universe_loader.py` | FREE HK 병합 / IRP 제외 | (pytest 포함) |
 | `tests/unit/test_finviz_screener_pagination.py` | Finviz 페이지 재시도·partial fallback · **fv-table 총건수/`data-ticker`** (인라인 Mock HTML) | `python -m pytest tests/unit/test_finviz_screener_pagination.py -q` |
-| `tests/unit/test_detail_chart_med3.py` | 세부보기 MED3(3일 종가 중앙값) UI 오버레이 · SMA5와 비동일 | `python -m pytest tests/unit/test_detail_chart_med3.py -q` |
+| `tests/unit/test_detail_chart_med3.py` | MED3 overlay · mean≠median · core≡adapters re-export | `python -m pytest tests/unit/test_detail_chart_med3.py -q` |
 | `scripts/build_hk_universe_from_indices.py` | HK 유니버스 LIVE 재생성 (운영 미import) | `python scripts/build_hk_universe_from_indices.py` |
 | `tests/contract/test_no_network_in_core.py` | `core/` 네트워크 import 금지 | (pytest 포함) |
 | `harness/run_fms_snapshot.py` | fixture → FMS 테이블 육안 확인 | `python -m harness.run_fms_snapshot` |
@@ -234,12 +244,13 @@
 
 ## 지금 당장 (Next — 우선순위 순)
 
-> **2026-11-16**: v5.0.14 세부보기 MED3(3일 종가 중앙값) 오버레이. FMS·SMA5 필터 불변.  
+> **2026-11-16**: v5.0.15 하방리스크 SMA5→MED3. FMS alive_pullback 불변.  
 > 다음 기본 축은 추가 UI 작업(사용자 명시) 또는 중기 엔트리포인트/adapters 잔여 정리.
 
-- [x] **2026-11-16 세부보기 MED3**: 5일 MA → 3일 종가 중앙값(UI only)
+- [x] **2026-11-16 하방리스크 MED3**: `(low/MED3_t)-1 < -7%` × ≥4일/20d
+- [x] **2026-11-16 세부보기 MED3**: 5일 MA → 3일 종가 중앙값(차트)
 - [x] **2026-10-19 Finviz fv-table**: toolbar 총건수 + `data-ticker` 그리드 파서 (FREE 유니버스 0건 복구)
-- [x] **2026-10-05 하방리스크 SMA5**: `(low/SMA5_t)-1 < -7%` × ≥4일/20d (shift 없음)
+- [x] **2026-10-05 하방리스크 SMA5**: `(low/SMA5_t)-1 < -7%` × ≥4일/20d (→ v5.0.15 MED3로 대체)
 - [x] **2026-10-05 하방리스크 SMA20**: `(low/SMA20_prev)-1 < -7%` × ≥4일/20d
 - [x] **2026-09-22 NAIVE_KELLY 제거**: 계산·표·정렬·테스트 전면 삭제
 - [x] **2026-09-22 모멘텀 테이블·UI**: 표전용 필드 제거 · 재평가 제거

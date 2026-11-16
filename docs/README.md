@@ -12,7 +12,7 @@
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 배포 가이드 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 기여 가이드 |
 | [README_BATCH.md](README_BATCH.md) | 배치 스캔·작업 스케줄러·레이트리밋/delisted 안내 |
-| [work-plans/](work-plans/) | 세션별 작업 일지 — 최신: [2026-11-16-detail-med3-overlay](work-plans/2026-11-16-detail-med3-overlay.md) (v5.0.14) · [2026-10-19-finviz-screener-grid](work-plans/2026-10-19-finviz-screener-grid.md) (v5.0.13) |
+| [work-plans/](work-plans/) | 세션별 작업 일지 — 최신: [2026-11-16-tradeability-med3-downside](work-plans/2026-11-16-tradeability-med3-downside.md) (v5.0.15) · [detail-med3-overlay](work-plans/2026-11-16-detail-med3-overlay.md) (v5.0.14) |
 
 ## 루트에 남는 문서
 

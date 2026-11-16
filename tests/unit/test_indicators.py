@@ -3,12 +3,14 @@ Unit tests for core price indicators (Validation Harness).
 
 Purpose
 -------
-Lock ``core.indicators`` (``ema``, ``returns_pct``, ``r_squared_3m``) as the
-pure, offline source of truth — no network I/O.
+Lock ``core.indicators`` (``ema``, ``returns_pct``, ``r_squared_3m``,
+``rolling_close_median`` / MED3) as the pure, offline source of truth —
+no network I/O.
 
 Covered behaviors
 -----------------
 - ``ema``: exponential smoother matches ``ewm(adjust=False)``
+- ``rolling_close_median``: ``rolling(window).median()`` with ``min_periods=window``
 - ``returns_pct``: n-period pct change on last row; short series → empty floats
 - ``r_squared_3m``: trend panel ranks by smoothness; short series → NaN;
   non-positive price glitches do not emit ``log`` RuntimeWarnings
@@ -27,7 +29,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from core.indicators import ema, r_squared_3m, returns_pct
+from core.indicators import ema, r_squared_3m, returns_pct, rolling_close_median
 
 
 def test_ema_matches_ewm_adjust_false() -> None:
@@ -35,6 +37,14 @@ def test_ema_matches_ewm_adjust_false() -> None:
     s = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0], dtype=float)
     expected = s.ewm(span=3, adjust=False).mean()
     pd.testing.assert_series_equal(ema(s, 3), expected)
+
+
+def test_rolling_close_median_med3() -> None:
+    """MED3 is rolling(3).median with leading NaNs for incomplete windows."""
+    s = pd.Series([1.0, 2.0, 3.0, 4.0], dtype=float)
+    got = rolling_close_median(s, window=3)
+    expected = s.rolling(window=3, min_periods=3).median()
+    pd.testing.assert_series_equal(got, expected)
 
 
 def test_returns_pct_last_n_period_change() -> None:

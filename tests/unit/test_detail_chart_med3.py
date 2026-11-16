@@ -3,8 +3,9 @@ Unit tests for detail-view MED3 overlay helper (Validation Harness).
 
 Purpose
 -------
-Lock the UI-only 3-day close median used by the detail Rebased chart.
-Production FMS and tradeability SMA5 must remain untouched by this helper.
+Lock the 3-day close median (MED3) used by the detail Rebased chart.
+SSOT is ``core.indicators.rolling_close_median`` (also tradeability downside).
+Production alive_pullback FMS does not use MED3 as a score input.
 
 Covered behaviors
 -----------------
@@ -25,6 +26,7 @@ import pandas as pd
 import pytest
 
 from adapters.ui_data_bundle import rolling_close_median
+from core.indicators import rolling_close_median as core_rolling_close_median
 
 
 def test_med3_matches_rolling_median() -> None:
@@ -54,3 +56,8 @@ def test_med3_is_not_sma5_mean() -> None:
     assert med3.iloc[2] == pytest.approx(2.0)  # median(1,100,2)
     assert np.isnan(sma5.iloc[2])
     assert sma5.iloc[4] == pytest.approx(s.mean())
+
+
+def test_ui_reexport_matches_core_ssot() -> None:
+    """adapters re-export must be the same callable as core.indicators."""
+    assert rolling_close_median is core_rolling_close_median

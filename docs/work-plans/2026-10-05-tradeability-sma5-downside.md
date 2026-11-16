@@ -1,5 +1,9 @@
 # 2026-10-05 — 반복 하방리스크: SMA20_prev → SMA5(최신 가용)
 
+> **Superseded by v5.0.15** — current SSOT:
+> [`2026-11-16-tradeability-med3-downside.md`](2026-11-16-tradeability-med3-downside.md)
+> (`(low / MED3) - 1`).
+
 Status: `done` · product **v5.0.12**
 
 ## Pain / Intent

@@ -19,6 +19,17 @@ def ema(s: pd.Series, span: int) -> pd.Series:
     return s.ewm(span=span, adjust=False).mean()
 
 
+def rolling_close_median(s: pd.Series, window: int = 3) -> pd.Series:
+    """Rolling median of closes (MED3 when ``window=3``).
+
+    Shared by detail-chart overlay and tradeability repeated-downside
+    (``low / MED3 - 1``). Not an FMS ``alive_pullback`` input.
+    """
+    if s is None:
+        return pd.Series(dtype=float)
+    return s.astype(float).rolling(window=window, min_periods=window).median()
+
+
 def mask_non_positive_prices(df: pd.DataFrame) -> pd.DataFrame:
     """Replace non-positive prices with NaN (Yahoo Adj Close hygiene).
 

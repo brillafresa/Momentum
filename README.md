@@ -1,6 +1,6 @@
 # KRW Momentum Radar
 
-⚡ **KRW Momentum Radar v5.0.14**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
+⚡ **KRW Momentum Radar v5.0.15**는 다국가 주식 시장의 모멘텀을 실시간으로 분석하고 시각화하는 Streamlit 웹 애플리케이션입니다.
 
 ## 🌟 주요 기능
 
@@ -26,7 +26,7 @@
 
 ### 📋 상세 분석
 
-- 개별 종목의 EMA(20, 50, 200) 분석 및 Rebased(100) 기준 5거래일 이동평균선(보조)
+- 개별 종목의 EMA(20, 50, 200) 분석 및 Rebased(100) 기준 MED3(3일 종가 중앙값) 추세선(보조)
 - 최대 낙폭(Drawdown) 추적
 - 모멘텀 상태 배지 시스템
 - **종목 네비게이션**: 정렬된 순서로 이전/다음 종목 이동 및 맨 끝으로 이동
@@ -227,9 +227,15 @@ python -m calibration.fms_recalib_plot_residuals
 
 ## 📝 버전 히스토리
 
-### v5.0.14 (현재)
+### v5.0.15 (현재)
 
-- 세부 보기 Rebased 차트 추세선: **5일 MA → MED3**(3일 종가 중앙값). UI 오버레이만 변경; FMS·거래적합성 SMA5 불변
+- 반복적 하방리스크: **종가 MED3(3일 중앙값)** 대비 -7% (20일 내 ≥4일 실격; SMA5 대체)
+- MED3 SSOT: `core.indicators.rolling_close_median` (차트·필터 공유; FMS 입력 아님)
+- 검증: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`
+
+### v5.0.14
+
+- 세부 보기 Rebased 차트 추세선: **5일 MA → MED3**(3일 종가 중앙값). 당시 UI 오버레이만; 필터는 v5.0.15에서 MED3 정렬
 - 검증: `test_detail_chart_med3`
 
 ### v5.0.13
@@ -240,7 +246,7 @@ python -m calibration.fms_recalib_plot_residuals
 
 ### v5.0.12
 
-- 반복적 하방리스크: **종가 SMA5(최신 가용, shift 없음)** 대비 -7% (20일 내 ≥4일 실격)
+- 반복적 하방리스크: **종가 SMA5(최신 가용, shift 없음)** 대비 -7% (20일 내 ≥4일 실격; **v5.0.15에서 MED3로 대체**)
 - 검증: `test_tradeability` · `test_tradeability_debug_info` · `test_fms_scoring`
 
 ### v5.0.11

@@ -17,11 +17,12 @@ Status: `done` · product **v5.0.14**
 
 ### Boundary
 
-- `core/tradeability.py` SMA5 하방리스크 **불변**
 - production FMS (`alive_pullback`) **불변**
+- 당시 거래적합성 SMA5 **불변** → **v5.0.15에서 MED3로 정렬**
+  (`docs/work-plans/2026-11-16-tradeability-med3-downside.md`)
 - `config.py`에 fixture/Mock 경로 없음
 - `app.py` / `run_scan_batch.py`는 `tests/` · `harness/` 미import
-- MED3는 차트 오버레이 전용 — 스코어 입력으로 쓰지 않음
+- MED3는 FMS 점수 입력이 아님 (차트·이후 필터 SSOT)
 
 ## FMS / 퀀트 로직 하네스 (이번 세션)
 

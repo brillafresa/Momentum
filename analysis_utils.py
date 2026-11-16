@@ -29,6 +29,7 @@ from core.indicators import (  # noqa: F401
     last_vol_annualized,
     mask_non_positive_prices,
     returns_pct,
+    rolling_close_median,
     r_squared_3m,
 )
 from core.tradeability import (  # noqa: F401
