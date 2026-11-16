@@ -50,9 +50,10 @@ KRW Momentum Radar는 다국가 주식 시장의 모멘텀을 실시간으로 �
  - 모드별 유니버스 스캔 (FREE: 미국+한국+홍콩 주식, IRP: 국내상장 ETF 전 종목)
  - 모드별 배치 스캔 결과 저장 및 로드
 14. **배당 정책**: 수익/FMS는 Adj Close(총수익), 거래적합성은 raw OHLC
-15. **세부보기·디스크 캐시 (v5.0.3–5.0.4)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
+15. **세부보기·디스크 캐시 (v5.0.3–5.0.4 / v5.0.14)**: DetailViewAtom(심볼↔차트 원자 결합) · 세션 FMS 메모 ·
  배치/UI 공유 디스크 캐시 + **warm-only** last-bar probe (`adapters/price_cache.py`;
- cold miss는 probe 생략 — v5.0.4)
+ cold miss는 probe 생략 — v5.0.4). Rebased 오버레이 **MED3**(3일 종가 중앙값,
+ `rolling_close_median`; UI 전용 — FMS·거래적합성 SMA5와 무관)
 
 ## 파일 구조
 ```
@@ -61,7 +62,7 @@ Momentum/
 ├── TODO.md                   # 진행 체크리스트 (세션 시작 시 필수)
 ├── CHANGELOG.md              # 버전 변경 이력
 ├── README.md                 # 제품 개요
-├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.13, thin orchestration)
+├── app.py                    # 메인 Streamlit 애플리케이션 (v5.0.14, thin orchestration)
 ├── run_scan_batch.py         # 배치 스캔 CLI 실행기 (thin orchestration)
 ├── run_batch_manual.bat      # Windows 배치 스캔 수동 실행 배치 파일
 ├── config.py                 # FMS_FORMULA 등 설정
@@ -73,7 +74,7 @@ Momentum/
 ├── adapters/                 # 외부 의존성 (yfinance, Finviz, 파일 I/O) — 점진 이전 중
 │   ├── market_data.py        # MarketDataPort · YFinanceAdapter · FixtureAdapter
 │   ├── price_cache.py        # 디스크 last-bar 캐시 (배치↔UI 공유; cache/ gitignore)
-│   └── ui_data_bundle.py     # DetailViewAtom · 세션 패널 지문 (네트워크 없음)
+│   └── ui_data_bundle.py     # DetailViewAtom · 세션 지문 · MED3(rolling_close_median)
 ├── calibration/              # 리캘리브레이션 (core FMS 단일 공식 사용) — 점진 이전 중
 ├── harness/                  # 수동/시나리오 러너 (오프라인 fixture 기반)
 ├── tests/                    # 자동 테스트 하네스 (pytest)

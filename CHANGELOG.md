@@ -5,6 +5,22 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/)를 따르며,
 이 프로젝트는 [Semantic Versioning](https://semver.org/lang/ko/)을 준수합니다.
 
+## [5.0.14] - 2026-11-16
+
+### 변경
+
+- **세부 보기 차트 추세선**: Rebased(100) 오버레이 `5일 MA`(5거래일 단순이동평균) →
+  **MED3**(3일 종가 중앙값, `rolling(3).median()`). 표시명·호버·변수명(`med3`) 동기화.
+  UI 차트 전용; production FMS(`alive_pullback`)·거래적합성 SMA5 하방리스크는 불변.
+
+### 검증 하네스
+
+- **신규 UI**: `adapters/ui_data_bundle.rolling_close_median` + `tests/unit/test_detail_chart_med3.py`
+  (3일 중앙값 · leading NaN · SMA5 mean과 비동일)
+- **FMS/필터 회귀(공식 변경 없음)**: `test_fms_scoring` · `test_tradeability` ·
+  `test_tradeability_debug_info` · `test_detail_view_atom`
+- work-plan: `docs/work-plans/2026-11-16-detail-med3-overlay.md`
+
 ## [5.0.13] - 2026-10-19
 
 ### 수정

@@ -4,17 +4,18 @@
 > 이 프로젝트의 모든 코드 수정·기능 추가·버그 수정은 본 문서의 원칙을 따른다.  
 > 문서와 코드가 상충하면 우선순위는 **1) 실제 동작 소스코드 → 2) `.cursorrules` → 3) 본 문서 및 `docs/*.md`**.
 
-최종 갱신: 2026-10-19 (KST) · 제품 버전 v5.0.13
+최종 갱신: 2026-11-16 (KST) · 제품 버전 v5.0.14
 
 ---
 
 ## 0. 현재 구축된 검증 하네스 (v5.0.x)
 
-### UI / 시장 데이터 캐시 (v5.0.3)
+### UI / 시장 데이터 캐시 (v5.0.3 / v5.0.14)
 
 | 자산 | 역할 | 검증 방법 |
 |------|------|-----------|
 | `adapters/ui_data_bundle.py` (`fingerprint_price_panel` / `DetailViewAtom` / `reconcile_detail_selection`) | 세부보기 심볼↔시계열 원자 결합 · 세션 번들 지문 | `test_ui_panel_fingerprint.py` / `test_detail_view_atom.py` |
+| `adapters/ui_data_bundle.py` (`rolling_close_median`) | 세부보기 Rebased 차트 **MED3**(3일 종가 중앙값) 오버레이 · UI 전용 | `test_detail_chart_med3.py` |
 | `adapters/price_cache.py` (`needs_refresh` / `cache_covers_request` / `DiskPriceCache` / `CachingMarketDataAdapter`) | 배치·UI 공유 디스크 캐시 · **warm-only** probe · **period-sufficient HIT** | `test_price_cache_freshness.py` / `harness.smoke_multi_market_batch` / `harness.smoke_usa_first_batch` |
 
 ### FMS / 퀀트 스코어 (오프라인)
@@ -68,6 +69,20 @@
 4. 합성 fixture 골든 순위 `TREND_UP > MILD_UP > FLAT > CRASHY(-999)` 유지.
 5. calibration `alive_pullback` family score ≡ `core.score_alive_pullback_from_params`.
 6. 레거시 sparse+cash gate는 harness에서만 회귀; production 미사용.
+
+**v5.0.14 검증 요약 (2026-11-16 — 세부보기 MED3 오버레이)**
+
+1. 세부 보기 Rebased 차트: `5일 MA` → **MED3** = `rolling(3).median()` (표시명·호버·변수 `med3`).
+2. 헬퍼 SSOT: `adapters.ui_data_bundle.rolling_close_median` (app orchestration만 연결).
+3. **새 FMS/퀀트 공식 하네스는 추가하지 않음.** production SSOT는 그대로
+   `score_production_fms_features` / SMA5 하방리스크. 이번 변경은 UI 오버레이만.
+4. **회귀로 잠근 FMS·필터 하네스**: `test_fms_scoring`(골든 순위·`-999`) ·
+   `test_tradeability` / `test_tradeability_debug_info`(SMA5 실격) ·
+   `test_detail_view_atom`(심볼↔시리즈 원자 결합).
+5. **신규 UI 하네스**: `test_detail_chart_med3` — 3일 median · leading NaN · SMA5 mean과 비동일.
+   Mock은 테스트 내 synthetic Series만; CSV fixture 추가 없음.
+6. `app.py` / `run_scan_batch.py`는 `tests/` · `harness/` 미import.
+7. work-plan: `docs/work-plans/2026-11-16-detail-med3-overlay.md`.
 
 **v5.0.13 검증 요약 (2026-10-19 — Finviz `fv-table` 스크리너)**
 

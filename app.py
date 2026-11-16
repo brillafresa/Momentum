@@ -1,6 +1,6 @@
 # app.py
 # -*- coding: utf-8 -*-
-# KRW Momentum Radar - v5.0.13
+# KRW Momentum Radar - v5.0.14
 # 
 # 주요 기능:
 # - FMS(Fast Momentum Score) 기반 모멘텀 분석 (v5.0 alive_pullback nonlinear)
@@ -45,6 +45,7 @@ from adapters.ui_data_bundle import (
     build_detail_view_atom,
     clear_ui_session_caches,
     reconcile_detail_selection,
+    rolling_close_median,
     watchlist_bundle_key,
 )
 from calibration_utils import (
@@ -109,7 +110,7 @@ def classify(sym):
 # ------------------------------
 # 페이지/스타일
 # ------------------------------
-st.set_page_config(page_title="KRW Momentum Radar v5.0.13", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="KRW Momentum Radar v5.0.14", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
 .block-container {padding-top: 0.8rem;}
@@ -889,7 +890,7 @@ with st.spinner("종목명(풀네임) 로딩 중…(최초 1회만 다소 지연
     NAME_MAP = fetch_long_names(list(prices_krw.columns))
 
 
-st.title("⚡ KRW Momentum Radar v5.0.13")
+st.title("⚡ KRW Momentum Radar v5.0.14")
 
 
 
@@ -1137,7 +1138,7 @@ else:
 
         hover_label = f"{atom.display_name} ({atom.symbol})"
         s100 = _rebase_100(s)
-        ma5 = s100.rolling(window=5, min_periods=5).mean()
+        med3 = rolling_close_median(s100, window=3)
         e20, e50, e200 = ema(s100, 20), ema(s100, 50), ema(s100, 200)
         fig_det = go.Figure()
         fig_det.add_trace(go.Scatter(
@@ -1147,13 +1148,13 @@ else:
         ))
         fig_det.add_trace(
             go.Scatter(
-                x=ma5.index,
-                y=ma5.values,
+                x=med3.index,
+                y=med3.values,
                 mode="lines",
-                name="5일 MA",
+                name="MED3",
                 line=dict(color="#c8c8c8", width=1),
-                customdata=np.array([hover_label] * len(ma5)),
-                hovertemplate="%{customdata}<br>5일 MA<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
+                customdata=np.array([hover_label] * len(med3)),
+                hovertemplate="%{customdata}<br>MED3<br>%{x|%Y-%m-%d}<br>%{y:.2f}<extra></extra>",
             )
         )
         fig_det.add_trace(go.Scatter(
